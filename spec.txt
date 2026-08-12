@@ -1,0 +1,2305 @@
+# tpt-proto Design Document
+
+**Project name:** tpt-proto  
+**Document status:** Full-scope design  
+**Implementation model:** Clean-room  
+**Primary language:** Rust  
+**License:** MIT OR Apache-2.0  
+**Compatibility target:** Protocol Buffers-compatible system  
+**Scope policy:** This document covers the complete system. No major subsystem is deferred.
+
+---
+
+## 1. Summary
+
+`tpt-proto` is a complete, clean-room, pure-Rust implementation of a Protocol Buffers-compatible ecosystem.
+
+It includes:
+
+- a `.proto` language parser
+- a semantic analyzer
+- a compiler
+- a descriptor model
+- a Rust code generator
+- a binary wire-format runtime
+- a reflection runtime
+- JSON mapping
+- text format support
+- well-known types
+- schema linting and diffing
+- conformance testing
+- service and RPC integration
+- security-hardened decoding
+- deterministic encoding
+- build tooling
+- documentation and provenance policies
+
+The goal is not only to encode and decode protobuf messages, but to provide a complete, production-grade protobuf toolchain for Rust.
+
+---
+
+## 2. Goals
+
+`tpt-proto` must achieve the following goals.
+
+### 2.1 Full compatibility
+
+`tpt-proto` must be compatible with the publicly documented Protocol Buffers behavior for:
+
+- proto2
+- proto3
+- editions
+- binary wire format
+- JSON mapping
+- text format
+- descriptors
+- well-known types
+- schema evolution
+- unknown fields
+- extensions
+- oneofs
+- maps
+- packed and unpacked repeated fields
+
+### 2.2 Pure Rust
+
+The core compiler, runtime, code generator, and tooling must be implemented in Rust.
+
+Production use must not require:
+
+- protoc
+- C++ dependencies
+- external binaries
+- network access during build
+
+External tools may be used in CI for conformance validation, but not as a required runtime dependency.
+
+### 2.3 Clean-room provenance
+
+`tpt-proto` must be developed as a clean-room implementation.
+
+Allowed inputs:
+
+- public protobuf documentation
+- public wire-format documentation
+- public language guides
+- public conformance behavior
+- original design notes
+- original tests
+
+Disallowed inputs:
+
+- upstream protobuf implementation code
+- existing protobuf crate internals
+- copied generated code templates
+- proprietary implementations
+- AI prompts containing upstream source code
+
+### 2.4 Rust-native developer experience
+
+Generated and runtime APIs must feel natural in Rust.
+
+The project should provide:
+
+- idiomatic structs
+- enums
+- builders
+- rich error types
+- optional zero-copy decoding
+- clear module organization
+- safe defaults
+- strong documentation
+
+### 2.5 Production safety
+
+`tpt-proto` must be safe for untrusted input.
+
+It must provide:
+
+- decoder limits
+- recursion limits
+- allocation limits
+- UTF-8 validation
+- integer overflow protection
+- fuzz-tested parsers and decoders
+
+---
+
+## 3. System components
+
+The complete system consists of the following components.
+
+```text
+tpt-proto-language
+tpt-proto-descriptor
+tpt-proto-compiler
+tpt-proto-codegen-rust
+tpt-proto-core
+tpt-proto-reflect
+tpt-proto-json
+tpt-proto-text
+tpt-proto-wkt
+tpt-proto-conformance
+tpt-proto-cli
+tpt-proto-build
+tpt-proto-lint
+tpt-proto-grpc
+```
+
+All components are part of the full system.
+
+---
+
+## 4. Component responsibilities
+
+### 4.1 tpt-proto-language
+
+Responsible for parsing the protobuf source language.
+
+It must support:
+
+- proto2 syntax
+- proto3 syntax
+- edition syntax
+- packages
+- imports
+- public imports
+- weak imports
+- messages
+- fields
+- enums
+- oneofs
+- maps
+- services
+- methods
+- extensions
+- reserved declarations
+- options
+- comments
+- source spans
+- syntax diagnostics
+
+### 4.2 tpt-proto-descriptor
+
+Responsible for the resolved schema model.
+
+It must represent:
+
+- files
+- packages
+- messages
+- fields
+- enums
+- enum values
+- oneofs
+- services
+- methods
+- extensions
+- options
+- features
+- source locations
+- comments
+
+It must support encoding and decoding descriptor structures, including `FileDescriptorSet`.
+
+### 4.3 tpt-proto-compiler
+
+Responsible for transforming parsed source into descriptors.
+
+It must perform:
+
+- import resolution
+- package resolution
+- duplicate symbol detection
+- field number validation
+- reserved range validation
+- extension range validation
+- enum validation
+- oneof validation
+- map validation
+- option validation
+- edition feature resolution
+- descriptor generation
+- diagnostic emission
+
+### 4.4 tpt-proto-codegen-rust
+
+Responsible for generating Rust code from descriptors.
+
+It must generate:
+
+- message structs
+- enum types
+- oneof enums
+- map fields
+- repeated fields
+- optional fields
+- required fields where applicable
+- builders
+- encode methods
+- decode methods
+- borrowed decode methods
+- reflection metadata
+- JSON support hooks
+- text format support hooks
+- service traits
+- documentation comments
+
+### 4.5 tpt-proto-core
+
+Responsible for the low-level binary wire format.
+
+It must support:
+
+- varints
+- zigzag encoding
+- tags
+- wire types
+- length-delimited fields
+- fixed32 fields
+- fixed64 fields
+- groups
+- packed repeated fields
+- unpacked repeated fields
+- map entries
+- unknown fields
+- decoder limits
+- deterministic encoding
+- error reporting
+
+### 4.6 tpt-proto-reflect
+
+Responsible for dynamic message support.
+
+It must support:
+
+- dynamic messages
+- dynamic fields
+- dynamic enums
+- dynamic oneofs
+- dynamic maps
+- dynamic repeated fields
+- extensions
+- unknown fields
+- descriptor-driven decoding
+- descriptor-driven encoding
+- type registries
+- extension registries
+
+### 4.7 tpt-proto-json
+
+Responsible for protobuf JSON mapping.
+
+It must support:
+
+- binary to JSON
+- JSON to binary
+- canonical JSON mode
+- relaxed JSON mode
+- lowerCamelCase field names
+- original proto field names
+- enum string names
+- enum numeric values
+- 64-bit integers as strings
+- bytes as base64
+- default value emission options
+- well-known type JSON rules
+
+### 4.8 tpt-proto-text
+
+Responsible for protobuf text format.
+
+It must support:
+
+- printing messages as text
+- parsing text into messages
+- repeated fields
+- map fields
+- nested messages
+- oneofs
+- extensions
+- unknown field policies
+- deterministic text output
+
+### 4.9 tpt-proto-wkt
+
+Responsible for well-known types.
+
+It must support at least:
+
+- Any
+- BoolValue
+- BytesValue
+- DoubleValue
+- Duration
+- Empty
+- FieldMask
+- FloatValue
+- Int32Value
+- Int64Value
+- ListValue
+- StringValue
+- Struct
+- Timestamp
+- UInt32Value
+- UInt64Value
+- Value
+
+Additional descriptor-related and API-related well-known types must be supported where required for full compatibility.
+
+### 4.10 tpt-proto-conformance
+
+Responsible for compatibility validation.
+
+It must provide:
+
+- a Rust conformance testee
+- integration with the official conformance runner
+- proto2 tests
+- proto3 tests
+- editions tests
+- binary tests
+- JSON tests
+- failure-behavior tests
+- CI integration
+- failure reporting
+
+### 4.11 tpt-proto-cli
+
+Responsible for user-facing commands.
+
+It must provide commands for:
+
+- compiling `.proto` files
+- generating Rust code
+- emitting descriptors
+- decoding binary messages
+- encoding binary messages
+- converting JSON to binary
+- converting binary to JSON
+- converting text to binary
+- converting binary to text
+- linting schemas
+- diffing schemas
+
+### 4.12 tpt-proto-build
+
+Responsible for build-time integration.
+
+It must support:
+
+- compiling `.proto` files from `build.rs`
+- include paths
+- output directories
+- codegen configuration
+- incremental rebuild detection
+- clear compile errors
+
+### 4.13 tpt-proto-lint
+
+Responsible for schema quality and compatibility analysis.
+
+It must detect:
+
+- style issues
+- dangerous schema changes
+- breaking changes
+- missing reserved declarations
+- field number reuse
+- incompatible type changes
+- unsafe enum changes
+- unsafe oneof changes
+- unsafe package changes
+
+### 4.14 tpt-proto-grpc
+
+Responsible for the RPC layer in the full ecosystem.
+
+It must support:
+
+- service descriptors
+- method descriptors
+- unary calls
+- server streaming
+- client streaming
+- bidirectional streaming
+- message framing
+- metadata
+- status codes
+- deadlines
+- cancellation
+- compression
+- TLS integration
+- interceptors
+- client and server builders
+
+---
+
+## 5. Language support
+
+`tpt-proto` must support the complete protobuf language surface required for compatibility.
+
+### 5.1 Syntax modes
+
+The parser and compiler must support:
+
+```text
+proto2
+proto3
+editions
+```
+
+### 5.2 File-level constructs
+
+The language layer must support:
+
+- syntax declaration
+- edition declaration
+- package declaration
+- import statements
+- public imports
+- weak imports
+- file options
+- top-level messages
+- top-level enums
+- top-level services
+- top-level extensions
+
+### 5.3 Message constructs
+
+Messages must support:
+
+- fields
+- nested messages
+- nested enums
+- nested extensions
+- oneofs
+- map fields
+- reserved ranges
+- reserved names
+- extension ranges
+- message options
+- legacy groups
+
+### 5.4 Field features
+
+Fields must support:
+
+- name
+- number
+- type
+- label
+- default value
+- json name
+- options
+- oneof membership
+- repeated encoding
+- presence rules
+- retention
+- targets
+- feature overrides
+
+### 5.5 Enum constructs
+
+Enums must support:
+
+- values
+- aliases
+- reserved ranges
+- reserved names
+- enum options
+- value options
+- open and closed semantics
+
+### 5.6 Service constructs
+
+Services must support:
+
+- service options
+- methods
+- input types
+- output types
+- client streaming
+- server streaming
+- method options
+
+---
+
+## 6. Editions support
+
+`tpt-proto` must support protobuf editions.
+
+This includes:
+
+- edition declarations
+- feature defaults
+- feature overrides
+- feature inheritance
+- feature resolution
+- compatibility behavior for proto2-like and proto3-like semantics
+- future edition extensibility
+
+Edition feature categories include:
+
+- field presence
+- enum type
+- repeated field encoding
+- UTF-8 validation
+- message encoding
+- JSON format behavior
+
+The compiler must resolve all features deterministically.
+
+---
+
+## 7. Binary wire format
+
+`tpt-proto-core` must implement the complete binary wire format.
+
+### 7.1 Wire types
+
+The following wire types must be supported:
+
+| Wire type | Meaning |
+|---:|---|
+| 0 | Varint |
+| 1 | 64-bit |
+| 2 | Length-delimited |
+| 3 | Group start |
+| 4 | Group end |
+| 5 | 32-bit |
+
+Groups are deprecated but required for full compatibility.
+
+### 7.2 Field encoding
+
+Each field must be encoded using:
+
+```text
+tag = (field_number << 3) | wire_type
+```
+
+followed by the appropriate payload.
+
+### 7.3 Scalar types
+
+The following scalar types must be supported:
+
+```text
+int32
+int64
+uint32
+uint64
+sint32
+sint64
+fixed32
+fixed64
+sfixed32
+sfixed64
+bool
+string
+bytes
+```
+
+### 7.4 Repeated fields
+
+Repeated fields must support:
+
+- unpacked encoding
+- packed encoding
+- mixed encoding on input
+- deterministic packed output where applicable
+
+Decoders must accept both packed and unpacked forms where required by compatibility rules.
+
+### 7.5 Map fields
+
+Maps must be encoded as repeated synthetic map-entry messages.
+
+Map entries must have:
+
+```text
+key = field 1
+value = field 2
+```
+
+Requirements:
+
+- duplicate map entries must be accepted
+- later values should override earlier values by default
+- deterministic encoding must sort map entries consistently
+- key and value types must be validated
+
+### 7.6 Oneofs
+
+Oneofs must support:
+
+- mutually exclusive fields
+- last value wins when multiple oneof fields appear
+- correct presence semantics
+- idiomatic Rust enum generation
+
+### 7.7 Unknown fields
+
+Unknown fields must be supported.
+
+Default policy:
+
+```text
+preserve unknown fields
+```
+
+Alternative policies:
+
+```text
+discard
+fail
+```
+
+Preserved unknown fields must be re-encodable.
+
+### 7.8 Extensions
+
+Proto2-style extensions must be supported.
+
+This includes:
+
+- extension ranges
+- extension declarations
+- extension registries
+- dynamic extension lookup
+- encoding and decoding extension fields
+- option extensions
+
+### 7.9 Groups
+
+Legacy groups must be supported for compatibility.
+
+This includes:
+
+- group start and group end wire types
+- matching field numbers
+- legacy code generation
+- warnings for new usage
+
+### 7.10 Deterministic encoding
+
+`tpt-proto` must provide deterministic encoding.
+
+Deterministic mode must define:
+
+- field order
+- map order
+- unknown field order
+- canonical varint representation
+- repeated field order where applicable
+- oneof serialization behavior
+
+Deterministic encoding is required for hashing, signing, auditing, and reproducible systems.
+
+---
+
+## 8. Runtime message model
+
+`tpt-proto` must support multiple message representations.
+
+### 8.1 Owned messages
+
+Owned messages own all data.
+
+Example concept:
+
+```rust
+pub struct User {
+    pub id: i64,
+    pub name: String,
+    pub email: Option<String>,
+}
+```
+
+### 8.2 Borrowed messages
+
+Borrowed messages avoid allocation where possible.
+
+Example concept:
+
+```rust
+pub struct UserView<'a> {
+    pub id: i64,
+    pub name: &'a str,
+    pub email: Option<&'a str>,
+}
+```
+
+### 8.3 Bytes-backed messages
+
+Messages may use efficient byte containers to support shared or sliced buffers.
+
+### 8.4 Dynamic messages
+
+Dynamic messages must be descriptor-driven and require no compile-time generated types.
+
+---
+
+## 9. Rust code generation
+
+The Rust code generator must produce safe, idiomatic, maintainable code.
+
+### 9.1 Message generation
+
+Generated messages must include:
+
+- struct definition
+- encode method
+- decode method
+- borrowed decode method where applicable
+- default value handling
+- presence handling
+- unknown field handling
+- documentation comments
+
+### 9.2 Enum generation
+
+Generated enums must support:
+
+- named values
+- numeric conversion
+- unknown values
+- open and closed enum semantics
+- aliases where applicable
+
+### 9.3 Oneof generation
+
+Oneofs must be represented as Rust enums.
+
+Example concept:
+
+```rust
+pub enum Contact {
+    Email(String),
+    Phone(String),
+}
+```
+
+### 9.4 Map generation
+
+Maps must use idiomatic Rust map types unless deterministic ordering requires another representation.
+
+### 9.5 Builders
+
+Builders must be generated where enabled.
+
+Builders should validate:
+
+- required fields
+- oneof constraints
+- invalid enum values
+- invalid default values
+
+### 9.6 Presence rules
+
+The code generator must model presence correctly.
+
+Proto3 implicit presence:
+
+```text
+missing field equals default value
+```
+
+Proto3 explicit optional:
+
+```text
+Option<T>
+```
+
+Proto2 optional:
+
+```text
+Option<T>
+```
+
+Proto2 required:
+
+```text
+must be present
+```
+
+Editions:
+
+```text
+presence determined by resolved features
+```
+
+---
+
+## 10. Descriptor system
+
+`tpt-proto` must support the full descriptor model.
+
+It must be able to:
+
+- build descriptors from source
+- serialize descriptors to binary
+- deserialize descriptors from binary
+- roundtrip `FileDescriptorSet`
+- expose source locations
+- expose comments
+- expose options
+- expose resolved features
+
+Descriptors are required for:
+
+- reflection
+- code generation
+- dynamic decoding
+- schema registries
+- tooling
+
+---
+
+## 11. Reflection system
+
+The reflection system must allow working with messages without compile-time types.
+
+It must support:
+
+- dynamic decoding
+- dynamic encoding
+- field access
+- field mutation
+- repeated field access
+- map access
+- enum access
+- oneof access
+- nested message access
+- extension access
+- unknown field access
+- default value inspection
+- presence inspection
+
+Example conceptual API:
+
+```rust
+let message = DynamicMessage::decode(descriptor, bytes)?;
+let name = message.get_field("name")?;
+let bytes = message.encode()?;
+```
+
+---
+
+## 12. JSON mapping
+
+`tpt-proto-json` must implement the protobuf JSON mapping.
+
+It must support:
+
+- binary to JSON
+- JSON to binary
+- canonical mode
+- relaxed mode
+- original field names
+- lowerCamelCase field names
+- enum names
+- enum numbers
+- unknown enum policies
+- 64-bit integers as strings
+- bytes as base64
+- default value emission options
+- well-known type JSON rules
+
+Special JSON handling must be implemented for:
+
+- Timestamp
+- Duration
+- FieldMask
+- Struct
+- Value
+- ListValue
+- Any
+- wrapper types
+- Empty
+
+---
+
+## 13. Text format
+
+`tpt-proto-text` must support the protobuf text format.
+
+It must support:
+
+- printing messages
+- parsing messages
+- repeated fields
+- map fields
+- nested messages
+- oneofs
+- extensions
+- unknown field policies
+- deterministic output
+
+Text format is important for debugging, CLI tooling, and human inspection.
+
+---
+
+## 14. Well-known types
+
+`tpt-proto-wkt` must provide first-class support for all required well-known types.
+
+Special behavior must be implemented for:
+
+### Timestamp
+
+Represents a point in time.
+
+JSON form example:
+
+```json
+"2026-08-11T12:34:56Z"
+```
+
+### Duration
+
+Represents a signed length of time.
+
+JSON form example:
+
+```json
+"3.5s"
+```
+
+### FieldMask
+
+Represents a set of field paths.
+
+JSON form example:
+
+```json
+"user.id,user.name"
+```
+
+### Any
+
+Represents an embedded arbitrary message.
+
+Binary form includes:
+
+```text
+type_url
+value bytes
+```
+
+JSON form includes:
+
+```json
+{
+  "@type": "type.example.com/User",
+  "id": 42,
+  "name": "Ada"
+}
+```
+
+`Any` requires a type registry.
+
+### Struct, Value, ListValue
+
+Represent JSON-like dynamic values.
+
+### Wrapper types
+
+Represent nullable scalar values.
+
+Supported wrappers:
+
+```text
+BoolValue
+BytesValue
+DoubleValue
+FloatValue
+Int32Value
+Int64Value
+StringValue
+UInt32Value
+UInt64Value
+```
+
+---
+
+## 15. Service and RPC support
+
+`tpt-proto` must support protobuf service definitions.
+
+Example:
+
+```proto
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc WatchUsers(WatchUsersRequest) returns (stream User);
+}
+```
+
+The system must support:
+
+- service descriptors
+- method descriptors
+- unary methods
+- server streaming
+- client streaming
+- bidirectional streaming
+- generated service traits
+- metadata
+- deadlines
+- cancellation
+- status codes
+
+The full ecosystem includes `tpt-proto-grpc`, which must support:
+
+- HTTP/2 transport
+- message framing
+- compression
+- TLS integration
+- interceptors
+- client builders
+- server builders
+- error mapping
+
+---
+
+## 16. Compiler design
+
+The compiler pipeline must be deterministic and diagnosable.
+
+Pipeline:
+
+```text
+source files
+  -> lexing
+  -> parsing
+  -> AST
+  -> import resolution
+  -> semantic analysis
+  -> feature resolution
+  -> descriptor construction
+  -> validation
+  -> output generation
+```
+
+Outputs:
+
+```text
+FileDescriptorSet
+generated code
+diagnostics
+lint reports
+```
+
+Diagnostics must include:
+
+- file path
+- line number
+- column number
+- span
+- severity
+- error code
+- human-readable explanation
+- suggested fix where possible
+
+---
+
+## 17. Linting and breaking change detection
+
+`tpt-proto-lint` must classify schema changes.
+
+Classification levels:
+
+```text
+SAFE
+WARNING
+BREAKING
+```
+
+Examples:
+
+| Change | Classification |
+|---|---|
+| Add new field | SAFE |
+| Add new enum value | SAFE or WARNING depending on enum semantics |
+| Remove field and reserve number | SAFE |
+| Remove field without reservation | BREAKING |
+| Change field number | BREAKING |
+| Change field type | BREAKING |
+| Rename field but keep number | WARNING |
+| Change package | BREAKING |
+| Change RPC input type | BREAKING |
+| Change RPC output type | BREAKING |
+
+The linter must support machine-readable output.
+
+---
+
+## 18. CLI design
+
+The `tpt-proto` CLI must provide at least the following commands.
+
+### Compile schemas
+
+```sh
+tpt-proto compile --input proto --output out
+```
+
+### Generate Rust code
+
+```sh
+tpt-proto generate --input proto --output src/generated
+```
+
+### Emit descriptors
+
+```sh
+tpt-proto descriptors --input proto --output descriptor.bin
+```
+
+### Decode binary
+
+```sh
+tpt-proto decode --descriptor descriptor.bin --message example.User --input message.bin
+```
+
+### Encode binary
+
+```sh
+tpt-proto encode --descriptor descriptor.bin --message example.User --input message.json
+```
+
+### Convert JSON to binary
+
+```sh
+tpt-proto json-to-binary --descriptor descriptor.bin --message example.User
+```
+
+### Convert binary to JSON
+
+```sh
+tpt-proto binary-to-json --descriptor descriptor.bin --message example.User
+```
+
+### Convert text to binary
+
+```sh
+tpt-proto text-to-binary --descriptor descriptor.bin --message example.User
+```
+
+### Convert binary to text
+
+```sh
+tpt-proto binary-to-text --descriptor descriptor.bin --message example.User
+```
+
+### Lint schemas
+
+```sh
+tpt-proto lint proto
+```
+
+### Diff schemas
+
+```sh
+tpt-proto diff old.proto new.proto
+```
+
+---
+
+## 19. Conformance strategy
+
+The complete `tpt-proto` system must pass the relevant official conformance tests.
+
+Required conformance areas:
+
+```text
+proto2 binary
+proto3 binary
+editions binary
+proto2 JSON
+proto3 JSON
+editions JSON
+failure behavior
+unknown field handling
+well-known type behavior
+```
+
+The project must provide:
+
+- a Rust conformance testee
+- CI integration
+- local test instructions
+- failure reports
+- documented exceptions if any legal or specification issue arises
+
+Passing conformance is required for the full system release.
+
+---
+
+## 20. Security model
+
+`tpt-proto` must be safe against malicious input.
+
+### 20.1 Decoder limits
+
+The runtime must enforce limits.
+
+Example:
+
+```rust
+pub struct DecoderLimits {
+    pub max_message_bytes: usize,
+    pub max_depth: u32,
+    pub max_field_count: usize,
+    pub max_unknown_field_bytes: usize,
+    pub max_string_bytes: usize,
+    pub max_bytes_field_bytes: usize,
+    pub max_repeated_entries: usize,
+    pub max_map_entries: usize,
+}
+```
+
+### 20.2 Integer safety
+
+Integer operations must use checked arithmetic where overflow is possible.
+
+### 20.3 UTF-8 validation
+
+String fields must be validated according to schema features and edition rules.
+
+### 20.4 Recursion control
+
+Nested message depth must be bounded.
+
+### 20.5 Allocation control
+
+Allocations must be bounded by limits and sanity checks.
+
+### 20.6 Unsafe policy
+
+Default policy:
+
+```text
+no unsafe in core decoding paths
+```
+
+Unsafe may only be used when:
+
+- isolated
+- documented
+- tested
+- feature-gated
+- justified by measurable benefit
+
+---
+
+## 21. Performance model
+
+`tpt-proto` must be production-competitive.
+
+Performance goals:
+
+- fast varint encoding and decoding
+- minimal allocations
+- efficient repeated field handling
+- efficient map handling
+- monomorphized generated code
+- optional zero-copy decoding
+- reflection kept out of hot paths unless requested
+- deterministic encoding available without harming normal encoding
+
+Benchmark suite must include:
+
+- small messages
+- large messages
+- nested messages
+- repeated fields
+- packed fields
+- maps
+- unknown fields
+- JSON conversion
+- dynamic decoding
+- zero-copy decoding
+
+---
+
+## 22. Testing strategy
+
+The complete system requires a complete testing strategy.
+
+### 22.1 Unit tests
+
+Every primitive and component must have unit tests.
+
+### 22.2 Integration tests
+
+Integration tests must cover:
+
+- compiler
+- code generator
+- runtime
+- reflection
+- JSON
+- text format
+- CLI
+- build integration
+
+### 22.3 Property tests
+
+Random valid messages must roundtrip correctly.
+
+### 22.4 Fuzz tests
+
+Fuzz targets must include:
+
+- binary decoder
+- JSON decoder
+- text parser
+- proto parser
+- descriptor decoder
+- dynamic message decoder
+
+### 22.5 Conformance tests
+
+Official conformance tests must run in CI.
+
+### 22.6 Compatibility vectors
+
+The repository must maintain independent compatibility vectors derived from public specifications.
+
+---
+
+## 23. Documentation requirements
+
+The project must document:
+
+- quickstart
+- language support
+- editions support
+- wire format behavior
+- JSON behavior
+- text format behavior
+- code generation
+- reflection
+- dynamic messages
+- security limits
+- deterministic encoding
+- conformance status
+- clean-room policy
+- licensing
+- trademark disclaimer
+
+The documentation must clearly say:
+
+```text
+tpt-proto is an independent clean-room implementation.
+It is not an official Protocol Buffers implementation.
+```
+
+---
+
+## 24. Licensing and contribution policy
+
+Project license:
+
+```toml
+license = "MIT OR Apache-2.0"
+```
+
+The repository must include:
+
+```text
+LICENSE-MIT
+LICENSE-APACHE
+COPYRIGHT
+CONTRIBUTING.md
+provenance/
+```
+
+Contributions must be made under the same license.
+
+AI-assisted contributions must follow the clean-room policy.
+
+---
+
+## 25. Provenance policy
+
+The project must maintain provenance records.
+
+Recommended records:
+
+```text
+provenance/README.md
+provenance/decisions.md
+provenance/ai-policy.md
+provenance/test-vectors.md
+```
+
+Provenance records should describe:
+
+- sources consulted
+- sources not consulted
+- major implementation decisions
+- origin of test vectors
+- AI usage policy
+- review process
+
+---
+
+## 26. Repository layout
+
+Recommended layout:
+
+```text
+tpt-proto/
+  crates/
+    tpt-proto-language/
+    tpt-proto-descriptor/
+    tpt-proto-compiler/
+    tpt-proto-codegen-rust/
+    tpt-proto-core/
+    tpt-proto-reflect/
+    tpt-proto-json/
+    tpt-proto-text/
+    tpt-proto-wkt/
+    tpt-proto-conformance/
+    tpt-proto-cli/
+    tpt-proto-build/
+    tpt-proto-lint/
+    tpt-proto-grpc/
+  docs/
+  examples/
+  tests/
+  fuzz/
+  benches/
+  provenance/
+```
+
+---
+
+## 27. Versioning policy
+
+`tpt-proto` must use semantic versioning.
+
+Before 1.0:
+
+- APIs may change
+- codegen output may change
+- descriptor model may change
+- wire compatibility should remain stable once implemented
+
+After 1.0:
+
+- wire compatibility must be stable
+- public APIs must follow semver
+- generated code stability must be documented
+- schema model changes must be careful and versioned
+
+---
+
+## 28. Risks
+
+### 28.1 Compatibility risk
+
+Protobuf has many edge cases.
+
+Mitigation:
+
+- conformance testing
+- extensive fuzzing
+- independent compatibility vectors
+- conservative defaults
+
+### 28.2 Scope risk
+
+The full system is large.
+
+Mitigation:
+
+- clear component boundaries
+- strong testing
+- incremental development without removing required scope
+- strict prioritization inside workstreams
+
+### 28.3 Adoption risk
+
+Existing crates already have users.
+
+Mitigation:
+
+- pure Rust build
+- better diagnostics
+- better security defaults
+- zero-copy support
+- schema tooling
+- excellent documentation
+
+### 28.4 Provenance risk
+
+AI-assisted development may accidentally reproduce upstream code.
+
+Mitigation:
+
+- clean-room policy
+- no upstream source in prompts
+- human review
+- provenance logs
+- suspicious code rewritten
+
+### 28.5 Trademark risk
+
+The project must not appear official.
+
+Mitigation:
+
+- clear disclaimer
+- avoid confusing names
+- avoid official logos
+- describe compatibility carefully
+
+---
+
+## 29. Release acceptance criteria
+
+The complete `tpt-proto` system is finished only when all of the following are true.
+
+### 29.1 Language completeness
+
+The parser accepts the full supported language surface:
+
+```text
+proto2
+proto3
+editions
+```
+
+### 29.2 Compiler correctness
+
+The compiler produces correct descriptors for valid schemas and clear diagnostics for invalid schemas.
+
+### 29.3 Code generation correctness
+
+Generated Rust code compiles and passes roundtrip tests.
+
+### 29.4 Runtime correctness
+
+The binary runtime passes required conformance tests.
+
+### 29.5 JSON correctness
+
+JSON mapping passes required conformance and compatibility tests.
+
+### 29.6 Text format correctness
+
+Text format parses and prints valid protobuf text representations.
+
+### 29.7 Reflection correctness
+
+Dynamic messages can encode, decode, inspect, and mutate supported schemas.
+
+### 29.8 Well-known type correctness
+
+Well-known types behave according to compatibility requirements.
+
+### 29.9 Tooling correctness
+
+The CLI can compile, lint, diff, decode, encode, and convert messages.
+
+### 29.10 Security hardening
+
+Fuzzing and limit enforcement demonstrate safe handling of malicious input.
+
+### 29.11 Documentation completeness
+
+User and developer documentation cover all major subsystems.
+
+### 29.12 Provenance completeness
+
+Clean-room and licensing documentation is complete and current.
+
+---
+
+## 30. Final statement
+
+`tpt-proto` is a complete Protocol Buffers-compatible system for Rust.
+
+It is not merely a decoder or encoder. It is a full toolchain consisting of:
+
+```text
+language parsing
+semantic analysis
+compilation
+descriptors
+code generation
+binary runtime
+reflection
+JSON
+text format
+well-known types
+linting
+diffing
+conformance
+security hardening
+RPC support
+documentation
+provenance
+```
+
+All of these subsystems are part of the complete design.
+
+
+
+
+# tpt-proto-grpc Design Addendum
+
+**Component name:** tpt-proto-grpc  
+**Scope:** Complete gRPC-compatible RPC layer for the tpt-proto ecosystem  
+**Transport requirement:** HTTP/2  
+**License:** MIT OR Apache-2.0  
+**Status:** Full-scope design  
+**Dependency policy:** The gRPC layer may use pure-Rust HTTP/2 transport components. It must not require external non-Rust binaries for production use.
+
+---
+
+## 1. Purpose
+
+`tpt-proto-grpc` implements the gRPC protocol layer on top of `tpt-proto` message serialization.
+
+It provides:
+
+- gRPC client support
+- gRPC server support
+- unary calls
+- server streaming
+- client streaming
+- bidirectional streaming
+- metadata handling
+- status handling
+- deadline handling
+- cancellation handling
+- compression support
+- health checking
+- server reflection
+- interceptors
+- observability
+- debugging tools
+
+This component turns `tpt-proto` schemas into a complete RPC system.
+
+---
+
+## 2. Relationship to tpt-proto
+
+`tpt-proto` defines and serializes messages.
+
+`tpt-proto-grpc` transports those messages using the gRPC protocol.
+
+The layers are:
+
+```text
+.proto schema
+  -> tpt-proto compiler/codegen
+    -> generated message types
+      -> tpt-proto-grpc service traits
+        -> gRPC protocol layer
+          -> HTTP/2 transport
+```
+
+---
+
+## 3. Protocol requirements
+
+`tpt-proto-grpc` must implement the gRPC protocol behavior required for interoperability.
+
+### 3.1 HTTP method and path
+
+Calls must use HTTP/2 POST requests.
+
+The path must follow:
+
+```text
+/package.ServiceName/MethodName
+```
+
+Example:
+
+```text
+/example.UserService/GetUser
+```
+
+### 3.2 Content type
+
+The content type must be:
+
+```text
+application/grpc
+```
+
+Extended content type variants may be supported where required.
+
+### 3.3 Message framing
+
+Each gRPC message must be framed as:
+
+```text
+1 byte compression flag
+4 bytes big-endian message length
+N bytes serialized protobuf message
+```
+
+The implementation must support:
+
+- compressed messages
+- uncompressed messages
+- maximum message size enforcement
+- partial frame protection
+- stream reset on malformed frames
+
+### 3.4 Metadata
+
+Metadata must be supported as key-value pairs.
+
+Requirements:
+
+- lowercase ASCII metadata keys
+- binary metadata values using base64 suffix convention
+- request headers
+- response headers
+- trailers
+- metadata size limits
+- reserved header protection
+
+### 3.5 Trailers and status
+
+gRPC status must be communicated using trailers.
+
+Required trailer fields:
+
+```text
+grpc-status
+grpc-message
+grpc-status-details-bin
+```
+
+The implementation must support:
+
+- normal successful completion
+- error completion
+- trailer-only responses
+- early error responses
+- cancellation status
+- deadline exceeded status
+
+### 3.6 Timeouts
+
+The `grpc-timeout` header must be supported.
+
+The stack must translate timeouts into:
+
+- request deadlines
+- cancellation signals
+- remaining-time APIs
+- client-side expiry
+- server-side expiry
+
+### 3.7 Compression
+
+The stack must support:
+
+- identity encoding
+- gzip encoding
+- pluggable compression codecs
+- `grpc-encoding`
+- `grpc-accept-encoding`
+
+Additional compression codecs may be provided if compatible.
+
+---
+
+## 4. Service model
+
+`tpt-proto-grpc` must support all four gRPC method types.
+
+### 4.1 Unary
+
+One request, one response.
+
+```proto
+rpc GetUser(GetUserRequest) returns (User);
+```
+
+### 4.2 Server streaming
+
+One request, many responses.
+
+```proto
+rpc WatchUsers(WatchUsersRequest) returns (stream User);
+```
+
+### 4.3 Client streaming
+
+Many requests, one response.
+
+```proto
+rpc UploadLogs(stream LogEntry) returns (UploadSummary);
+```
+
+### 4.4 Bidirectional streaming
+
+Many requests, many responses.
+
+```proto
+rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+```
+
+---
+
+## 5. Generated service APIs
+
+The code generator must produce Rust service traits and client stubs.
+
+### 5.1 Server trait example
+
+```rust
+#[async_trait]
+pub trait UserService {
+    async fn get_user(
+        &self,
+        request: Request<GetUserRequest>,
+    ) -> Result<Response<User>, Status>;
+}
+```
+
+### 5.2 Client stub example
+
+```rust
+impl UserServiceClient {
+    pub async fn get_user(
+        &mut self,
+        request: GetUserRequest,
+    ) -> Result<Response<User>, Status>;
+}
+```
+
+### 5.3 Streaming client example
+
+```rust
+let mut stream = client.watch_users(request).await?.into_inner();
+
+while let Some(user) = stream.try_next().await? {
+    // process user
+}
+```
+
+### 5.4 Streaming server example
+
+```rust
+async fn watch_users(
+    &self,
+    request: Request<WatchUsersRequest>,
+    sink: ServerStreamingSink<User>,
+) -> Result<(), Status> {
+    // send updates
+}
+```
+
+The generated API should be strongly typed and async-native.
+
+---
+
+## 6. Request and response context
+
+Every RPC context must expose:
+
+- deadline
+- remaining time
+- cancellation token
+- metadata
+- peer information where available
+- extensions map
+- compression settings
+- call metrics hooks
+
+Example:
+
+```rust
+let deadline = request.context().deadline();
+let remaining = request.context().remaining_time();
+let cancelled = request.context().cancelled();
+```
+
+---
+
+## 7. Error model
+
+`tpt-proto-grpc` must provide a structured gRPC status type.
+
+### 7.1 Status fields
+
+A status must include:
+
+- status code
+- message
+- optional rich details
+- optional metadata
+- optional source context
+
+### 7.2 Standard status codes
+
+The implementation must support standard gRPC codes, including:
+
+```text
+OK
+CANCELLED
+UNKNOWN
+INVALID_ARGUMENT
+DEADLINE_EXCEEDED
+NOT_FOUND
+ALREADY_EXISTS
+PERMISSION_DENIED
+RESOURCE_EXHAUSTED
+FAILED_PRECONDITION
+ABORTED
+OUT_OF_RANGE
+UNIMPLEMENTED
+INTERNAL
+UNAVAILABLE
+DATA_LOSS
+UNAUTHENTICATED
+```
+
+### 7.3 Rich error details
+
+The stack should support structured error details compatible with:
+
+```text
+google.rpc.Status
+```
+
+This allows errors to carry typed diagnostic payloads.
+
+---
+
+## 8. Cancellation and deadlines
+
+Cancellation must be first-class.
+
+Requirements:
+
+- client cancellation must terminate the request
+- server handlers must be notified when clients disconnect
+- deadlines must propagate across async tasks
+- downstream work should be cancellable
+- cancelled streams must release resources promptly
+- deadline expiry should produce `DEADLINE_EXCEEDED`
+
+The API should integrate cleanly with Rust cancellation primitives.
+
+---
+
+## 9. Server requirements
+
+The server runtime must support:
+
+- service registration
+- routing by service and method
+- concurrent streams
+- max concurrent stream limits
+- message size limits
+- metadata size limits
+- keepalive handling
+- graceful shutdown
+- connection draining
+- health checking
+- server reflection
+- TLS termination
+- cleartext HTTP/2 for local development when explicitly enabled
+- backpressure
+- request limits
+- timeout enforcement
+
+---
+
+## 10. Client requirements
+
+The client runtime must support:
+
+- endpoint configuration
+- connection reuse
+- connection pooling
+- HTTP/2 multiplexing
+- retries
+- retry policies
+- backoff
+- timeouts
+- deadlines
+- cancellation
+- metadata injection
+- interceptors
+- load balancing hooks
+- health checking
+- TLS
+- compression
+- message size limits
+- streaming backpressure
+
+---
+
+## 11. Interceptors and middleware
+
+`tpt-proto-grpc` must provide a middleware model.
+
+Middleware should be able to inspect or modify:
+
+- outgoing requests
+- incoming requests
+- outgoing responses
+- incoming responses
+- metadata
+- status
+- deadline
+- cancellation
+- extensions
+
+Typical uses:
+
+- authentication
+- authorization
+- logging
+- tracing
+- metrics
+- rate limiting
+- request ID propagation
+- error normalization
+
+The middleware model must be composable and type-safe.
+
+---
+
+## 12. Observability
+
+The stack must provide first-class observability.
+
+### 12.1 Metrics
+
+Recommended metrics:
+
+- requests started
+- requests completed
+- request duration
+- active streams
+- cancelled requests
+- deadline exceeded requests
+- bytes sent
+- bytes received
+- messages sent
+- messages received
+- connection errors
+- stream resets
+
+Labels should include:
+
+```text
+service
+method
+status code
+streaming type
+```
+
+### 12.2 Tracing
+
+Spans should include:
+
+```text
+rpc.system
+rpc.service
+rpc.method
+rpc.grpc.status_code
+```
+
+### 12.3 Logging
+
+Structured logs should include:
+
+- request ID
+- service
+- method
+- status
+- deadline
+- peer address where available
+- cancellation reason
+
+---
+
+## 13. Health checking
+
+`tpt-proto-grpc` must support the gRPC health checking protocol.
+
+It should allow services to report:
+
+```text
+UNKNOWN
+SERVING
+NOT_SERVING
+SERVICE_UNKNOWN
+```
+
+Health checking should support:
+
+- overall server health
+- per-service health
+- readiness/liveness style integration
+- dynamic health updates
+
+---
+
+## 14. Server reflection
+
+The stack should support gRPC server reflection.
+
+Reflection allows clients to discover:
+
+- services
+- methods
+- message types
+- descriptors
+
+This is useful for debugging and CLI tooling.
+
+---
+
+## 15. Security
+
+`tpt-proto-grpc` must support secure production deployment.
+
+Required security features:
+
+- TLS
+- ALPN negotiation for HTTP/2
+- mTLS
+- certificate validation
+- token-based authentication
+- metadata authentication
+- authorization hooks
+- peer identity inspection
+- request limits
+- metadata limits
+- safe cleartext opt-in for local development
+
+The default documentation should encourage secure defaults.
+
+---
+
+## 16. Debugging tools
+
+The ecosystem should include CLI tools for gRPC debugging.
+
+Recommended commands:
+
+```sh
+tpt-grpc health localhost:50051
+tpt-grpc reflect localhost:50051
+tpt-grpc list-services localhost:50051
+tpt-grpc call localhost:50051 example.UserService/GetUser
+tpt-grpc watch-stream localhost:50051 example.UserService/WatchUsers
+```
+
+The CLI should support:
+
+- JSON input
+- binary input
+- descriptor-based decoding
+- metadata injection
+- deadlines
+- TLS configuration
+- compression configuration
+
+---
+
+## 17. Performance requirements
+
+`tpt-proto-grpc` should be production-competitive.
+
+Performance goals:
+
+- low allocation message framing
+- efficient metadata handling
+- efficient stream multiplexing
+- minimal locking in hot paths
+- buffered I/O with sensible defaults
+- zero-copy opportunities where practical
+- bounded memory usage under backpressure
+
+Benchmark suite must include:
+
+- unary throughput
+- unary latency
+- streaming throughput
+- bidirectional streaming
+- small messages
+- large messages
+- many concurrent streams
+- cancellation storms
+- deadline expiry storms
+- TLS overhead
+- compression overhead
+
+---
+
+## 18. Compatibility requirements
+
+`tpt-proto-grpc` must be tested against real-world gRPC behavior.
+
+Compatibility areas:
+
+- unary calls
+- server streaming
+- client streaming
+- bidirectional streaming
+- cancellation
+- deadlines
+- metadata
+- trailers
+- compression
+- status codes
+- TLS
+- h2c
+- proxies
+- load balancers
+- HTTP/2 flow control
+- stream reset behavior
+- GOAWAY handling
+
+The project should maintain interop tests and compatibility documentation.
+
+---
+
+## 19. Acceptance criteria
+
+`tpt-proto-grpc` is complete only when:
+
+1. Generated clients and servers compile cleanly.
+2. Unary calls work correctly.
+3. All streaming modes work correctly.
+4. Deadlines and cancellation behave correctly.
+5. Metadata and trailers behave correctly.
+6. Status codes and rich errors behave correctly.
+7. TLS and h2c modes work as documented.
+8. Health checking works.
+9. Server reflection works.
+10. Interceptors/middleware work.
+11. Observability hooks work.
+12. Interop tests pass against target reference implementations.
+13. CLI debugging tools work.
+14. Security limits are enforced.
+15. Documentation is complete.
+
+---
+
+## 20. Scope boundary
+
+The core gRPC compatibility surface is gRPC over HTTP/2.
+
+Additional transports or protocol variants may be added later as separate extensions, but they are not required for the core gRPC compatibility surface defined by this document.

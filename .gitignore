@@ -1,0 +1,18 @@
+/target/
+**/target/
+Cargo.lock
+*.rs.bk
+*.pdb
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Fuzzing artifacts
+fuzz/artifacts/
+fuzz/corpus/
