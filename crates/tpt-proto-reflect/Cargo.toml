@@ -1,0 +1,20 @@
+[package]
+name = "tpt-proto-reflect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Descriptor-driven dynamic messages"
+
+[dependencies]
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-core = { workspace = true }
+tpt-proto-language = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+tpt-proto-core = { workspace = true }

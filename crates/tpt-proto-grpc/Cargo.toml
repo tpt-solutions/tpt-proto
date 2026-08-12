@@ -1,0 +1,21 @@
+[package]
+name = "tpt-proto-grpc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "gRPC protocol, server, and client runtime"
+
+[dependencies]
+tpt-proto-core = { workspace = true }
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-codegen-rust = { workspace = true }
+tpt-proto-reflect = { workspace = true }
+tpt-proto-wkt = { workspace = true }
+tpt-proto-json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tpt-proto-core = { workspace = true }

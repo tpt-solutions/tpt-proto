@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tpt-proto-language",
+    "crates/tpt-proto-descriptor",
+    "crates/tpt-proto-compiler",
+    "crates/tpt-proto-codegen-rust",
+    "crates/tpt-proto-core",
+    "crates/tpt-proto-reflect",
+    "crates/tpt-proto-json",
+    "crates/tpt-proto-text",
+    "crates/tpt-proto-wkt",
+    "crates/tpt-proto-conformance",
+    "crates/tpt-proto-cli",
+    "crates/tpt-proto-build",
+    "crates/tpt-proto-lint",
+    "crates/tpt-proto-grpc",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["TPT Solutions"]
+repository = "https://github.com/tpt-solutions/tpt-proto"
+description = "Clean-room, pure-Rust Protocol Buffers-compatible ecosystem + gRPC layer"
+rust-version = "1.74"
+
+[workspace.dependencies]
+tpt-proto-language = { path = "crates/tpt-proto-language", version = "0.1.0" }
+tpt-proto-descriptor = { path = "crates/tpt-proto-descriptor", version = "0.1.0" }
+tpt-proto-compiler = { path = "crates/tpt-proto-compiler", version = "0.1.0" }
+tpt-proto-codegen-rust = { path = "crates/tpt-proto-codegen-rust", version = "0.1.0" }
+tpt-proto-core = { path = "crates/tpt-proto-core", version = "0.1.0" }
+tpt-proto-reflect = { path = "crates/tpt-proto-reflect", version = "0.1.0" }
+tpt-proto-json = { path = "crates/tpt-proto-json", version = "0.1.0" }
+tpt-proto-text = { path = "crates/tpt-proto-text", version = "0.1.0" }
+tpt-proto-wkt = { path = "crates/tpt-proto-wkt", version = "0.1.0" }
+tpt-proto-conformance = { path = "crates/tpt-proto-conformance", version = "0.1.0" }
+tpt-proto-cli = { path = "crates/tpt-proto-cli", version = "0.1.0" }
+tpt-proto-build = { path = "crates/tpt-proto-build", version = "0.1.0" }
+tpt-proto-lint = { path = "crates/tpt-proto-lint", version = "0.1.0" }
+tpt-proto-grpc = { path = "crates/tpt-proto-grpc", version = "0.1.0" }
+
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bytes = "1.5"
+nom = "7.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

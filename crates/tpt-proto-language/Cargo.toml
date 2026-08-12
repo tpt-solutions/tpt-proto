@@ -1,0 +1,16 @@
+[package]
+name = "tpt-proto-language"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Proto language lexer and parser (proto2/proto3/editions)"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+tpt-proto-core = { workspace = true }

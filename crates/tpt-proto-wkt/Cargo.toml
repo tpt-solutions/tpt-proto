@@ -1,0 +1,18 @@
+[package]
+name = "tpt-proto-wkt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Well-known types (Timestamp, Duration, Any, Struct, etc.)"
+
+[dependencies]
+tpt-proto-core = { workspace = true }
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tpt-proto-core = { workspace = true }

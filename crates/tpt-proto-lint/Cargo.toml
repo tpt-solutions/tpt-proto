@@ -1,0 +1,18 @@
+[package]
+name = "tpt-proto-lint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Linting and breaking-change detection"
+
+[dependencies]
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-compiler = { workspace = true }
+tpt-proto-language = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tpt-proto-core = { workspace = true }
