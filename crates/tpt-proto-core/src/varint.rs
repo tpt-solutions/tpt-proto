@@ -16,17 +16,6 @@ pub fn encode_varint(mut value: u64, buf: &mut Vec<u8>) {
     buf.push(value as u8);
 }
 
-/// Encode a `u64` as a varint into the provided writer callback.
-#[inline]
-pub fn encode_varint_to(value: u64, push: &mut impl FnMut(u8)) {
-    let mut value = value;
-    while value >= 0x80 {
-        push((value as u8) | 0x80);
-        value >>= 7;
-    }
-    push(value as u8);
-}
-
 /// Decode a base-128 varint from a slice starting at `bytes[start]`.
 ///
 /// Returns the value and the number of bytes consumed.

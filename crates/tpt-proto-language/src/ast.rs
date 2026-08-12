@@ -96,7 +96,7 @@ impl ScalarType {
     }
 
     /// Parse a scalar keyword.
-    pub fn from_str(s: &str) -> Option<ScalarType> {
+    pub fn from_keyword(s: &str) -> Option<ScalarType> {
         Some(match s {
             "double" => ScalarType::Double,
             "float" => ScalarType::Float,
@@ -335,6 +335,8 @@ pub struct File {
     pub name: String,
     /// `syntax` declaration.
     pub syntax: Option<Syntax>,
+    /// `edition` declaration (editions syntax).
+    pub edition: Option<String>,
     /// `package` declaration.
     pub package: Option<Ident>,
     /// Imports.

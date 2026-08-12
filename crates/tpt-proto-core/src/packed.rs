@@ -163,7 +163,7 @@ mod tests {
         let mut r = Reader::new(w.buf());
         let tag = r.read_tag().unwrap();
         assert_eq!(tag.field_number, 1);
-        let vals = read_packed_varint(&mut r, |s| Ok(s.read_varint()?)).unwrap();
+        let vals = read_packed_varint(&mut r, |s| s.read_varint()).unwrap();
         assert_eq!(vals, vec![1u64, 2, 300, 4]);
     }
 

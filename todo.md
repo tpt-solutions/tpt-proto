@@ -10,86 +10,86 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 0 — Repository & Project Foundation (§24, §25, §26, §27)
 
-- [ ] Initialize git repository and `.gitignore`
-- [ ] Create Cargo workspace root (`Cargo.toml`) with 14 member crates under `crates/`
-- [ ] Scaffold empty crate skeletons: `tpt-proto-language`, `-descriptor`, `-compiler`, `-codegen-rust`, `-core`, `-reflect`, `-json`, `-text`, `-wkt`, `-conformance`, `-cli`, `-build`, `-lint`, `-grpc`
-- [ ] Create repo layout: `docs/`, `examples/`, `tests/`, `fuzz/`, `benches/`, `provenance/`
-- [ ] Add `LICENSE-MIT` and `LICENSE-APACHE` (dual license: MIT OR Apache-2.0)
-- [ ] Add `COPYRIGHT` file (copyright holder: TPT Solutions)
-- [ ] Set `license = "MIT OR Apache-2.0"` across workspace `Cargo.toml`
-- [ ] Add `CONTRIBUTING.md` (contribution + clean-room + AI-assist policy)
-- [ ] Create `provenance/README.md`, `provenance/decisions.md`, `provenance/ai-policy.md`, `provenance/test-vectors.md` skeletons
-- [ ] Set up CI pipeline skeleton (build, test, lint, fmt)
-- [ ] Document semantic versioning policy (pre-1.0 rules)
+- [x] Initialize git repository and `.gitignore`
+- [x] Create Cargo workspace root (`Cargo.toml`) with 14 member crates under `crates/`
+- [x] Scaffold empty crate skeletons: `tpt-proto-language`, `-descriptor`, `-compiler`, `-codegen-rust`, `-core`, `-reflect`, `-json`, `-text`, `-wkt`, `-conformance`, `-cli`, `-build`, `-lint`, `-grpc`
+- [x] Create repo layout: `docs/`, `examples/`, `tests/`, `fuzz/`, `benches/`, `provenance/`
+- [x] Add `LICENSE-MIT` and `LICENSE-APACHE` (dual license: MIT OR Apache-2.0)
+- [x] Add `COPYRIGHT` file (copyright holder: TPT Solutions)
+- [x] Set `license = "MIT OR Apache-2.0"` across workspace `Cargo.toml`
+- [x] Add `CONTRIBUTING.md` (contribution + clean-room + AI-assist policy)
+- [x] Create `provenance/README.md`, `provenance/decisions.md`, `provenance/ai-policy.md`, `provenance/test-vectors.md` skeletons
+- [x] Set up CI pipeline skeleton (build, test, lint, fmt)
+- [x] Document semantic versioning policy (pre-1.0 rules)
 
 ## Phase 1 — tpt-proto-language: Parser (§4.1, §5)
 
-- [ ] Lexer: tokens, comments, source spans
-- [ ] Parser: proto2 syntax
-- [ ] Parser: proto3 syntax
-- [ ] Parser: editions syntax
-- [ ] Package declarations
-- [ ] Import statements (regular, public, weak)
-- [ ] File-level options
-- [ ] Top-level messages, enums, services, extensions
-- [ ] Message body: fields, nested messages/enums/extensions, oneofs, maps
-- [ ] Reserved ranges & reserved names
-- [ ] Extension ranges
-- [ ] Legacy groups syntax
-- [ ] Field features: name/number/type/label/default/json_name/options
-- [ ] Enum constructs: values, aliases, reserved ranges/names, options
-- [ ] Service constructs: methods, streaming markers, options
-- [ ] Syntax diagnostics with span, severity, error code
+- [x] Lexer: tokens, comments, source spans
+- [x] Parser: proto2 syntax
+- [x] Parser: proto3 syntax
+- [x] Parser: editions syntax
+- [x] Package declarations
+- [x] Import statements (regular, public, weak)
+- [x] File-level options
+- [x] Top-level messages, enums, services, extensions
+- [x] Message body: fields, nested messages/enums/extensions, oneofs, maps
+- [x] Reserved ranges & reserved names
+- [x] Extension ranges
+- [x] Legacy groups syntax
+- [x] Field features: name/number/type/label/default/json_name/options
+- [x] Enum constructs: values, aliases, reserved ranges/names, options
+- [x] Service constructs: methods, streaming markers, options
+- [x] Syntax diagnostics with span, severity, error code
 
 ## Phase 2 — tpt-proto-descriptor: Descriptor Model (§4.2, §10)
 
-- [ ] Descriptor types: FileDescriptor, package, message, field, enum, enum value
-- [ ] Descriptor types: oneof, service, method, extension, options, features
-- [ ] Source location & comment tracking in descriptors
-- [ ] Encode descriptors to binary
-- [ ] Decode descriptors from binary
-- [ ] `FileDescriptorSet` roundtrip (serialize/deserialize)
-- [ ] Descriptor query APIs for reflection/codegen/tooling consumers
+- [x] Descriptor types: FileDescriptor, package, message, field, enum, enum value
+- [x] Descriptor types: oneof, service, method, extension, options, features
+- [x] Source location & comment tracking in descriptors
+- [x] Encode descriptors to binary
+- [x] Decode descriptors from binary
+- [x] `FileDescriptorSet` roundtrip (serialize/deserialize)
+- [x] Descriptor query APIs for reflection/codegen/tooling consumers
 
 ## Phase 3 — tpt-proto-core: Binary Wire Format Runtime (§7, §8, §20 core parts)
 
-- [ ] Varint encode/decode + zigzag encoding
-- [ ] Tag encode/decode (`field_number << 3 | wire_type`)
-- [ ] Wire types 0/1/2/5 (varint, 64-bit, length-delimited, 32-bit)
-- [ ] Wire types 3/4 (group start/end) for legacy groups
-- [ ] Scalar codecs: int32/int64/uint32/uint64/sint32/sint64/fixed32/fixed64/sfixed32/sfixed64/bool/string/bytes
-- [ ] Packed repeated field encode/decode
-- [ ] Unpacked repeated field encode/decode; accept mixed packed/unpacked on input
-- [ ] Map entry encode/decode (key=field 1, value=field 2); duplicate-entry override semantics
-- [ ] Oneof wire behavior: mutually exclusive fields, last-value-wins
-- [ ] Unknown field handling: preserve (default) / discard / fail policies; re-encodable
-- [ ] Proto2 extensions: ranges, registries, dynamic lookup, encode/decode
-- [ ] Legacy group encode/decode with matching field numbers + usage warnings
-- [ ] Deterministic encoding mode: field order, map order, unknown field order, canonical varints
-- [ ] `DecoderLimits` struct + enforcement (max bytes/depth/fields/strings/etc.)
-- [ ] Checked arithmetic for integer overflow safety
-- [ ] Owned message representation
-- [ ] Borrowed/zero-copy message representation
-- [ ] Bytes-backed message support (shared/sliced buffers)
+- [x] Varint encode/decode + zigzag encoding
+- [x] Tag encode/decode (`field_number << 3 | wire_type`)
+- [x] Wire types 0/1/2/5 (varint, 64-bit, length-delimited, 32-bit)
+- [x] Wire types 3/4 (group start/end) for legacy groups
+- [x] Scalar codecs: int32/int64/uint32/uint64/sint32/sint64/fixed32/fixed64/sfixed32/sfixed64/bool/string/bytes
+- [x] Packed repeated field encode/decode
+- [x] Unpacked repeated field encode/decode; accept mixed packed/unpacked on input
+- [x] Map entry encode/decode (key=field 1, value=field 2); duplicate-entry override semantics
+- [x] Oneof wire behavior: mutually exclusive fields, last-value-wins
+- [x] Unknown field handling: preserve (default) / discard / fail policies; re-encodable
+- [x] Proto2 extensions: ranges, registries, dynamic lookup, encode/decode
+- [x] Legacy group encode/decode with matching field numbers + usage warnings
+- [x] Deterministic encoding mode: field order, map order, unknown field order, canonical varints
+- [x] `DecoderLimits` struct + enforcement (max bytes/depth/fields/strings/etc.)
+- [x] Checked arithmetic for integer overflow safety
+- [x] Owned message representation
+- [x] Borrowed/zero-copy message representation
+- [x] Bytes-backed message support (shared/sliced buffers)
 
 ## Phase 4 — tpt-proto-compiler: Semantic Analysis & Pipeline (§4.3, §6, §16)
 
-- [ ] Compiler pipeline scaffolding: lexing → parsing → AST → import resolution → semantic analysis → feature resolution → descriptor construction → validation → output generation
-- [ ] Import resolution (incl. public/weak import propagation)
-- [ ] Package resolution
-- [ ] Duplicate symbol detection
-- [ ] Field number validation
-- [ ] Reserved range/name validation
-- [ ] Extension range validation
-- [ ] Enum validation (values, aliases, open/closed)
-- [ ] Oneof validation
-- [ ] Map validation
-- [ ] Option validation
-- [ ] Editions: feature defaults, overrides, inheritance, resolution determinism
-- [ ] Editions: proto2-like/proto3-like semantics compatibility mapping
-- [ ] Descriptor generation from validated AST
-- [ ] Diagnostic emission (file/line/column/span/severity/code/message/suggested fix)
-- [ ] Compiler outputs wired up: FileDescriptorSet, diagnostics, lint-report hooks
+- [x] Compiler pipeline scaffolding: lexing → parsing → AST → import resolution → semantic analysis → feature resolution → descriptor construction → validation → output generation
+- [x] Import resolution (incl. public/weak import propagation)
+- [x] Package resolution
+- [x] Duplicate symbol detection
+- [x] Field number validation
+- [x] Reserved range/name validation
+- [x] Extension range validation
+- [x] Enum validation (values, aliases, open/closed)
+- [x] Oneof validation
+- [x] Map validation
+- [x] Option validation
+- [x] Editions: feature defaults, overrides, inheritance, resolution determinism
+- [x] Editions: proto2-like/proto3-like semantics compatibility mapping
+- [x] Descriptor generation from validated AST
+- [x] Diagnostic emission (file/line/column/span/severity/code/message/suggested fix)
+- [x] Compiler outputs wired up: FileDescriptorSet, diagnostics, lint-report hooks
 
 ## Phase 5 — tpt-proto-codegen-rust: Rust Code Generator (§4.4, §9)
 

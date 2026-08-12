@@ -112,8 +112,7 @@ mod tests {
     #[test]
     fn zero_field_rejected() {
         assert!(Tag::new(0, WireType::Varint).is_none());
-        let mut buf = Vec::new();
-        buf.push(0);
+        let buf = vec![0u8];
         assert!(Tag::decode(&buf, 0).is_err());
     }
 }

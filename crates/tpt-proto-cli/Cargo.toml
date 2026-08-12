@@ -20,6 +20,7 @@ tpt-proto-lint = { workspace = true }
 thiserror = { workspace = true }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = "1.0"
+hex = "0.4"
 
 [dev-dependencies]
 tpt-proto-core = { workspace = true }

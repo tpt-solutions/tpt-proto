@@ -76,6 +76,7 @@ impl UnknownFieldSet {
             }
         };
         self.insert(tag.field_number, value);
+        reader.limits().check_unknown(self.encoded_len())?;
         Ok(())
     }
 
@@ -104,33 +105,31 @@ impl UnknownFieldSet {
 }
 
 fn tag_len(field: u32) -> usize {
-    crate::varint::decode_varint(
-        &{
-            let mut b = Vec::new();
-            Tag::new(field, WireType::Varint).unwrap().encode(&mut b);
-            b
-        },
-        0,
-    )
-    .map(|(_, n)| n)
-    .unwrap_or(1)
+    let mut raw = ((field << 3) | WireType::Varint.as_u8() as u32) as u64;
+    let mut n = 1;
+    while raw >= 0x80 {
+        raw >>= 7;
+        n += 1;
+    }
+    n
 }
 
 fn value_len(v: &UnknownValue) -> usize {
     match v {
-        UnknownValue::Varint(x) => {
-            let mut b = Vec::new();
-            crate::varint::encode_varint(*x, &mut b);
-            b.len()
-        }
+        UnknownValue::Varint(x) => varint_len(*x),
         UnknownValue::Fixed32(_) => 4,
         UnknownValue::Fixed64(_) => 8,
-        UnknownValue::LengthDelimited(b) => {
-            let mut tmp = Vec::new();
-            crate::varint::encode_varint(b.len() as u64, &mut tmp);
-            tmp.len() + b.len()
-        }
+        UnknownValue::LengthDelimited(b) => varint_len(b.len() as u64) + b.len(),
     }
+}
+
+fn varint_len(mut v: u64) -> usize {
+    let mut n = 1;
+    while v >= 0x80 {
+        v >>= 7;
+        n += 1;
+    }
+    n
 }
 
 fn write_value(w: &mut Writer, field: u32, v: &UnknownValue) {

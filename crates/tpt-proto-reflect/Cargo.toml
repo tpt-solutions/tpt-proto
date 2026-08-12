@@ -18,3 +18,4 @@ bytes = { workspace = true }
 
 [dev-dependencies]
 tpt-proto-core = { workspace = true }
+tpt-proto-compiler = { workspace = true }

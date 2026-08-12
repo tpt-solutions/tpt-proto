@@ -12,6 +12,7 @@ description = "Rust code generator for protobuf schemas"
 tpt-proto-compiler = { workspace = true }
 tpt-proto-descriptor = { workspace = true }
 tpt-proto-core = { workspace = true }
+tpt-proto-language = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

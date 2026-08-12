@@ -5,8 +5,8 @@
 //! responsibility of the compiler (Phase 4).
 
 use crate::ast::*;
-use crate::diagnostic::{Diagnostic, Diagnostics, ErrorCode, Span, Syntax};
-use crate::lexer::{lex, LexError, Token, TokenKind};
+use crate::diagnostic::{Diagnostic, Diagnostics, ErrorCode, Span};
+use crate::lexer::{lex, Token, TokenKind};
 
 /// Parse result: the file AST and any diagnostics.
 #[derive(Debug, Clone)]
@@ -65,10 +65,6 @@ impl Parser {
         self.tokens.get(self.pos).map(|t| &t.kind)
     }
 
-    fn peek_at(&self, offset: usize) -> Option<&TokenKind> {
-        self.tokens.get(self.pos + offset).map(|t| &t.kind)
-    }
-
     fn advance(&mut self) -> Option<Token> {
         let t = self.tokens.get(self.pos).cloned();
         if t.is_some() {
@@ -90,7 +86,7 @@ impl Parser {
 
     fn is_scalar_keyword(&self) -> bool {
         match self.peek_kind() {
-            Some(TokenKind::Ident(s)) => ScalarType::from_str(s).is_some(),
+            Some(TokenKind::Ident(s)) => ScalarType::from_keyword(s).is_some(),
             _ => false,
         }
     }
@@ -147,6 +143,14 @@ impl Parser {
                 if let Some(s) = self.parse_syntax() {
                     file.syntax = Some(s);
                 }
+            } else if self.at_keyword("edition") {
+                self.advance();
+                self.expect(&TokenKind::Equals);
+                if let Some(TokenKind::Str(s)) = self.peek_kind().cloned() {
+                    self.advance();
+                    file.edition = Some(s);
+                }
+                self.expect(&TokenKind::Semicolon);
             } else if self.at_keyword("package") {
                 self.advance();
                 if let Some(pkg) = self.expect_ident() {
@@ -353,7 +357,7 @@ impl Parser {
     fn parse_type_ref(&mut self) -> Option<TypeRef> {
         let tok = self.peek()?.clone();
         if let TokenKind::Ident(s) = &tok.kind {
-            if let Some(sc) = ScalarType::from_str(s) {
+            if let Some(sc) = ScalarType::from_keyword(s) {
                 self.advance();
                 return Some(TypeRef::Scalar(sc));
             }
@@ -475,12 +479,6 @@ impl Parser {
                 } else {
                     self.recover();
                 }
-            } else if self.at_keyword("optional") || self.at_keyword("required") || self.at_keyword("repeated") {
-                if let Some(f) = self.parse_field() {
-                    msg.fields.push(f);
-                } else {
-                    self.recover();
-                }
             } else if self.is_scalar_keyword() || self.peek_kind() == Some(&TokenKind::Dot) || matches!(self.peek_kind(), Some(TokenKind::Ident(_))) {
                 if let Some(f) = self.parse_field() {
                     msg.fields.push(f);
@@ -577,7 +575,7 @@ impl Parser {
         }
         self.expect(&TokenKind::Equals);
         let value = self.parse_constant()?;
-        let span = self.peek().map(|t| t.span).unwrap_or(Span::default());
+        let span = self.peek().map(|t| t.span).unwrap_or_default();
         Some(ProtoOption { span, name, value })
     }
 
@@ -630,7 +628,7 @@ impl Parser {
                 name: fname,
                 number,
                 ty,
-                label: if label == Label::Singular { Label::Singular } else { label },
+                label,
                 json_name: None,
                 default: None,
                 options: field_options,
@@ -722,7 +720,7 @@ impl Parser {
         if let Some(TokenKind::Str(_)) = self.peek_kind() {
             while let Some(TokenKind::Str(s)) = self.peek_kind().cloned() {
                 self.advance();
-                msg.reserved_names.push(Ident { name: s, span: self.peek().map(|t| t.span).unwrap_or(Span::default()) });
+                msg.reserved_names.push(Ident { name: s, span: self.peek().map(|t| t.span).unwrap_or_default() });
                 if self.peek_kind() == Some(&TokenKind::Comma) {
                     self.advance();
                 } else {
@@ -924,18 +922,10 @@ impl Parser {
                 if let Some(o) = self.parse_option_stmt() {
                     ext.options.push(o);
                 }
-            } else if self.at_keyword("optional") || self.at_keyword("required") || self.at_keyword("repeated") {
-                if let Some(f) = self.parse_field() {
-                    ext.fields.push(f);
-                } else {
-                    self.recover();
-                }
+            } else if let Some(f) = self.parse_field() {
+                ext.fields.push(f);
             } else {
-                if let Some(f) = self.parse_field() {
-                    ext.fields.push(f);
-                } else {
-                    self.recover();
-                }
+                self.recover();
             }
         }
         self.expect(&TokenKind::RBrace);

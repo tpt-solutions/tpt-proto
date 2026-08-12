@@ -91,7 +91,7 @@ pub fn encode_message(w: &mut Writer, field: u32, value: &[u8]) {
 
 /// Read a varint-decoded signed value as `i32`.
 pub fn read_int32(r: &mut Reader) -> crate::Result<i32> {
-    Ok(r.read_varint()? as u64 as i32)
+    Ok(r.read_varint()? as i32)
 }
 
 /// Read a varint-decoded value as `i64`.
@@ -106,7 +106,7 @@ pub fn read_uint32(r: &mut Reader) -> crate::Result<u32> {
 
 /// Read a varint-decoded value as `u64`.
 pub fn read_uint64(r: &mut Reader) -> crate::Result<u64> {
-    Ok(r.read_varint()?)
+    r.read_varint()
 }
 
 /// Read a varint-decoded boolean.

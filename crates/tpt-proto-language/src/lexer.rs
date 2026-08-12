@@ -1,6 +1,5 @@
 //! Lexer for the proto language (tokens, comments, source spans).
 
-use crate::ast::ScalarType;
 use crate::diagnostic::{ErrorCode, Position, Span};
 
 /// A lexical token with its source span.
@@ -325,7 +324,7 @@ impl<'a> Lexer<'a> {
                         b'v' => out.push('\u{000B}'),
                         b'x' => {
                             let h = self.read_hex(2)?;
-                            out.push(h as char);
+                            out.push(char::from_u32(h).unwrap_or('\u{FFFD}'));
                         }
                         b'u' => {
                             let h = self.read_hex(4)?;
@@ -386,10 +385,4 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
         out.push(tok);
     }
     Ok(out)
-}
-
-/// Test helper: classify a keyword/identifier string. Returns the scalar type
-/// if the identifier names a built-in scalar; otherwise `None`.
-pub(crate) fn ident_to_scalar(name: &str) -> Option<ScalarType> {
-    ScalarType::from_str(name)
 }
