@@ -24,9 +24,7 @@ pub fn decode_varint(bytes: &[u8], start: usize) -> crate::Result<(u64, usize)> 
     let mut shift: u32 = 0;
     let mut i = start;
     loop {
-        let byte = *bytes
-            .get(i)
-            .ok_or(crate::Error::UnexpectedEof)?;
+        let byte = *bytes.get(i).ok_or(crate::Error::UnexpectedEof)?;
         if i - start == MAX_VARINT_LEN {
             // 10th byte: only the lowest bit is allowed (bits 63..=69 don't exist).
             if byte & 0x7f > 1 {

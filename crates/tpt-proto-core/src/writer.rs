@@ -51,7 +51,9 @@ impl Writer {
 
     /// Write a tag for `field_number` with the given wire type.
     pub fn write_tag(&mut self, field_number: u32, wire_type: crate::wire_type::WireType) {
-        Tag::new(field_number, wire_type).expect("field number must be non-zero").encode(&mut self.buf);
+        Tag::new(field_number, wire_type)
+            .expect("field number must be non-zero")
+            .encode(&mut self.buf);
     }
 
     /// Write a `u64` varint.

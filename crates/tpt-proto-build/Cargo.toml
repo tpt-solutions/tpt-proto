@@ -11,6 +11,9 @@ description = "build.rs integration for .proto compilation"
 [dependencies]
 tpt-proto-compiler = { workspace = true }
 tpt-proto-codegen-rust = { workspace = true }
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-language = { workspace = true }
+anyhow = "1.0"
 thiserror = { workspace = true }
 
 [dev-dependencies]

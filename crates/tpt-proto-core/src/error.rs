@@ -53,7 +53,10 @@ impl fmt::Display for Error {
             Error::VarintTooLong => write!(f, "varint is longer than 10 bytes"),
             Error::InvalidTag(tag) => write!(f, "invalid field tag: {tag}"),
             Error::LengthLimitExceeded { len } => {
-                write!(f, "length-delimited field length {len} exceeds remaining input")
+                write!(
+                    f,
+                    "length-delimited field length {len} exceeds remaining input"
+                )
             }
             Error::Utf8Error { offset } => {
                 write!(f, "string field contained invalid UTF-8 at byte {offset}")
@@ -71,7 +74,9 @@ impl fmt::Display for Error {
 
 impl From<std::str::Utf8Error> for Error {
     fn from(e: std::str::Utf8Error) -> Self {
-        Error::Utf8Error { offset: e.valid_up_to() }
+        Error::Utf8Error {
+            offset: e.valid_up_to(),
+        }
     }
 }
 

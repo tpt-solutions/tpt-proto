@@ -42,6 +42,28 @@ impl<'a> Reader<'a> {
         &self.limits
     }
 
+    /// The underlying buffer slice this reader reads from.
+    pub fn buf(&self) -> &'a [u8] {
+        self.buf
+    }
+
+    /// The current absolute position within [`Reader::buf`].
+    pub fn set_pos(&mut self, pos: usize) -> crate::Result<()> {
+        if pos > self.buf.len() {
+            return Err(crate::Error::UnexpectedEof);
+        }
+        self.pos = pos;
+        Ok(())
+    }
+
+    /// Return a sub-slice `[start..end)` of the underlying buffer.
+    pub fn buf_slice(&self, start: usize, end: usize) -> crate::Result<&'a [u8]> {
+        if end > self.buf.len() || start > end {
+            return Err(crate::Error::UnexpectedEof);
+        }
+        Ok(&self.buf[start..end])
+    }
+
     /// Bytes remaining in the buffer.
     pub fn remaining(&self) -> usize {
         self.buf.len() - self.pos

@@ -93,22 +93,22 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 5 — tpt-proto-codegen-rust: Rust Code Generator (§4.4, §9)
 
-- [ ] Message struct generation with doc comments
-- [ ] Encode method generation
-- [ ] Decode method generation
+- [x] Message struct generation with doc comments
+- [x] Encode method generation
+- [x] Decode method generation
+- [x] Default value handling in generated code
+- [x] Presence handling (proto3 implicit, proto3 explicit optional, proto2 optional/required, editions-resolved)
+- [x] Unknown field storage/passthrough in generated structs
+- [x] Enum type generation: named values, numeric conversion, unknown values, open/closed semantics, aliases
+- [x] Oneof generation as idiomatic Rust enums
+- [x] Map field generation (idiomatic map types, deterministic-order fallback)
+- [x] Repeated/optional/required field generation
+- [x] Builder generation with validation (required fields, oneof constraints, invalid enum/default values)
+- [x] Reflection metadata hooks generation
+- [x] Service trait generation (ties into gRPC phases)
 - [ ] Borrowed/zero-copy decode method generation
-- [ ] Default value handling in generated code
-- [ ] Presence handling (proto3 implicit, proto3 explicit optional, proto2 optional/required, editions-resolved)
-- [ ] Unknown field storage/passthrough in generated structs
-- [ ] Enum type generation: named values, numeric conversion, unknown values, open/closed semantics, aliases
-- [ ] Oneof generation as idiomatic Rust enums
-- [ ] Map field generation (idiomatic map types, deterministic-order fallback)
-- [ ] Repeated/optional/required field generation
-- [ ] Builder generation with validation (required fields, oneof constraints, invalid enum/default values)
-- [ ] Reflection metadata hooks generation
 - [ ] JSON support hooks generation
 - [ ] Text format support hooks generation
-- [ ] Service trait generation (ties into gRPC phases)
 
 ## Phase 6 — tpt-proto-reflect: Dynamic Messages (§4.6, §11)
 

@@ -12,7 +12,7 @@
 mod error;
 mod limits;
 mod message;
-mod packed;
+pub mod packed;
 mod reader;
 pub mod scalar;
 mod unknown;
@@ -32,6 +32,9 @@ pub use packed::{
 };
 pub use reader::Reader;
 pub use unknown::{UnknownFieldSet, UnknownValue};
-pub use varint::{decode_varint, encode_varint, encode_zigzag32, encode_zigzag64, decode_zigzag32, decode_zigzag64, MAX_VARINT_LEN};
+pub use varint::{
+    decode_varint, decode_zigzag32, decode_zigzag64, encode_varint, encode_zigzag32,
+    encode_zigzag64, MAX_VARINT_LEN,
+};
 pub use wire_type::{Tag, WireType};
 pub use writer::Writer;

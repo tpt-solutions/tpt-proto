@@ -5,11 +5,7 @@ use crate::Reader;
 use crate::Writer;
 
 /// Encode a packed repeated field whose elements are varints.
-pub fn encode_packed_varint<I: IntoIterator<Item = u64>>(
-    w: &mut Writer,
-    field: u32,
-    values: I,
-) {
+pub fn encode_packed_varint<I: IntoIterator<Item = u64>>(w: &mut Writer, field: u32, values: I) {
     let mut inner = Vec::new();
     for v in values {
         crate::varint::encode_varint(v, &mut inner);
@@ -19,11 +15,7 @@ pub fn encode_packed_varint<I: IntoIterator<Item = u64>>(
 }
 
 /// Encode a packed repeated field whose elements are little-endian `u32`.
-pub fn encode_packed_fixed32<I: IntoIterator<Item = u32>>(
-    w: &mut Writer,
-    field: u32,
-    values: I,
-) {
+pub fn encode_packed_fixed32<I: IntoIterator<Item = u32>>(w: &mut Writer, field: u32, values: I) {
     let mut inner = Vec::new();
     for v in values {
         inner.extend_from_slice(&v.to_le_bytes());
@@ -33,11 +25,7 @@ pub fn encode_packed_fixed32<I: IntoIterator<Item = u32>>(
 }
 
 /// Encode a packed repeated field whose elements are little-endian `u64`.
-pub fn encode_packed_fixed64<I: IntoIterator<Item = u64>>(
-    w: &mut Writer,
-    field: u32,
-    values: I,
-) {
+pub fn encode_packed_fixed64<I: IntoIterator<Item = u64>>(w: &mut Writer, field: u32, values: I) {
     let mut inner = Vec::new();
     for v in values {
         inner.extend_from_slice(&v.to_le_bytes());
@@ -67,7 +55,9 @@ where
 pub fn read_packed_fixed32(r: &mut Reader) -> crate::Result<Vec<u32>> {
     let body = r.read_length_delimited()?;
     if body.len() % 4 != 0 {
-        return Err(crate::Error::MalformedInput("packed fixed32 length not a multiple of 4"));
+        return Err(crate::Error::MalformedInput(
+            "packed fixed32 length not a multiple of 4",
+        ));
     }
     let mut out = Vec::with_capacity(body.len() / 4);
     let mut sub = Reader::new(body);
@@ -81,7 +71,9 @@ pub fn read_packed_fixed32(r: &mut Reader) -> crate::Result<Vec<u32>> {
 pub fn read_packed_fixed64(r: &mut Reader) -> crate::Result<Vec<u64>> {
     let body = r.read_length_delimited()?;
     if body.len() % 8 != 0 {
-        return Err(crate::Error::MalformedInput("packed fixed64 length not a multiple of 8"));
+        return Err(crate::Error::MalformedInput(
+            "packed fixed64 length not a multiple of 8",
+        ));
     }
     let mut out = Vec::with_capacity(body.len() / 8);
     let mut sub = Reader::new(body);
@@ -93,12 +85,7 @@ pub fn read_packed_fixed64(r: &mut Reader) -> crate::Result<Vec<u64>> {
 
 /// Encode a single map entry (key=field 1, value=field 2) as a length-delimited
 /// sub-message. `key`/`value` encode the raw (already tagged) field bodies.
-pub fn encode_map_entry(
-    w: &mut Writer,
-    field: u32,
-    key: &[u8],
-    value: &[u8],
-) {
+pub fn encode_map_entry(w: &mut Writer, field: u32, key: &[u8], value: &[u8]) {
     let mut entry = Vec::new();
     entry.extend_from_slice(key);
     entry.extend_from_slice(value);
@@ -130,6 +117,12 @@ pub fn decode_map_entry(body: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>)> {
 }
 
 /// Read the raw bytes of a value of the given wire type (without its tag).
+///
+/// The returned bytes are framed exactly as they appeared on the wire *after*
+/// the field tag, i.e. for `LengthDelimited` they include the length prefix so
+/// the caller can re-parse them with the normal `Reader` helpers (e.g.
+/// `read_string_owned` / `merge_from`). This lets map-entry value decode use the
+/// same code paths as top-level field decode.
 fn read_raw_value(r: &mut Reader, wt: WireType) -> crate::Result<Vec<u8>> {
     match wt {
         WireType::Varint => {
@@ -145,7 +138,20 @@ fn read_raw_value(r: &mut Reader, wt: WireType) -> crate::Result<Vec<u8>> {
             let v = r.read_fixed64()?;
             Ok(v.to_le_bytes().to_vec())
         }
-        WireType::LengthDelimited => Ok(r.read_length_delimited()?.to_vec()),
+        WireType::LengthDelimited => {
+            // Re-collect the length prefix alongside the delimited body so the
+            // caller can re-read it through the ordinary length-delimited path.
+            let start = r.pos();
+            let len = r.read_varint()? as usize;
+            r.limits().check_length(len)?;
+            if r.pos() + len > r.remaining() + r.pos() {
+                return Err(crate::Error::LengthLimitExceeded { len });
+            }
+            let end = r.pos() + len;
+            let framed = r.buf_slice(start, end)?.to_vec();
+            r.set_pos(end)?;
+            Ok(framed)
+        }
         WireType::StartGroup | WireType::EndGroup => {
             Err(crate::Error::UnexpectedWireType { found: wt.as_u8() })
         }
@@ -192,7 +198,9 @@ mod tests {
         let _ = r.read_tag().unwrap();
         let body = r.read_length_delimited().unwrap();
         let (mk, mv) = decode_map_entry(body).unwrap();
-        assert_eq!(mk, b"a");
-        assert_eq!(mv, vec![7u8]);
+        // Values are returned framed exactly as on the wire, so they re-parse
+        // with the ordinary `Reader` helpers (mirrors generated decode paths).
+        assert_eq!(Reader::new(&mk).read_string_owned().unwrap(), "a");
+        assert_eq!(Reader::new(&mv).read_varint().unwrap(), 7);
     }
 }

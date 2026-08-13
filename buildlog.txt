@@ -1,0 +1,2 @@
+   Compiling tpt-proto-codegen-rust v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-codegen-rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.69s

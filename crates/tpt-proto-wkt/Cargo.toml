@@ -11,6 +11,7 @@ description = "Well-known types (Timestamp, Duration, Any, Struct, etc.)"
 [dependencies]
 tpt-proto-core = { workspace = true }
 tpt-proto-descriptor = { workspace = true }
+tpt-proto-reflect = { workspace = true }
 tpt-proto-json = { workspace = true }
 thiserror = { workspace = true }
 

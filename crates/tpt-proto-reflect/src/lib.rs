@@ -166,6 +166,35 @@ impl DescriptorPool {
             .find(|(k, _)| k == &norm || k.ends_with(&format!(".{norm}")))
             .map(|(_, v)| v.clone())
     }
+
+    /// Reverse-lookup the fully-qualified name of a message descriptor held in
+    /// this pool (by `Arc` pointer identity). Used for well-known-type
+    /// detection and `Any` type-URL resolution.
+    pub fn full_name(&self, desc: &Arc<DescriptorProto>) -> Option<String> {
+        self.messages
+            .iter()
+            .find(|(_, d)| Arc::ptr_eq(d, desc))
+            .map(|(k, _)| k.clone())
+    }
+
+    /// Reverse-lookup the fully-qualified name of a message descriptor by value
+    /// equality (used when only a borrowed descriptor is available, e.g. during
+    /// JSON well-known-type detection).
+    pub fn full_name_by_value(&self, desc: &DescriptorProto) -> Option<String> {
+        self.messages
+            .iter()
+            .find(|(_, d)| ***d == *desc)
+            .map(|(k, _)| k.clone())
+    }
+
+    /// Reverse-lookup the fully-qualified name of an enum descriptor held in
+    /// this pool (by `Arc` pointer identity).
+    pub fn enum_full_name(&self, e: &Arc<EnumDescriptorProto>) -> Option<String> {
+        self.enums
+            .iter()
+            .find(|(_, d)| Arc::ptr_eq(d, e))
+            .map(|(k, _)| k.clone())
+    }
 }
 
 fn is_map_entry(desc: &DescriptorProto) -> bool {

@@ -1,0 +1,53 @@
+   Compiling tpt-proto-codegen-rust v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-codegen-rust)
+warning: type `SampleWithOneof_Choice` should have an upper camel case name
+   --> crates\tpt-proto-codegen-rust\tests\sample_generated.rs:530:10
+    |
+530 | pub enum SampleWithOneof_Choice {
+    |          ^^^^^^^^^^^^^^^^^^^^^^ help: convert the identifier to upper camel case: `SampleWithOneofChoice`
+    |
+    = note: `#[warn(non_camel_case_types)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: type `SampleWithOneof_Choice` should have an upper camel case name
+   --> crates\tpt-proto-codegen-rust\tests\./sample_generated.rs:530:10
+    |
+530 | pub enum SampleWithOneof_Choice {
+    |          ^^^^^^^^^^^^^^^^^^^^^^ help: convert the identifier to upper camel case: `SampleWithOneofChoice`
+    |
+    = note: `#[warn(non_camel_case_types)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `tpt-proto-codegen-rust` (test "sample_generated") generated 1 warning
+warning: `tpt-proto-codegen-rust` (test "roundtrip") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.26s
+     Running unittests src\lib.rs (target\debug\deps\tpt_proto_codegen_rust-48d781a4257cc32d.exe)
+
+running 1 test
+test tests::generates_without_error ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\roundtrip.rs (target\debug\deps\roundtrip-82862c775ce5282a.exe)
+
+running 7 tests
+test builder_and_defaults ... ok
+test proto_full_name_hook ... ok
+test roundtrip_collections_packed ... ok
+test roundtrip_oneof ... ok
+test roundtrip_maps ... FAILED
+test roundtrip_scalars_and_nested ... ok
+test unknown_fields_preserved ... ok
+
+failures:
+
+---- roundtrip_maps stdout ----
+
+thread 'roundtrip_maps' (9140) panicked at crates\tpt-proto-codegen-rust\tests\roundtrip.rs:69:48:
+called `Result::unwrap()` on an `Err` value: LengthLimitExceeded { len: 98 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    roundtrip_maps
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tpt-proto-codegen-rust --test roundtrip`

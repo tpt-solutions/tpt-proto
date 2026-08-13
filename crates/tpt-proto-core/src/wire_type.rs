@@ -78,10 +78,10 @@ impl Tag {
         let (raw, n) = crate::varint::decode_varint(bytes, start)?;
         let field_number = (raw >> 3) as u32;
         let wire_value = (raw & 0x7) as u8;
-        let wire_type = WireType::from_u8(wire_value)
-            .ok_or(crate::Error::InvalidTag(raw as u32))?;
-        let tag = Tag::new(field_number, wire_type)
-            .ok_or(crate::Error::InvalidTag(field_number))?;
+        let wire_type =
+            WireType::from_u8(wire_value).ok_or(crate::Error::InvalidTag(raw as u32))?;
+        let tag =
+            Tag::new(field_number, wire_type).ok_or(crate::Error::InvalidTag(field_number))?;
         Ok((tag, n))
     }
 }

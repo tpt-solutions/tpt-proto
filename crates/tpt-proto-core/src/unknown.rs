@@ -99,7 +99,10 @@ impl UnknownFieldSet {
     /// Merge another set into this one.
     pub fn merge_from(&mut self, other: &UnknownFieldSet) {
         for (f, vs) in &other.fields {
-            self.fields.entry(*f).or_default().extend(vs.iter().cloned());
+            self.fields
+                .entry(*f)
+                .or_default()
+                .extend(vs.iter().cloned());
         }
     }
 }
