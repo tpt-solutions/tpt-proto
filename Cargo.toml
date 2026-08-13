@@ -43,12 +43,16 @@ tpt-proto-lint = { path = "crates/tpt-proto-lint", version = "0.1.0" }
 tpt-proto-grpc = { path = "crates/tpt-proto-grpc", version = "0.1.0" }
 
 thiserror = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bytes = "1.5"
 nom = "7.1"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+flate2 = "1.0"
+futures = "0.3"
 
 [profile.release]
 lto = "thin"

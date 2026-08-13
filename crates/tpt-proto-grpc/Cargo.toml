@@ -16,6 +16,11 @@ tpt-proto-reflect = { workspace = true }
 tpt-proto-wkt = { workspace = true }
 tpt-proto-json = { workspace = true }
 thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+flate2 = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 tpt-proto-core = { workspace = true }

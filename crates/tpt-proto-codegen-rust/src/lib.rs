@@ -33,6 +33,9 @@ pub struct GenerateOptions {
     /// namespace (type names are globally unique via their fully-qualified
     /// proto name), which keeps cross-reference paths simple.
     pub module_per_package: bool,
+    /// Emit async gRPC server traits and client stubs for `service` blocks,
+    /// referencing the `tpt_proto_grpc` runtime types.
+    pub grpc: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +425,7 @@ fn field_tyref(f: &FieldDescriptorProto) -> Option<TyRef> {
 /// Generate Rust source code for an entire [`FileDescriptorSet`].
 pub fn generate(
     set: &FileDescriptorSet,
-    _options: &GenerateOptions,
+    options: &GenerateOptions,
 ) -> Result<String, CodegenError> {
     let schema = Schema::build(set);
     let mut out = String::new();
@@ -435,6 +438,14 @@ pub fn generate(
          use __core::packed;\n\
          use std::collections::HashMap;\n\n",
     );
+
+    if options.grpc {
+        out.push_str(
+            "use tpt_proto_grpc as __grpc;\n\
+             use async_trait::async_trait;\n\
+             use __grpc::{Channel, ClientStream, ServerStream};\n\n",
+        );
+    }
 
     // Enums first so messages can reference them. Nested enums are emitted
     // inline by `gen_message` as it recurses, so they stay forward-visible.
@@ -457,10 +468,12 @@ pub fn generate(
         }
     }
 
-    // Services (synchronous placeholder traits; expanded by gRPC codegen).
+    // Services: async gRPC server traits + client stubs when enabled, else a
+    // synchronous placeholder trait.
     for file in &set.file {
+        let pkg = file.package.clone().unwrap_or_default();
         for s in &file.service {
-            out.push_str(&gen_service(s));
+            out.push_str(&gen_service(s, &pkg, options.grpc));
         }
     }
 
@@ -1466,33 +1479,158 @@ fn gen_builder(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
 // Service generation (synchronous placeholder traits).
 // ---------------------------------------------------------------------------
 
-fn gen_service(s: &tpt_proto_descriptor::ServiceDescriptorProto) -> String {
+fn gen_service(
+    s: &tpt_proto_descriptor::ServiceDescriptorProto,
+    pkg: &str,
+    grpc: bool,
+) -> String {
     let name = to_pascal(s.name.as_deref().unwrap_or("Service"));
+    let svc_name = s.name.clone().unwrap_or_default();
+    let full_name = if pkg.is_empty() {
+        svc_name.clone()
+    } else {
+        format!("{pkg}.{svc_name}")
+    };
+
+    if !grpc {
+        return gen_service_placeholder(&name, &svc_name, s);
+    }
+    gen_service_grpc(&name, &full_name, s)
+}
+
+/// Synchronous placeholder trait (used when gRPC generation is disabled).
+fn gen_service_placeholder(
+    name: &str,
+    svc_name: &str,
+    s: &tpt_proto_descriptor::ServiceDescriptorProto,
+) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "/// Service trait for `{}` (synchronous placeholder; expanded by gRPC codegen).\n",
-        s.name.clone().unwrap_or_default()
+        "/// Service trait for `{svc_name}` (synchronous placeholder; enable gRPC codegen for async stubs).\n"
     ));
     out.push_str("#[allow(unused_variables)]\n");
     out.push_str(&format!("pub trait {name} {{\n"));
     for m in &s.method {
         let mname = to_snake(m.name.as_deref().unwrap_or("method"));
-        let req = m
-            .input_type
-            .as_ref()
-            .map(|t| to_rust_type_name(t))
-            .unwrap_or_else(|| "()".to_string());
-        let resp = m
-            .output_type
-            .as_ref()
-            .map(|t| to_rust_type_name(t))
-            .unwrap_or_else(|| "()".to_string());
+        let req = rust_type(m.input_type.as_deref());
+        let resp = rust_type(m.output_type.as_deref());
         out.push_str(&format!(
             "    fn {mname}(&self, req: {req}) -> __core::Result<{resp}>;\n"
         ));
     }
     out.push_str("}\n\n");
     out
+}
+
+/// Async gRPC server trait + client stub.
+fn gen_service_grpc(name: &str, full_name: &str, s: &tpt_proto_descriptor::ServiceDescriptorProto) -> String {
+    let mut out = String::new();
+
+    // ---- Server trait ----
+    out.push_str(&format!(
+        "/// gRPC server trait for `{full_name}`.\n\
+         #[async_trait]\n\
+         #[allow(unused_variables)]\n\
+         pub trait {name}: Send + Sync {{\n"
+    ));
+    for m in &s.method {
+        let mname = to_snake(m.name.as_deref().unwrap_or("method"));
+        let req = rust_type(m.input_type.as_deref());
+        let resp = rust_type(m.output_type.as_deref());
+        let sig = grpc_method_signature(m, &req, &resp);
+        out.push_str(&format!(
+            "    /// Handler for `{full_name}.{mname}`.\n    {sig};\n"
+        ));
+    }
+    out.push_str("}\n\n");
+
+    // ---- Client stub ----
+    out.push_str(&format!(
+        "/// gRPC client stub for `{full_name}`.\n\
+         pub struct {name}Client {{\n    \
+             pub channel: __grpc::Channel,\n\
+         }}\n\n"
+    ));
+    out.push_str(&format!("impl {name}Client {{\n"));
+    out.push_str(
+        "    /// Create a new client stub over the given channel.\n    \
+         pub fn new(channel: __grpc::Channel) -> Self {\n        \
+             Self { channel }\n    }\n",
+    );
+    for m in &s.method {
+        let mname = to_snake(m.name.as_deref().unwrap_or("method"));
+        let req = rust_type(m.input_type.as_deref());
+        let resp = rust_type(m.output_type.as_deref());
+        let path = format!("/{full_name}/{}", m.name.clone().unwrap_or_default());
+        let body = grpc_client_body(m, &req, &resp, &path);
+        let sig = grpc_method_signature(m, &req, &resp);
+        // Client methods take `&self` and a `Request`, returning the same shape
+        // as the server trait (minus `&self`/trait receiver).
+        let client_sig = sig.replace("async fn ", "pub async fn ");
+        out.push_str(&format!(
+            "    /// Call `{full_name}.{mname}`.\n    {client_sig} {{\n{body}    }}\n"
+        ));
+    }
+    out.push_str("}\n\n");
+    out
+}
+
+/// The async method signature shared by the server trait and client stub.
+fn grpc_method_signature(
+    m: &tpt_proto_descriptor::MethodDescriptorProto,
+    req: &str,
+    resp: &str,
+) -> String {
+    let mname = to_snake(m.name.as_deref().unwrap_or("method"));
+    let cs = m.client_streaming.unwrap_or(false);
+    let ss = m.server_streaming.unwrap_or(false);
+    let req_ty = if cs {
+        format!("__grpc::Request<__grpc::ClientStream<{req}>>")
+    } else {
+        format!("__grpc::Request<{req}>")
+    };
+    let ret_ty = if ss {
+        format!("__grpc::Response<__grpc::ServerStream<{resp}>>")
+    } else {
+        format!("__grpc::Response<{resp}>")
+    };
+    format!("async fn {mname}(&self, request: {req_ty}) -> std::result::Result<{ret_ty}, __grpc::Status>")
+}
+
+/// The client-stub method body.
+fn grpc_client_body(
+    m: &tpt_proto_descriptor::MethodDescriptorProto,
+    req: &str,
+    resp: &str,
+    path: &str,
+) -> String {
+    let cs = m.client_streaming.unwrap_or(false);
+    let ss = m.server_streaming.unwrap_or(false);
+    if cs || ss {
+        // Streaming client support is scaffolded; the transport streaming
+        // runtime is implemented in a later phase.
+        return format!(
+            "        Err(__grpc::Status::new(__grpc::Code::Unimplemented, \
+             \"streaming call `{path}` not yet implemented\"))\n"
+        );
+    }
+    format!(
+        "        let (message, trailers) = self.channel\n            \
+             .unary::<{req}, {resp}>(\n                \
+             {path:?},\n                \
+             request.context.metadata.clone(),\n                \
+             &request.message,\n            \
+             )\n            \
+             .await?;\n        \
+             Ok(__grpc::Response::new(message).with_metadata(trailers))\n"
+    )
+}
+
+/// Map a fully-qualified proto type name to a Rust type name, defaulting to
+/// `()` for absent types.
+fn rust_type(t: Option<&str>) -> String {
+    t.map(to_rust_type_name)
+        .unwrap_or_else(|| "()".to_string())
 }
 
 // ---------------------------------------------------------------------------

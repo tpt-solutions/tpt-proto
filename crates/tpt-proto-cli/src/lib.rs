@@ -192,9 +192,12 @@ pub fn compile_set(path: &Path) -> Result<FileDescriptorSet> {
 }
 
 /// Generate Rust source code for a `.proto` file.
-pub fn generate_code(path: &Path) -> Result<String> {
+pub fn generate_code(path: &Path, grpc: bool) -> Result<String> {
     let set = compile_set(path)?;
-    let opts = GenerateOptions::default();
+    let opts = GenerateOptions {
+        grpc,
+        ..Default::default()
+    };
     generate(&set, &opts).map_err(|e| anyhow::anyhow!("codegen error: {e}"))
 }
 

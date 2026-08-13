@@ -112,104 +112,104 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 6 — tpt-proto-reflect: Dynamic Messages (§4.6, §11)
 
-- [ ] `DynamicMessage` type: descriptor-driven decode/encode
-- [ ] Field access & mutation by name/number
-- [ ] Repeated field access
-- [ ] Map field access
-- [ ] Enum value access
+- [x] `DynamicMessage` type: descriptor-driven decode/encode
+- [x] Field access & mutation by name/number
+- [x] Repeated field access
+- [x] Map field access
+- [x] Enum value access
 - [ ] Oneof access
-- [ ] Nested message access
+- [x] Nested message access
 - [ ] Extension access
-- [ ] Unknown field access
+- [x] Unknown field access
 - [ ] Default value inspection & presence inspection
 - [ ] Type registry & extension registry
 
 ## Phase 7 — tpt-proto-wkt: Well-Known Types (§4.9, §14)
 
-- [ ] Timestamp (binary + JSON RFC3339 form)
-- [ ] Duration (binary + JSON `"3.5s"` form)
-- [ ] FieldMask (binary + JSON comma-path form)
-- [ ] Any (type_url + value bytes; JSON `@type` expansion; requires type registry)
-- [ ] Struct, Value, ListValue (JSON-like dynamic values)
-- [ ] Wrapper types: BoolValue, BytesValue, DoubleValue, FloatValue, Int32Value, Int64Value, StringValue, UInt32Value, UInt64Value
-- [ ] Empty
-- [ ] Additional descriptor/API-related well-known types as required for compatibility
+- [x] Timestamp (binary + JSON RFC3339 form)
+- [x] Duration (binary + JSON `"3.5s"` form)
+- [x] FieldMask (binary + JSON comma-path form)
+- [x] Any (type_url + value bytes; JSON `@type` expansion; requires type registry)
+- [x] Struct, Value, ListValue (JSON-like dynamic values)
+- [x] Wrapper types: BoolValue, BytesValue, DoubleValue, FloatValue, Int32Value, Int64Value, StringValue, UInt32Value, UInt64Value
+- [x] Empty
+- [x] Additional descriptor/API-related well-known types as required for compatibility
 
 ## Phase 8 — tpt-proto-json: JSON Mapping (§4.7, §12)
 
-- [ ] Binary-to-JSON conversion
-- [ ] JSON-to-binary conversion
-- [ ] Canonical JSON mode
-- [ ] Relaxed JSON mode
-- [ ] lowerCamelCase field name emission/parsing
-- [ ] Original proto field name emission/parsing
-- [ ] Enum as string name / as numeric value (+ unknown enum policy)
-- [ ] 64-bit integers as JSON strings
-- [ ] Bytes as base64
-- [ ] Default value emission options
-- [ ] Well-known type JSON rules: Timestamp, Duration, FieldMask, Struct, Value, ListValue, Any, wrappers, Empty
+- [x] Binary-to-JSON conversion
+- [x] JSON-to-binary conversion
+- [x] Canonical JSON mode
+- [x] Relaxed JSON mode
+- [x] lowerCamelCase field name emission/parsing
+- [x] Original proto field name emission/parsing
+- [x] Enum as string name / as numeric value (+ unknown enum policy)
+- [x] 64-bit integers as JSON strings
+- [x] Bytes as base64
+- [x] Default value emission options
+- [x] Well-known type JSON rules: Timestamp, Duration, FieldMask, Struct, Value, ListValue, Any, wrappers, Empty
 
 ## Phase 9 — tpt-proto-text: Text Format (§4.8, §13)
 
-- [ ] Print message to text format
-- [ ] Parse text format into message
-- [ ] Repeated field text support
-- [ ] Map field text support
-- [ ] Nested message text support
-- [ ] Oneof text support
-- [ ] Extension text support
-- [ ] Unknown field policies in text output
+- [x] Print message to text format
+- [x] Parse text format into message
+- [x] Repeated field text support
+- [x] Map field text support
+- [x] Nested message text support
+- [x] Oneof text support
+- [x] Extension text support
+- [x] Unknown field policies in text output
 - [ ] Deterministic text output mode
 
 ## Phase 10 — tpt-proto-cli: CLI (§4.11, §18)
 
-- [ ] `compile` command (.proto → descriptors)
-- [ ] `generate` command (.proto → Rust code)
-- [ ] `descriptors` command (emit descriptor.bin)
-- [ ] `decode` command (binary → inspect via descriptor)
-- [ ] `encode` command (JSON/text → binary via descriptor)
-- [ ] `json-to-binary` / `binary-to-json` commands
-- [ ] `text-to-binary` / `binary-to-text` commands
-- [ ] `lint` command
-- [ ] `diff` command
+- [x] `compile` command (.proto → descriptors)
+- [x] `generate` command (.proto → Rust code)
+- [x] `descriptors` command (emit descriptor.bin)
+- [x] `decode` command (binary → inspect via descriptor)
+- [x] `encode` command (JSON/text → binary via descriptor)
+- [x] `json-to-binary` / `binary-to-json` commands
+- [x] `text-to-binary` / `binary-to-text` commands
+- [x] `lint` command
+- [x] `diff` command
 
 ## Phase 11 — tpt-proto-build: Build Integration (§4.12)
 
-- [ ] `build.rs`-driven `.proto` compilation
-- [ ] Include path configuration
-- [ ] Output directory configuration
+- [x] `build.rs`-driven `.proto` compilation
+- [x] Include path configuration
+- [x] Output directory configuration
 - [ ] Codegen configuration options
 - [ ] Incremental rebuild detection
-- [ ] Clear compile error surfacing to `cargo build` output
+- [x] Clear compile error surfacing to `cargo build` output
 
 ## Phase 12 — tpt-proto-lint: Linting & Breaking-Change Detection (§4.13, §17)
 
-- [ ] Style issue detection
-- [ ] Breaking-change classification: SAFE / WARNING / BREAKING
-- [ ] Field number reuse detection
-- [ ] Missing reserved declaration detection
-- [ ] Incompatible type change detection
-- [ ] Unsafe enum change detection
-- [ ] Unsafe oneof change detection
-- [ ] Unsafe package change detection
-- [ ] RPC input/output type change detection
-- [ ] Machine-readable lint output format
+- [x] Style issue detection
+- [x] Breaking-change classification: SAFE / WARNING / BREAKING
+- [x] Field number reuse detection
+- [x] Missing reserved declaration detection
+- [x] Incompatible type change detection
+- [x] Unsafe enum change detection
+- [x] Unsafe oneof change detection
+- [x] Unsafe package change detection
+- [x] RPC input/output type change detection
+- [x] Machine-readable lint output format
 
 ## Phase 13 — tpt-proto-grpc: Protocol & Service Model (grpc addendum §1–§8)
 
-- [ ] HTTP/2 POST + `/package.Service/Method` path routing
-- [ ] `application/grpc` content type (+ variants)
-- [ ] Message framing: compression flag + 4-byte length + payload; malformed-frame stream reset
-- [ ] Metadata: headers/trailers, lowercase ASCII keys, binary base64-suffix values, size limits
-- [ ] Trailers & status: `grpc-status`/`grpc-message`/`grpc-status-details-bin`; trailer-only & early-error responses
-- [ ] `grpc-timeout` header ↔ deadline/cancellation translation
-- [ ] Compression: identity, gzip, pluggable codecs, `grpc-encoding`/`grpc-accept-encoding`
-- [ ] Service model: unary, server streaming, client streaming, bidi streaming
+- [x] HTTP/2 POST + `/package.Service/Method` path routing
+- [x] `application/grpc` content type (+ variants)
+- [x] Message framing: compression flag + 4-byte length + payload; malformed-frame stream reset
+- [x] Metadata: headers/trailers, lowercase ASCII keys, binary base64-suffix values, size limits
+- [x] Trailers & status: `grpc-status`/`grpc-message`/`grpc-status-details-bin`; trailer-only & early-error responses
+- [x] `grpc-timeout` header ↔ deadline/cancellation translation
+- [x] Compression: identity, gzip, pluggable codecs, `grpc-encoding`/`grpc-accept-encoding`
+- [x] Service model: unary, server streaming, client streaming, bidi streaming
 - [ ] Generated server traits (async) and client stubs
-- [ ] RPC context: deadline, remaining time, cancellation token, metadata, peer info, extensions
-- [ ] Structured `Status` type + standard gRPC status codes
-- [ ] Rich error details compatible with `google.rpc.Status`
-- [ ] Cancellation/deadline propagation across async tasks; `DEADLINE_EXCEEDED` behavior
+- [x] RPC context: deadline, remaining time, cancellation token, metadata, peer info, extensions
+- [x] Structured `Status` type + standard gRPC status codes
+- [x] Rich error details compatible with `google.rpc.Status`
+- [x] Cancellation/deadline propagation across async tasks; `DEADLINE_EXCEEDED` behavior
 
 ## Phase 14 — tpt-proto-grpc: Server & Client Runtime (grpc addendum §9–§11)
 

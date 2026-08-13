@@ -1,0 +1,10 @@
+syntax = "proto3";
+package ex;
+
+message Ping { string msg = 1; }
+message Pong { string msg = 1; }
+
+service Echo {
+  rpc Unary(Ping) returns (Pong);
+}
+

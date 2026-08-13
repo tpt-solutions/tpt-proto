@@ -34,6 +34,9 @@ enum Command {
         /// Optional output file (defaults to stdout).
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Emit async gRPC server traits and client stubs.
+        #[arg(long)]
+        grpc: bool,
     },
     /// Emit the serialized `FileDescriptorSet` for a `.proto` file.
     Descriptors {
@@ -143,8 +146,8 @@ fn main() -> Result<()> {
                 describe(&fd);
             }
         }
-        Command::Generate { proto, out } => {
-            let code = generate_code(&proto)?;
+        Command::Generate { proto, out, grpc } => {
+            let code = generate_code(&proto, grpc)?;
             if let Some(out) = out {
                 std::fs::write(&out, &code)?;
                 println!("wrote {}", out.display());
