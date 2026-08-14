@@ -12,7 +12,8 @@ use tpt_proto_core::{
 };
 use tpt_proto_core::UnknownFieldSet;
 use tpt_proto_descriptor::{
-    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FieldType, FileDescriptorProto, Label,
+    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FieldType, FileDescriptorProto,
+    FileDescriptorSet, Label,
 };
 
 /// A scalar value as stored in a dynamic message.
@@ -54,6 +55,8 @@ pub struct DynamicMessage {
     pub descriptor: Arc<DescriptorProto>,
     /// Field values keyed by field number.
     pub fields: BTreeMap<i32, Value>,
+    /// Extension field values keyed by field number (proto2 extensions).
+    pub extensions: BTreeMap<i32, Value>,
     /// Unknown fields preserved during decode.
     pub unknown: UnknownFieldSet,
     /// The descriptor pool used to resolve nested types.
@@ -93,23 +96,63 @@ impl From<tpt_proto_core::Error> for ReflectError {
 }
 
 /// A pool of descriptors used to resolve type references by name.
+///
+/// It acts as both a **type registry** (messages/enums by fully-qualified
+/// name) and an **extension registry** (extension fields by field number).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DescriptorPool {
     messages: std::collections::HashMap<String, Arc<DescriptorProto>>,
     enums: std::collections::HashMap<String, Arc<EnumDescriptorProto>>,
+    /// Registered extension fields keyed by their field number.
+    extensions: std::collections::HashMap<i32, Arc<FieldDescriptorProto>>,
+    /// The syntax of the file this pool was built from (`"proto2"`,
+    /// `"proto3"`, or an editions edition string).
+    pub syntax: String,
 }
 
 impl DescriptorPool {
+    /// Build a pool from a set of file descriptors, indexing all (nested)
+    /// messages and enums by fully-qualified name, and all (nested) extensions
+    /// by field number. The pool's `syntax` is taken from the first file that
+    /// declares one.
+    pub fn from_set(set: &FileDescriptorSet) -> DescriptorPool {
+        let mut pool = DescriptorPool::default();
+        for file in &set.file {
+            if pool.syntax.is_empty() {
+                pool.syntax = file.syntax.clone().unwrap_or_else(|| "proto3".to_string());
+            }
+            let pkg = file.package.as_deref().unwrap_or("");
+            for m in &file.message_type {
+                pool.index_message(m, pkg);
+            }
+            for e in &file.enum_type {
+                pool.index_enum(e, pkg);
+            }
+            for x in &file.extension {
+                pool.index_extension(x, pkg);
+            }
+        }
+        if pool.syntax.is_empty() {
+            pool.syntax = "proto3".to_string();
+        }
+        pool
+    }
+
     /// Build a pool from a file descriptor, indexing all (nested) messages and
-    /// enums by fully-qualified name.
+    /// enums by fully-qualified name, and all (nested) extensions by field
+    /// number.
     pub fn from_file(file: &FileDescriptorProto) -> DescriptorPool {
         let mut pool = DescriptorPool::default();
+        pool.syntax = file.syntax.clone().unwrap_or_else(|| "proto3".to_string());
         let pkg = file.package.as_deref().unwrap_or("");
         for m in &file.message_type {
             pool.index_message(m, pkg);
         }
         for e in &file.enum_type {
             pool.index_enum(e, pkg);
+        }
+        for x in &file.extension {
+            pool.index_extension(x, pkg);
         }
         pool
     }
@@ -128,7 +171,22 @@ impl DescriptorPool {
             for e in &m.enum_type {
                 self.index_enum(e, &fqn);
             }
+            for x in &m.extension {
+                self.index_extension(x, &fqn);
+            }
         }
+    }
+
+    fn index_extension(&mut self, x: &FieldDescriptorProto, prefix: &str) {
+        if let Some(n) = x.number {
+            self.extensions.insert(n, Arc::new(x.clone()));
+        }
+        let _ = prefix;
+    }
+
+    /// Look up a registered extension field by its field number.
+    pub fn get_extension(&self, number: i32) -> Option<Arc<FieldDescriptorProto>> {
+        self.extensions.get(&number).cloned()
     }
 
     fn index_enum(&mut self, e: &EnumDescriptorProto, prefix: &str) {
@@ -197,6 +255,154 @@ impl DescriptorPool {
     }
 }
 
+/// Returns whether `number` falls within one of the message's extension
+/// ranges (inclusive on both ends, per descriptor conventions).
+fn in_extension_range(desc: &DescriptorProto, number: i32) -> bool {
+    desc.extension_range
+        .iter()
+        .any(|r| number >= r.start && number <= r.end)
+}
+
+/// Whether a field has explicit presence semantics in the wire/dynamic model.
+///
+/// Messages and oneof members always have presence; proto2 `optional`/`required`
+/// and proto3 explicit `optional` do; proto3 implicit scalar `optional` fields
+/// do not.
+fn field_has_presence(syntax: &str, f: &FieldDescriptorProto) -> bool {
+    if f.label == Some(Label::Required) {
+        return true;
+    }
+    if f.oneof_index.is_some() {
+        return true;
+    }
+    if f.r#type == Some(FieldType::Message) || f.r#type == Some(FieldType::Group) {
+        return true;
+    }
+    if f.proto3_optional == Some(true) {
+        return true;
+    }
+    if syntax == "proto2" && f.label == Some(Label::Optional) {
+        return true;
+    }
+    false
+}
+
+/// Compute the default value for a field descriptor.
+fn default_value_for(pool: &DescriptorPool, f: &FieldDescriptorProto) -> Value {
+    if f.label == Some(Label::Repeated) {
+        let is_map = f.r#type == Some(FieldType::Message)
+            && f.type_name
+                .as_deref()
+                .and_then(|t| pool.lookup_message(t))
+                .map(|d| is_map_entry(&d))
+                .unwrap_or(false);
+        return if is_map { Value::Map(Vec::new()) } else { Value::List(Vec::new()) };
+    }
+    if let Some(FieldType::Message) | Some(FieldType::Group) = f.r#type {
+        if let Some(d) = f.type_name.as_deref().and_then(|t| pool.lookup_message(t)) {
+            return Value::Message(DynamicMessage::new(d, pool.clone()));
+        }
+    }
+    match f.r#type {
+        Some(FieldType::Enum) => Value::Enum(parse_enum_default(pool, f)),
+        Some(t) => Value::Scalar(parse_scalar_default(t, f.default_value.as_deref())),
+        None => Value::Scalar(ScalarValue::I64(0)),
+    }
+}
+
+fn parse_enum_default(pool: &DescriptorPool, f: &FieldDescriptorProto) -> i32 {
+    if let Some(name) = f.default_value.as_deref() {
+        if let Some(e) = f.type_name.as_deref().and_then(|t| pool.lookup_enum(t)) {
+            if let Some(v) = e.find_value_by_name(name) {
+                return v.number.unwrap_or(0);
+            }
+        }
+        if let Ok(n) = name.parse::<i32>() {
+            return n;
+        }
+    }
+    0
+}
+
+fn parse_scalar_default(t: FieldType, default: Option<&str>) -> ScalarValue {
+    let dv = default.unwrap_or("");
+    match t {
+        FieldType::Int32 => ScalarValue::I64(dv.parse().unwrap_or(0)),
+        FieldType::Int64 => ScalarValue::I64(dv.parse().unwrap_or(0)),
+        FieldType::Sint32 => ScalarValue::I64(dv.parse().unwrap_or(0)),
+        FieldType::Sint64 => ScalarValue::I64(dv.parse().unwrap_or(0)),
+        FieldType::Uint32 => ScalarValue::U64(dv.parse().unwrap_or(0)),
+        FieldType::Uint64 => ScalarValue::U64(dv.parse().unwrap_or(0)),
+        FieldType::Fixed32 => ScalarValue::U64(dv.parse().unwrap_or(0)),
+        FieldType::Fixed64 => ScalarValue::U64(dv.parse().unwrap_or(0)),
+        FieldType::Sfixed32 => ScalarValue::I64(dv.parse().unwrap_or(0)),
+        FieldType::Sfixed64 => ScalarValue::I64(dv.parse().unwrap_or(0)),
+        FieldType::Bool => ScalarValue::Bool(dv == "true"),
+        FieldType::Float => ScalarValue::F64(parse_float(dv)),
+        FieldType::Double => ScalarValue::F64(parse_float(dv)),
+        FieldType::String => ScalarValue::String(dv.to_string()),
+        FieldType::Bytes => ScalarValue::Bytes(parse_bytes_default(dv)),
+        _ => ScalarValue::I64(0),
+    }
+}
+
+fn parse_float(s: &str) -> f64 {
+    match s {
+        "inf" | "infinity" | "+inf" | "+infinity" => f64::INFINITY,
+        "-inf" | "-infinity" => f64::NEG_INFINITY,
+        "nan" | "+nan" | "-nan" => f64::NAN,
+        _ => s.parse().unwrap_or(0.0),
+    }
+}
+
+fn parse_bytes_default(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 1;
+            match bytes[i] {
+                b'n' => out.push(b'\n'),
+                b'r' => out.push(b'\r'),
+                b't' => out.push(b'\t'),
+                b'\\' => out.push(b'\\'),
+                b'\'' => out.push(b'\''),
+                b'"' => out.push(b'"'),
+                b'0'..=b'7' => {
+                    let mut v = 0u32;
+                    let mut count = 0;
+                    while count < 3 && i < bytes.len() && bytes[i].is_ascii_digit() && (bytes[i] - b'0') < 8 {
+                        v = v * 8 + (bytes[i] - b'0') as u32;
+                        i += 1;
+                        count += 1;
+                    }
+                    out.push(v as u8);
+                    i -= 1;
+                }
+                b'x' if i + 1 < bytes.len() => {
+                    let mut v = 0u32;
+                    let mut count = 0;
+                    i += 1;
+                    while count < 2 && i < bytes.len() && bytes[i].is_ascii_hexdigit() {
+                        v = v * 16 + bytes[i].to_ascii_lowercase() as char as u32 - b'0' as u32
+                            + if bytes[i].is_ascii_digit() { 0 } else { 87 };
+                        i += 1;
+                        count += 1;
+                    }
+                    out.push(v as u8);
+                    i -= 1;
+                }
+                other => out.push(other),
+            }
+        } else {
+            out.push(bytes[i]);
+        }
+        i += 1;
+    }
+    out
+}
+
 fn is_map_entry(desc: &DescriptorProto) -> bool {
     desc.options
         .as_deref()
@@ -241,6 +447,7 @@ impl DynamicMessage {
         DynamicMessage {
             descriptor,
             fields: BTreeMap::new(),
+            extensions: BTreeMap::new(),
             unknown: UnknownFieldSet::new(),
             pool,
         }
@@ -251,9 +458,17 @@ impl DynamicMessage {
         let mut msg = DynamicMessage::new(descriptor.clone(), pool.clone());
         while !reader.is_empty() {
             let tag = reader.read_tag()?;
-            if let Some(field) = descriptor.field.iter().find(|f| f.number == Some(tag.field_number as i32)) {
+            let number = tag.field_number as i32;
+            if let Some(field) = descriptor.field.iter().find(|f| f.number == Some(number)) {
                 let val = decode_one(pool, field, tag.wire_type, reader)?;
                 insert_field(&mut msg, field, val);
+            } else if in_extension_range(&descriptor, number) {
+                if let Some(ext) = pool.get_extension(number) {
+                    let val = decode_one(pool, &ext, tag.wire_type, reader)?;
+                    msg.extensions.insert(ext.number.unwrap_or(number), val);
+                    continue;
+                }
+                msg.unknown.store(tag, reader)?;
             } else {
                 msg.unknown.store(tag, reader)?;
             }
@@ -273,6 +488,13 @@ impl DynamicMessage {
                 .ok_or(ReflectError::UnknownField(*number))?;
             encode_field(&self.pool, field, value, &mut w)?;
         }
+        for (number, value) in &self.extensions {
+            let field = self
+                .pool
+                .get_extension(*number)
+                .ok_or(ReflectError::UnknownField(*number))?;
+            encode_field(&self.pool, &field, value, &mut w)?;
+        }
         self.unknown.encode(&mut w);
         Ok(w.into_vec())
     }
@@ -287,8 +509,25 @@ impl DynamicMessage {
         self.fields.get_mut(&number)
     }
 
-    /// Set a field value by number.
+    /// Set a field value by number. If the field belongs to a oneof, the other
+    /// members of that oneof are cleared first (mutually exclusive).
     pub fn set_field(&mut self, number: i32, value: Value) {
+        if let Some(f) = self.descriptor.find_field_by_number(number) {
+            if let Some(oi) = f.oneof_index {
+                let members: Vec<i32> = self
+                    .descriptor
+                    .field
+                    .iter()
+                    .filter(|g| g.oneof_index == Some(oi))
+                    .filter_map(|g| g.number)
+                    .collect();
+                for mem in members {
+                    if mem != number {
+                        self.fields.remove(&mem);
+                    }
+                }
+            }
+        }
         self.fields.insert(number, value);
     }
 
@@ -298,6 +537,87 @@ impl DynamicMessage {
             Some(Value::Scalar(s)) => Some(s),
             _ => None,
         }
+    }
+
+    /// Get an extension value by field number.
+    pub fn get_extension(&self, number: i32) -> Option<&Value> {
+        self.extensions.get(&number)
+    }
+
+    /// Get a mutable extension value by field number.
+    pub fn get_extension_mut(&mut self, number: i32) -> Option<&mut Value> {
+        self.extensions.get_mut(&number)
+    }
+
+    /// Set an extension value by field number.
+    pub fn set_extension(&mut self, number: i32, value: Value) {
+        self.extensions.insert(number, value);
+    }
+
+    /// Determine which field of a oneof is currently set, returning its field
+    /// number, or `None` if the oneof is empty.
+    pub fn which_oneof(&self, oneof_index: i32) -> Option<i32> {
+        self.descriptor
+            .field
+            .iter()
+            .find(|f| f.oneof_index == Some(oneof_index) && self.fields.contains_key(&f.number.unwrap_or(0)))
+            .and_then(|f| f.number)
+    }
+
+    /// Clear a regular field (and, if it belongs to a oneof, the whole oneof).
+    pub fn clear_field(&mut self, number: i32) {
+        if let Some(f) = self.descriptor.find_field_by_number(number) {
+            if let Some(oi) = f.oneof_index {
+                let members: Vec<i32> = self
+                    .descriptor
+                    .field
+                    .iter()
+                    .filter(|g| g.oneof_index == Some(oi))
+                    .filter_map(|g| g.number)
+                    .collect();
+                for m in members {
+                    self.fields.remove(&m);
+                }
+                return;
+            }
+        }
+        self.fields.remove(&number);
+    }
+
+    /// Returns `true` if the field is currently present (set), honouring
+    /// presence semantics: repeated/map fields are "present" when non-empty,
+    /// oneof members only when they are the active member, and other fields
+    /// when they appear in the set of values.
+    pub fn has_field(&self, number: i32) -> bool {
+        match self.descriptor.find_field_by_number(number) {
+            Some(f) if f.label == Some(Label::Repeated) => match self.fields.get(&number) {
+                Some(Value::List(l)) => !l.is_empty(),
+                Some(Value::Map(m)) => !m.is_empty(),
+                _ => false,
+            },
+            Some(f) if f.oneof_index.is_some() => self.which_oneof(f.oneof_index.unwrap()).map_or(false, |active| active == number),
+            _ => self.fields.contains_key(&number),
+        }
+    }
+
+    /// Whether a field has explicit presence semantics (proto2 optional/
+    /// required, proto3 explicit `optional`, oneof members, and message fields).
+    /// Proto3 implicit scalar fields do not.
+    pub fn field_has_presence(&self, number: i32) -> bool {
+        match self.descriptor.find_field_by_number(number) {
+            Some(f) => field_has_presence(&self.pool.syntax, f),
+            None => false,
+        }
+    }
+
+    /// Return the default value for a field, per its descriptor. Scalar defaults
+    /// honour an explicit `default` value in the schema; enums default to `0`
+    /// (or the named default); messages default to an empty message; repeated
+    /// and map fields default to empty.
+    pub fn default_field_value(&self, number: i32) -> Option<Value> {
+        self.descriptor
+            .find_field_by_number(number)
+            .map(|f| default_value_for(&self.pool, f))
     }
 }
 
@@ -367,7 +687,10 @@ fn decode_one(
                 .ok_or(ReflectError::UnresolvedType(
                     field.type_name.clone().unwrap_or_default(),
                 ))?;
-            let dm = DynamicMessage::decode(pool, sub, &mut Reader::new(body))?;
+            // Propagate depth so `max_depth` is enforced across the whole
+            // nesting chain (a fresh `Reader::new` would reset depth to 0).
+            let mut sub_reader = reader.nested(body)?;
+            let dm = DynamicMessage::decode(pool, sub, &mut sub_reader)?;
             Ok(Value::Message(dm))
         }
         FieldType::Enum => Ok(Value::Enum(scalar::read_int32(reader)?)),
@@ -477,7 +800,7 @@ fn write_scalar_value(w: &mut Writer, t: FieldType, value: &Value) -> Result<(),
         (FieldType::Fixed64, Value::Scalar(ScalarValue::U64(x))) => w.write_fixed64(*x),
         (FieldType::Sfixed64, Value::Scalar(ScalarValue::I64(x))) => w.write_fixed64(*x as u64),
         (FieldType::Float, Value::Scalar(ScalarValue::F64(x))) => w.write_fixed32((*x as f32).to_bits()),
-        (FieldType::Double, Value::Scalar(ScalarValue::F64(x))) => w.write_fixed64(*x as u64),
+        (FieldType::Double, Value::Scalar(ScalarValue::F64(x))) => w.write_fixed64(x.to_bits()),
         (FieldType::Bool, Value::Scalar(ScalarValue::Bool(b))) => w.write_varint(*b as u64),
         (FieldType::String, Value::Scalar(ScalarValue::String(s))) => w.write_length_delimited(s.as_bytes()),
         (FieldType::Bytes, Value::Scalar(ScalarValue::Bytes(b))) => w.write_length_delimited(b),
@@ -578,5 +901,93 @@ message Person {
         assert!(!dm.unknown.is_empty());
         let re = dm.encode().unwrap();
         assert_eq!(re, bytes);
+    }
+
+    fn pool_and(src: &str, msg: &str) -> (DescriptorPool, Arc<DescriptorProto>) {
+        use tpt_proto_language::parse_file;
+        let parsed = parse_file("t.proto", src);
+        assert!(!parsed.diagnostics.has_errors(), "parse: {:?}", parsed.diagnostics.iter().collect::<Vec<_>>());
+        let (fd, diags) = compile(&parsed.file);
+        assert!(!diags.has_errors(), "compile: {:?}", diags.iter().collect::<Vec<_>>());
+        let pool = DescriptorPool::from_file(&fd);
+        let m = pool.lookup_message(msg).unwrap();
+        (pool, m)
+    }
+
+    #[test]
+    fn oneof_access_and_presence() {
+        let (pool, m) = pool_and_person();
+        let mut dm = DynamicMessage::new(m.clone(), pool.clone());
+        // proto3 implicit scalar has no presence.
+        assert!(!dm.field_has_presence(2));
+        // oneof starts empty.
+        assert_eq!(dm.which_oneof(0), None);
+        assert!(!dm.has_field(5));
+        dm.set_field(5, Value::Scalar(ScalarValue::String("e".into())));
+        assert_eq!(dm.which_oneof(0), Some(5));
+        assert!(dm.has_field(5));
+        // Setting the other member clears the first.
+        dm.set_field(6, Value::Scalar(ScalarValue::String("p".into())));
+        assert_eq!(dm.which_oneof(0), Some(6));
+        assert!(!dm.has_field(5));
+        dm.clear_field(6);
+        assert_eq!(dm.which_oneof(0), None);
+    }
+
+    #[test]
+    fn default_value_inspection() {
+        let src = r#"
+syntax = "proto2";
+package p2;
+message Foo {
+  optional int32 a = 1 [default = 42];
+  required string b = 2;
+  optional bool c = 3;
+}
+"#;
+        let (pool, m) = pool_and(src, "p2.Foo");
+        let dm = DynamicMessage::new(m.clone(), pool.clone());
+        assert!(dm.field_has_presence(1));
+        assert!(dm.field_has_presence(3));
+        assert!(!dm.has_field(1));
+        assert_eq!(dm.default_field_value(1), Some(Value::Scalar(ScalarValue::I64(42))));
+        assert_eq!(dm.default_field_value(2), Some(Value::Scalar(ScalarValue::String(String::new()))));
+        assert_eq!(dm.default_field_value(3), Some(Value::Scalar(ScalarValue::Bool(false))));
+    }
+
+    #[test]
+    fn extension_roundtrip() {
+        use tpt_proto_core::Reader;
+        use tpt_proto_descriptor::{
+            DescriptorProto, ExtensionRange, FieldDescriptorProto, FieldType, FileDescriptorProto, Label,
+        };
+        let mut msg = DescriptorProto::default();
+        msg.name = Some("M".into());
+        msg.extension_range.push(ExtensionRange { start: 100, end: 200 });
+
+        let mut ext = FieldDescriptorProto::default();
+        ext.name = Some("ext_i".into());
+        ext.number = Some(100);
+        ext.label = Some(Label::Optional);
+        ext.r#type = Some(FieldType::Int32);
+        ext.extendee = Some(".M".into());
+
+        let mut fd = FileDescriptorProto::default();
+        fd.name = Some("m.proto".into());
+        fd.package = Some("p".into());
+        fd.message_type.push(msg);
+        fd.extension.push(ext);
+
+        let pool = DescriptorPool::from_file(&fd);
+        let m = pool.lookup_message("p.M").unwrap();
+        assert!(pool.get_extension(100).is_some());
+
+        let mut dm = DynamicMessage::new(m.clone(), pool.clone());
+        dm.set_extension(100, Value::Scalar(ScalarValue::I64(7)));
+        let bytes = dm.encode().unwrap();
+
+        let mut r = Reader::new(&bytes);
+        let decoded = DynamicMessage::decode(&pool, m, &mut r).unwrap();
+        assert_eq!(decoded.get_extension(100), Some(&Value::Scalar(ScalarValue::I64(7))));
     }
 }

@@ -1,0 +1,29 @@
+[package]
+name = "tpt-proto-bench"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Performance benchmarks for the tpt-proto ecosystem (Phase 18)"
+publish = false
+
+[dependencies]
+tpt-proto-core = { workspace = true }
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-language = { workspace = true }
+tpt-proto-compiler = { workspace = true }
+tpt-proto-reflect = { workspace = true }
+tpt-proto-json = { workspace = true }
+tpt-proto-grpc = { workspace = true }
+serde_json = { workspace = true }
+
+[[bench]]
+name = "wire"
+harness = false
+
+[[bench]]
+name = "dynamic_json"
+harness = false
+
+[[bench]]
+name = "grpc"
+harness = false

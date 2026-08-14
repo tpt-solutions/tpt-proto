@@ -8,6 +8,10 @@ repository.workspace = true
 rust-version.workspace = true
 description = "Conformance test harness and testee"
 
+[[bin]]
+name = "tpt-conformance"
+path = "src/main.rs"
+
 [dependencies]
 tpt-proto-core = { workspace = true }
 tpt-proto-descriptor = { workspace = true }
@@ -15,6 +19,8 @@ tpt-proto-compiler = { workspace = true }
 tpt-proto-json = { workspace = true }
 tpt-proto-text = { workspace = true }
 tpt-proto-reflect = { workspace = true }
+tpt-proto-language = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

@@ -138,7 +138,7 @@ impl ExPongBuilder {
 #[allow(unused_variables)]
 pub trait Echo: Send + Sync {
     /// Handler for `ex.Echo.unary`.
-    async fn unary(&self, request: __grpc::Request<Ping>) -> std::result::Result<__grpc::Response<Pong>, __grpc::Status>;
+    async fn unary(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<ExPong>, __grpc::Status>;
 }
 
 /// gRPC client stub for `ex.Echo`.
@@ -152,9 +152,9 @@ impl EchoClient {
         Self { channel }
     }
     /// Call `ex.Echo.unary`.
-    pub async fn unary(&self, request: __grpc::Request<Ping>) -> std::result::Result<__grpc::Response<Pong>, __grpc::Status> {
+    pub async fn unary(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<ExPong>, __grpc::Status> {
         let (message, trailers) = self.channel
-            .unary::<Ping, Pong>(
+            .unary::<ExPing, ExPong>(
                 "/ex.Echo/Unary",
                 request.context.metadata.clone(),
                 &request.message,

@@ -260,7 +260,7 @@ impl Message for Struct {
             let tag = r.read_tag()?;
             if tag.field_number == 1 && tag.wire_type == WireType::LengthDelimited {
                 let body = r.read_length_delimited()?;
-                let mut sr = Reader::new(body);
+                let mut sr = r.nested(body)?;
                 let mut key = String::new();
                 let mut val = Value::Null;
                 while !sr.is_empty() {
@@ -269,7 +269,9 @@ impl Message for Struct {
                         (1, WireType::LengthDelimited) => key = sr.read_string_owned()?,
                         (2, WireType::LengthDelimited) => {
                             let vb = sr.read_length_delimited()?;
-                            val = Value::decode(vb)?;
+                            let mut vreader = sr.nested(vb)?;
+                            val = Value::Null;
+                            val.merge_from(&mut vreader)?;
                         }
                         _ => sr.skip(t.wire_type)?,
                     }
@@ -318,13 +320,13 @@ impl Message for Value {
                 (5, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut s = Struct::default();
-                    s.merge_from(&mut Reader::new(body))?;
+                    s.merge_from(&mut r.nested(body)?)?;
                     *self = Value::Struct(s);
                 }
                 (6, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut l = ListValue::default();
-                    l.merge_from(&mut Reader::new(body))?;
+                    l.merge_from(&mut r.nested(body)?)?;
                     *self = Value::List(l);
                 }
                 _ => r.skip(tag.wire_type)?,

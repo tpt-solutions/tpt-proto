@@ -408,32 +408,32 @@ impl Message for FileDescriptorProto {
                 (4, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = DescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.message_type.push(sub);
                 }
                 (5, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = EnumDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.enum_type.push(sub);
                 }
                 (6, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = ServiceDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.service.push(sub);
                 }
                 (7, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = FieldDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.extension.push(sub);
                 }
                 (8, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
                 (9, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = SourceCodeInfo::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.source_code_info = Some(sub);
                 }
                 (12, WireType::LengthDelimited) => self.syntax = Some(r.read_string_owned()?),
@@ -461,7 +461,7 @@ impl Message for SourceCodeInfo {
                 (1, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = Location::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.locations.push(sub);
                 }
                 _ => r.skip(tag.wire_type)?,
@@ -553,44 +553,44 @@ impl Message for DescriptorProto {
                 (2, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = FieldDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.field.push(sub);
                 }
                 (6, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = FieldDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.extension.push(sub);
                 }
                 (3, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = DescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.nested_type.push(sub);
                 }
                 (4, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = EnumDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.enum_type.push(sub);
                 }
                 (5, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = ExtensionRange::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.extension_range.push(sub);
                 }
                 (8, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = OneofDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.oneof_decl.push(sub);
                 }
                 (7, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
                 (9, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = ReservedRange::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.reserved_range.push(sub);
                 }
                 (10, WireType::LengthDelimited) => decode_repeated_str!(r, self.reserved_name),
@@ -707,14 +707,14 @@ impl Message for EnumDescriptorProto {
                 (2, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = EnumValueDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.value.push(sub);
                 }
                 (3, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
                 (4, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = ReservedRange::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.reserved_range.push(sub);
                 }
                 (5, WireType::LengthDelimited) => decode_repeated_str!(r, self.reserved_name),
@@ -785,7 +785,7 @@ impl Message for ServiceDescriptorProto {
                 (2, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = MethodDescriptorProto::default();
-                    sub.merge_from(&mut Reader::new(body))?;
+                    sub.merge_from(&mut r.nested(body)?)?;
                     self.method.push(sub);
                 }
                 (3, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),

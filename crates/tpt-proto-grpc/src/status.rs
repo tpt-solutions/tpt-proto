@@ -11,7 +11,7 @@ use tpt_proto_wkt::Any;
 use crate::metadata::Metadata;
 
 /// Standard gRPC status codes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(i32)]
 pub enum Code {
     /// Not an error; returned on success.

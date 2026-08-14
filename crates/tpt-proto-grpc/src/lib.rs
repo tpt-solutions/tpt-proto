@@ -7,18 +7,26 @@
 //! deadlines & cancellation, compression, the four method kinds, and the RPC
 //! context shared by generated server traits and client stubs.
 //!
-//! The HTTP/2 transport and streaming runtime are layered on top in later
-//! phases; the types here are transport-agnostic and fully unit-tested.
+//! The HTTP/2 transport and streaming runtime (Phase 14) build on these
+//! transport-agnostic types. This module set also provides Phase 15 building
+//! blocks: observability (metrics/tracing/logging), the gRPC health-checking
+//! protocol, server reflection, security configuration (TLS + auth/authz +
+//! peer identity), and an HTTP/2 client [`Transport`] implementation.
 
 pub mod cancellation;
 pub mod codec;
 pub mod compression;
 pub mod context;
+pub mod health;
 pub mod metadata;
 pub mod method;
+pub mod observability;
+pub mod reflection;
+pub mod security;
 pub mod status;
 pub mod timeout;
 pub mod transport;
+pub mod transport_http2;
 
 pub use cancellation::CancellationToken;
 pub use codec::{
@@ -27,11 +35,30 @@ pub use codec::{
 };
 pub use compression::Compression;
 pub use context::{Extensions, PeerInfo, Request, Response, RpcContext};
+pub use health::{
+    HealthCheckRequest, HealthCheckResponse, HealthRegistry, HealthService, ServingStatus,
+};
 pub use metadata::{Metadata, MAX_METADATA_SIZE_DEFAULT};
 pub use method::{build_service, Method, MethodKind, Service};
+pub use observability::{
+    CallInstrumentor, CallLabels, InMemoryMetricsRecorder, JsonLogger, Level, LogRecord, Logger,
+    LoggingTracer, MetricsRecorder, NoopLogger, NoopMetricsRecorder, NoopTracer, Observability,
+    RequestIdLog, SpanContext, StreamingType, Tracer,
+};
+pub use reflection::{
+    AllExtensionNumbersResponse, ErrorResponse, ExtensionRequest, FileDescriptorResponse,
+    ListServiceResponse, ReflectionService, ServerReflectionRequest, ServerReflectionResponse,
+    ServiceResponse,
+};
+pub use security::{
+    AllowAllAuthorizer, Authenticator, Authorizer, BearerTokenAuthenticator, identity_from_peer,
+    MetadataAuthenticator, parse_pem, PeerIdentity, PemBlock, RoleAuthorizer, SecurityError,
+    SecurityPolicy, TlsConfig,
+};
 pub use status::{Code, Status};
 pub use timeout::{format_timeout, parse_timeout};
 pub use transport::{request, Channel, ClientStream, ServerStream, Transport};
+pub use transport_http2::H2Transport;
 
 /// Primary gRPC content type.
 pub const CONTENT_TYPE_GRPC: &str = "application/grpc";

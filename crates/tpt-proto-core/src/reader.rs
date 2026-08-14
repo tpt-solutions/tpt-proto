@@ -160,6 +160,30 @@ impl<'a> Reader<'a> {
         Ok(String::from_utf8(bytes.to_vec())?)
     }
 
+    /// Create a sub-reader over an already-extracted `buf` (typically a
+    /// length-delimited payload returned by [`Reader::read_length_delimited`])
+    /// that inherits this reader's [`DecoderLimits`] and continues its nesting
+    /// `depth`. This is what allows [`DecoderLimits::max_depth`] to be enforced
+    /// across the entire nesting chain rather than reset to zero at each level.
+    ///
+    /// The caller must have already advanced this reader past `buf` (which
+    /// `read_length_delimited` does) so the parent's byte/depth accounting is
+    /// preserved.
+    pub fn nested(&self, buf: &'a [u8]) -> crate::Result<Reader<'a>> {
+        let depth = self.depth + 1;
+        if depth > self.limits.max_depth {
+            return Err(Error::DepthLimitExceeded);
+        }
+        Ok(Reader {
+            buf,
+            pos: 0,
+            depth,
+            field_count: 0,
+            limits: self.limits,
+            bytes_read: 0,
+        })
+    }
+
     /// Enter a nested message (after the caller has read its length prefix).
     /// Returns a sub-reader bounded to `len` bytes.
     pub fn enter_message(&mut self, len: usize) -> crate::Result<Reader<'a>> {

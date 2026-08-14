@@ -153,7 +153,17 @@ impl Parser {
                 self.expect(&TokenKind::Semicolon);
             } else if self.at_keyword("package") {
                 self.advance();
-                if let Some(pkg) = self.expect_ident() {
+                if let Some(mut pkg) = self.expect_ident() {
+                    // Package names may be qualified (e.g. `google.protobuf`).
+                    while self.peek_kind() == Some(&TokenKind::Dot) {
+                        self.advance();
+                        pkg.name.push('.');
+                        if let Some(seg) = self.expect_ident() {
+                            pkg.name.push_str(&seg.name);
+                        } else {
+                            break;
+                        }
+                    }
                     file.package = Some(pkg);
                 }
                 self.expect(&TokenKind::Semicolon);

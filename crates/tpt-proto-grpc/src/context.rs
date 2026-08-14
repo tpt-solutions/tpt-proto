@@ -7,7 +7,7 @@ use std::fmt;
 use std::time::{Duration, SystemTime};
 
 use crate::cancellation::CancellationToken;
-use crate::metadata::Metadata;
+pub use crate::metadata::Metadata;
 use crate::status::Status;
 
 /// Information about the peer on the other end of an RPC.

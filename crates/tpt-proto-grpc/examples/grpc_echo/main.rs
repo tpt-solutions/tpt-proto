@@ -13,7 +13,7 @@ mod generated {
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use generated::{Echo, EchoClient, Ping, Pong};
+use generated::{Echo, EchoClient, ExPing, ExPong};
 use tpt_proto_core::Message;
 use tpt_proto_grpc::{
     Channel, Code, Metadata, Request, Response, ServerStream, Status, Transport,
@@ -26,9 +26,9 @@ struct MyEcho;
 impl Echo for MyEcho {
     async fn unary(
         &self,
-        request: Request<Ping>,
-    ) -> Result<Response<Pong>, Status> {
-        let mut pong = Pong::default();
+        request: Request<ExPing>,
+    ) -> Result<Response<ExPong>, Status> {
+        let mut pong = ExPong::default();
         pong.msg = format!("echo: {}", request.message.msg);
         Ok(Response::new(pong))
     }
@@ -47,8 +47,8 @@ impl Transport for LocalTransport {
         _metadata: Metadata,
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Metadata), Status> {
-        assert_eq!(path, "/ex.Echo/unary");
-        let req = Ping::decode(&message)
+        assert_eq!(path, "/ex.Echo/Unary");
+        let req = ExPing::decode(&message)
             .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
         let resp = self.server.unary(Request::new(req)).await?;
         let bytes = resp
@@ -91,7 +91,7 @@ fn main() {
     let channel = Channel::new(Arc::new(LocalTransport { server }));
     let mut client = EchoClient::new(channel);
 
-    let mut ping = Ping::default();
+    let mut ping = ExPing::default();
     ping.msg = "hello, gRPC".into();
 
     let resp = futures::executor::block_on(client.unary(Request::new(ping))).unwrap();

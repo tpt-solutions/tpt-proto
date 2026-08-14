@@ -631,6 +631,9 @@ fn gen_message(prefix: &str, m: &DescriptorProto, schema: &Schema, out: &mut Str
     // Builder.
     out.push_str(&gen_builder(&ctx, m));
 
+    // Convenience encode/decode methods (zero-copy decode from a borrowed slice).
+    out.push_str(&gen_convenience_methods(&ctx));
+
     // Nested messages/enums.
     for n in &m.nested_type {
         gen_message(&fqn, n, schema, out, syntax);
@@ -999,12 +1002,12 @@ fn decode_assign(target: &str, tyref: &TyRef, r: &str, is_option: bool) -> Strin
             let t = m.clone();
             if is_option {
                 format!(
-                    "            let body = {r}.read_length_delimited()?;\n            {target}.get_or_insert_with({}::default).merge_from(&mut Reader::new(body))?;\n",
+                    "            let body = {r}.read_length_delimited()?;\n            {target}.get_or_insert_with({}::default).merge_from(&mut {r}.nested(body)?)?;\n",
                     to_rust_type_name(&t)
                 )
             } else {
                 format!(
-                    "            {target} = {}::default();\n            {target}.merge_from(&mut Reader::new({r}.read_length_delimited()?))?;\n",
+                    "            {target} = {}::default();\n            {target}.merge_from(&mut {r}.nested({r}.read_length_delimited()?)?)?;\n",
                     to_rust_type_name(&t)
                 )
             }
@@ -1048,7 +1051,7 @@ fn gen_repeated_decode(tyref: &TyRef, snake: &str, ctx: &MessageContext<'_>) -> 
         TyRef::Message(m) => {
             let t = to_rust_type_name(m);
             format!(
-                "            let body = r.read_length_delimited()?;\n            let mut mv = {t}::default();\n            mv.merge_from(&mut Reader::new(body))?;\n            {target}.push(mv);\n"
+                "            let body = r.read_length_delimited()?;\n            let mut mv = {t}::default();\n            mv.merge_from(&mut r.nested(body)?)?;\n            {target}.push(mv);\n"
             )
         }
         TyRef::Scalar(FieldType::String) => {
@@ -1151,7 +1154,7 @@ fn dec_value_expr(ctx: &MessageContext<'_>, tyref: &TyRef, r: &str) -> String {
                 .get(m)
                 .cloned()
                 .unwrap_or_else(|| to_rust_type_name(m));
-            format!("{{ let body = {r}.read_length_delimited()?; let mut __m = {t}::default(); __m.merge_from(&mut Reader::new(body))?; __m }}")
+            format!("{{ let body = {r}.read_length_delimited()?; let mut __m = {t}::default(); __m.merge_from(&mut {r}.nested(body)?)?; __m }}")
         }
         TyRef::Enum(e) => {
             let en = ctx
@@ -1254,7 +1257,7 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
                 .get(m)
                 .cloned()
                 .unwrap_or_else(|| to_rust_type_name(m));
-            format!("{{ let body = __kr.read_length_delimited()?; let mut __m = {t}::default(); __m.merge_from(&mut Reader::new(body))?; __m }}")
+            format!("{{ let body = __kr.read_length_delimited()?; let mut __m = {t}::default(); __m.merge_from(&mut __kr.nested(body)?)?; __m }}")
         }
     };
     s.push_str(&format!("            let k = {key_expr};\n"));
@@ -1284,6 +1287,33 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
     };
     s.push_str(&format!("            let v = {val_expr};\n"));
     s.push_str(&format!("            self.{snake}.insert(k, v);\n"));
+    s
+}
+
+/// Generate convenience encode/decode methods on the message struct.
+///
+/// `decode` reads directly from the borrowed byte slice via a [`Reader`], so it
+/// is a zero-copy decode with respect to the underlying buffer (scalar/string/
+/// bytes payloads are referenced, never copied, during parsing).
+fn gen_convenience_methods(ctx: &MessageContext<'_>) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("impl {} {{\n", ctx.rust));
+    s.push_str(
+        "    /// Decode this message from a borrowed byte slice.\n    ///\n    /// The slice is read directly (zero-copy) without copying the buffer\n    /// for scalar, string, or bytes payloads.\n",
+    );
+    s.push_str("    pub fn decode(buf: &[u8]) -> ::tpt_proto_core::Result<Self> {\n");
+    s.push_str("        let mut __msg = Self::default();\n");
+    s.push_str("        let mut __r = ::tpt_proto_core::Reader::new(buf);\n");
+    s.push_str("        ::tpt_proto_core::Message::merge_from(&mut __msg, &mut __r)?;\n");
+    s.push_str("        Ok(__msg)\n");
+    s.push_str("    }\n");
+    s.push_str(
+        "    /// Encode this message into a freshly allocated byte vector.\n",
+    );
+    s.push_str("    pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {\n");
+    s.push_str("        ::tpt_proto_core::Message::encode_to_vec(self)\n");
+    s.push_str("    }\n");
+    s.push_str("}\n\n");
     s
 }
 
@@ -1493,9 +1523,9 @@ fn gen_service(
     };
 
     if !grpc {
-        return gen_service_placeholder(&name, &svc_name, s);
+        return gen_service_placeholder(&name, &svc_name, s, pkg);
     }
-    gen_service_grpc(&name, &full_name, s)
+    gen_service_grpc(&name, &full_name, s, pkg)
 }
 
 /// Synchronous placeholder trait (used when gRPC generation is disabled).
@@ -1503,6 +1533,7 @@ fn gen_service_placeholder(
     name: &str,
     svc_name: &str,
     s: &tpt_proto_descriptor::ServiceDescriptorProto,
+    pkg: &str,
 ) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -1512,8 +1543,8 @@ fn gen_service_placeholder(
     out.push_str(&format!("pub trait {name} {{\n"));
     for m in &s.method {
         let mname = to_snake(m.name.as_deref().unwrap_or("method"));
-        let req = rust_type(m.input_type.as_deref());
-        let resp = rust_type(m.output_type.as_deref());
+        let req = rust_type(m.input_type.as_deref(), pkg);
+        let resp = rust_type(m.output_type.as_deref(), pkg);
         out.push_str(&format!(
             "    fn {mname}(&self, req: {req}) -> __core::Result<{resp}>;\n"
         ));
@@ -1523,7 +1554,12 @@ fn gen_service_placeholder(
 }
 
 /// Async gRPC server trait + client stub.
-fn gen_service_grpc(name: &str, full_name: &str, s: &tpt_proto_descriptor::ServiceDescriptorProto) -> String {
+fn gen_service_grpc(
+    name: &str,
+    full_name: &str,
+    s: &tpt_proto_descriptor::ServiceDescriptorProto,
+    pkg: &str,
+) -> String {
     let mut out = String::new();
 
     // ---- Server trait ----
@@ -1535,8 +1571,8 @@ fn gen_service_grpc(name: &str, full_name: &str, s: &tpt_proto_descriptor::Servi
     ));
     for m in &s.method {
         let mname = to_snake(m.name.as_deref().unwrap_or("method"));
-        let req = rust_type(m.input_type.as_deref());
-        let resp = rust_type(m.output_type.as_deref());
+        let req = rust_type(m.input_type.as_deref(), pkg);
+        let resp = rust_type(m.output_type.as_deref(), pkg);
         let sig = grpc_method_signature(m, &req, &resp);
         out.push_str(&format!(
             "    /// Handler for `{full_name}.{mname}`.\n    {sig};\n"
@@ -1559,8 +1595,8 @@ fn gen_service_grpc(name: &str, full_name: &str, s: &tpt_proto_descriptor::Servi
     );
     for m in &s.method {
         let mname = to_snake(m.name.as_deref().unwrap_or("method"));
-        let req = rust_type(m.input_type.as_deref());
-        let resp = rust_type(m.output_type.as_deref());
+        let req = rust_type(m.input_type.as_deref(), pkg);
+        let resp = rust_type(m.output_type.as_deref(), pkg);
         let path = format!("/{full_name}/{}", m.name.clone().unwrap_or_default());
         let body = grpc_client_body(m, &req, &resp, &path);
         let sig = grpc_method_signature(m, &req, &resp);
@@ -1627,10 +1663,30 @@ fn grpc_client_body(
 }
 
 /// Map a fully-qualified proto type name to a Rust type name, defaulting to
+/// Map a fully-qualified proto type name to a Rust type name, defaulting to
 /// `()` for absent types.
-fn rust_type(t: Option<&str>) -> String {
-    t.map(to_rust_type_name)
-        .unwrap_or_else(|| "()".to_string())
+///
+/// The lightweight [`tpt_proto_compiler::compile`] used by the code generator
+/// leaves service method types as simple names; this resolves them against the
+/// enclosing package so they line up with the generated message types (which
+/// are named by fully-qualified proto name).
+fn rust_type(t: Option<&str>, pkg: &str) -> String {
+    let Some(name) = t else {
+        return "()".to_string();
+    };
+    let trimmed = name.trim_start_matches('.');
+    if trimmed.contains('.') {
+        // Already fully qualified (e.g. resolved by the full pipeline).
+        to_rust_type_name(name)
+    } else {
+        // Simple name in the current package.
+        let fqn = if pkg.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{}.{name}", pkg.trim_start_matches('.'))
+        };
+        to_rust_type_name(&fqn)
+    }
 }
 
 // ---------------------------------------------------------------------------

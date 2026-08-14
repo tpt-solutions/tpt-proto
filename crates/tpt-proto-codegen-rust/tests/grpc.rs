@@ -27,15 +27,15 @@ fn generates_grpc_server_trait_and_client() {
 
     // Server trait for all four method kinds.
     assert!(code.contains("pub trait Echo: Send + Sync"));
-    assert!(code.contains("async fn unary(&self, request: __grpc::Request<Ping>)"));
-    assert!(code.contains("async fn watch(&self, request: __grpc::Request<Ping>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<Pong>>, __grpc::Status>"));
-    assert!(code.contains("async fn upload(&self, request: __grpc::Request<__grpc::ClientStream<Ping>>)"));
-    assert!(code.contains("async fn chat(&self, request: __grpc::Request<__grpc::ClientStream<Ping>>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<Pong>>, __grpc::Status>"));
+    assert!(code.contains("async fn unary(&self, request: __grpc::Request<ExPing>)"));
+    assert!(code.contains("async fn watch(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status>"));
+    assert!(code.contains("async fn upload(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>)"));
+    assert!(code.contains("async fn chat(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status>"));
 
     // Client stub.
     assert!(code.contains("pub struct EchoClient"));
     assert!(code.contains("pub fn new(channel: __grpc::Channel) -> Self"));
-    assert!(code.contains(".unary::<Ping, Pong>("));
+    assert!(code.contains(".unary::<ExPing, ExPong>("));
     // Streaming client methods are scaffolded to return Unimplemented.
     assert!(code.contains("__grpc::Status::new(__grpc::Code::Unimplemented"));
 

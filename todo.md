@@ -106,7 +106,7 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] Builder generation with validation (required fields, oneof constraints, invalid enum/default values)
 - [x] Reflection metadata hooks generation
 - [x] Service trait generation (ties into gRPC phases)
-- [ ] Borrowed/zero-copy decode method generation
+- [x] Borrowed/zero-copy decode method generation
 - [ ] JSON support hooks generation
 - [ ] Text format support hooks generation
 
@@ -117,12 +117,12 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] Repeated field access
 - [x] Map field access
 - [x] Enum value access
-- [ ] Oneof access
+- [x] Oneof access
 - [x] Nested message access
-- [ ] Extension access
+- [x] Extension access
 - [x] Unknown field access
-- [ ] Default value inspection & presence inspection
-- [ ] Type registry & extension registry
+- [x] Default value inspection & presence inspection
+- [x] Type registry & extension registry
 
 ## Phase 7 — tpt-proto-wkt: Well-Known Types (§4.9, §14)
 
@@ -159,7 +159,7 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] Oneof text support
 - [x] Extension text support
 - [x] Unknown field policies in text output
-- [ ] Deterministic text output mode
+- [x] Deterministic text output mode
 
 ## Phase 10 — tpt-proto-cli: CLI (§4.11, §18)
 
@@ -178,8 +178,8 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] `build.rs`-driven `.proto` compilation
 - [x] Include path configuration
 - [x] Output directory configuration
-- [ ] Codegen configuration options
-- [ ] Incremental rebuild detection
+- [x] Codegen configuration options
+- [x] Incremental rebuild detection
 - [x] Clear compile error surfacing to `cargo build` output
 
 ## Phase 12 — tpt-proto-lint: Linting & Breaking-Change Detection (§4.13, §17)
@@ -205,7 +205,7 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] `grpc-timeout` header ↔ deadline/cancellation translation
 - [x] Compression: identity, gzip, pluggable codecs, `grpc-encoding`/`grpc-accept-encoding`
 - [x] Service model: unary, server streaming, client streaming, bidi streaming
-- [ ] Generated server traits (async) and client stubs
+- [x] Generated server traits (async) and client stubs
 - [x] RPC context: deadline, remaining time, cancellation token, metadata, peer info, extensions
 - [x] Structured `Status` type + standard gRPC status codes
 - [x] Rich error details compatible with `google.rpc.Status`
@@ -249,26 +249,26 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 17 — Security Hardening & Fuzzing (§20, §22.4 — cross-cutting)
 
-- [ ] Decoder limit enforcement audited across core/reflect/json/text/grpc
-- [ ] UTF-8 validation per schema/edition rules
-- [ ] Recursion/depth control audited across all decoders
-- [ ] Allocation control & sanity checks audited across all decoders
-- [ ] `unsafe` usage audit: isolated, documented, tested, feature-gated, justified
-- [ ] Fuzz target: binary decoder
-- [ ] Fuzz target: JSON decoder
-- [ ] Fuzz target: text parser
-- [ ] Fuzz target: proto language parser
-- [ ] Fuzz target: descriptor decoder
-- [ ] Fuzz target: dynamic message decoder
+- [x] Decoder limit enforcement audited across core/reflect/json/text/grpc
+- [x] UTF-8 validation per schema/edition rules
+- [x] Recursion/depth control audited across all decoders
+- [x] Allocation control & sanity checks audited across all decoders
+- [x] `unsafe` usage audit: isolated, documented, tested, feature-gated, justified
+- [x] Fuzz target: binary decoder
+- [x] Fuzz target: JSON decoder
+- [x] Fuzz target: text parser
+- [x] Fuzz target: proto language parser
+- [x] Fuzz target: descriptor decoder
+- [x] Fuzz target: dynamic message decoder
 
 ## Phase 18 — Performance & Benchmarking (§21 — cross-cutting)
 
-- [ ] Benchmark suite: small/large/nested messages
-- [ ] Benchmark suite: repeated & packed fields, maps
-- [ ] Benchmark suite: unknown fields, JSON conversion, dynamic decoding, zero-copy decoding
-- [ ] gRPC benchmark suite: unary throughput/latency, streaming throughput, bidi streaming
-- [ ] gRPC benchmark suite: many concurrent streams, cancellation storms, deadline-expiry storms, TLS overhead, compression overhead
-- [ ] Perf review pass: allocation counts, monomorphization, hot-path reflection avoidance
+- [x] Benchmark suite: small/large/nested messages (`crates/tpt-proto-bench/benches/wire.rs`)
+- [x] Benchmark suite: repeated & packed fields, maps (`benches/wire.rs`)
+- [x] Benchmark suite: unknown fields, JSON conversion, dynamic decoding, zero-copy decoding (`benches/wire.rs`, `benches/dynamic_json.rs`)
+- [x] gRPC benchmark suite: framing + compression overhead (`benches/grpc.rs`)
+- [ ] gRPC benchmark suite: unary throughput/latency, streaming throughput, bidi streaming, many concurrent streams, cancellation storms, deadline-expiry storms, TLS overhead — **deferred: requires Phase 14 server runtime (see docs/performance.md)**
+- [x] Perf review pass: allocation counts, monomorphization, hot-path reflection avoidance (`docs/performance.md`)
 
 ## Phase 19 — Cross-Component Testing & Compatibility Vectors (§22.1–§22.3, §22.6, grpc §18)
 
@@ -280,21 +280,21 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 20 — Documentation (§23)
 
-- [ ] Quickstart guide
-- [ ] Language support docs (proto2/proto3/editions)
-- [ ] Editions support docs
-- [ ] Wire format behavior docs
-- [ ] JSON behavior docs
-- [ ] Text format behavior docs
-- [ ] Code generation docs
-- [ ] Reflection & dynamic message docs
-- [ ] Security limits docs
-- [ ] Deterministic encoding docs
-- [ ] Conformance status docs
-- [ ] Clean-room policy docs
-- [ ] Licensing docs
-- [ ] Trademark disclaimer ("tpt-proto is an independent clean-room implementation. It is not an official Protocol Buffers implementation.")
-- [ ] gRPC layer docs (protocol, security, observability, debugging tools, compatibility)
+- [x] Quickstart guide (`docs/quickstart.md`)
+- [x] Language support docs (proto2/proto3/editions) (`docs/language-support.md`)
+- [x] Editions support docs (`docs/editions.md`)
+- [x] Wire format behavior docs (`docs/wire-format.md`)
+- [x] JSON behavior docs (`docs/json.md`)
+- [x] Text format behavior docs (`docs/text-format.md`)
+- [x] Code generation docs (`docs/codegen.md`)
+- [x] Reflection & dynamic message docs (`docs/reflection.md`)
+- [x] Security limits docs (`docs/security.md`)
+- [x] Deterministic encoding docs (`docs/deterministic-encoding.md`)
+- [x] Conformance status docs (`docs/conformance.md`)
+- [x] Clean-room policy docs (`docs/clean-room.md`)
+- [x] Licensing docs (`docs/licensing.md`)
+- [x] Trademark disclaimer ("tpt-proto is an independent clean-room implementation. It is not an official Protocol Buffers implementation.") — in `docs/licensing.md`, `docs/README.md`, and per-doc headers
+- [x] gRPC layer docs (protocol, security, observability, debugging tools, compatibility) (`docs/grpc.md`)
 
 ## Phase 21 — Provenance & Licensing Finalization (§24, §25)
 

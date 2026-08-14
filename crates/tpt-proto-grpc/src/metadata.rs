@@ -9,6 +9,7 @@
 use anyhow::{bail, Result};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use http::HeaderMap;
 use std::collections::BTreeMap;
 
 /// Default maximum metadata size: 8 KiB.
@@ -151,6 +152,26 @@ impl Metadata {
                 (k.clone(), value)
             })
             .collect()
+    }
+
+    /// Render metadata as an HTTP/2 [`HeaderMap`], base64-encoding `-bin`
+    /// values. This is used to emit gRPC trailers.
+    pub fn to_header_map(&self) -> HeaderMap {
+        let mut out = HeaderMap::new();
+        for (k, v) in self.map.iter() {
+            let value = if k.ends_with("-bin") {
+                B64.encode(v)
+            } else {
+                String::from_utf8_lossy(v).into_owned()
+            };
+            if let (Ok(name), Ok(val)) = (
+                http::header::HeaderName::from_bytes(k.as_bytes()),
+                http::header::HeaderValue::from_str(&value),
+            ) {
+                out.append(name, val);
+            }
+        }
+        out
     }
 }
 

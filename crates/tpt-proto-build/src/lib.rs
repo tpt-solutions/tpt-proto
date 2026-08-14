@@ -9,15 +9,19 @@
 //!
 //! ```no_run
 //! fn main() -> std::io::Result<()> {
+//!     let config = tpt_proto_build::BuildConfig::default();
 //!     tpt_proto_build::compile_protos(
 //!         &["proto/service.proto".into()],
 //!         &["proto".into()],
 //!         &std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()),
+//!         &config,
 //!     ).expect("protobuf compilation failed");
 //!     Ok(())
 //! }
 //! ```
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -25,6 +29,42 @@ use tpt_proto_codegen_rust::{generate, GenerateOptions};
 use tpt_proto_compiler::compile;
 use tpt_proto_descriptor::FileDescriptorSet;
 use tpt_proto_language::{parse_file, Diagnostic};
+
+/// Configuration for [`compile_protos`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct BuildConfig {
+    /// Emit async gRPC server traits and client stubs for `service` blocks.
+    pub grpc: bool,
+    /// Wrap each file's types in a package-named module.
+    pub module_per_package: bool,
+    /// Only (re)generate a `.rs` file when its source `.proto` (or any included
+    /// dependency) actually changed since the previous build. Skipped files are
+    /// not rewritten, avoiding unnecessary downstream recompilation.
+    pub incremental: bool,
+}
+
+impl BuildConfig {
+    /// A configuration enabling gRPC code generation.
+    pub fn grpc() -> BuildConfig {
+        BuildConfig { grpc: true, ..Default::default() }
+    }
+}
+
+/// A stable fingerprint of everything that affects a generated file: the source
+/// file contents, every included `.proto`, and the build configuration.
+fn fingerprint(path: &Path, includes: &[PathBuf], config: &BuildConfig) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    if let Ok(src) = std::fs::read(path) {
+        src.hash(&mut hasher);
+    }
+    for inc in includes {
+        for dep in collect_protos(inc).unwrap_or_default() {
+            std::fs::read(&dep).unwrap_or_default().hash(&mut hasher);
+        }
+    }
+    config.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// Recursively collect `.proto` files under `root`.
 fn collect_protos(root: &Path) -> Result<Vec<PathBuf>> {
@@ -52,7 +92,9 @@ fn collect_protos(root: &Path) -> Result<Vec<PathBuf>> {
 ///
 /// Emits `<module>.rs` for each `.proto`, plus a generated `mod.rs` listing
 /// them so they can be included via `include!(concat!(env!("OUT_DIR"), "/mod.rs"))`.
-pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path) -> Result<()> {
+///
+/// Behaviour is controlled by `config` (see [`BuildConfig`]).
+pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path, config: &BuildConfig) -> Result<()> {
     std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
     let mut modules: Vec<String> = Vec::new();
@@ -64,14 +106,28 @@ pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path) 
     }
 
     for path in &files {
-        let code = compile_one(path, includes)?;
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
             .context("invalid proto file name")?
             .replace(['-', '.'], "_");
         let out_path = out_dir.join(format!("{stem}.rs"));
+        let stamp_path = out_dir.join(format!("{stem}.tptstamp"));
+        let fp = fingerprint(path, includes, config);
+
+        // Incremental mode: skip regeneration when inputs are unchanged.
+        if config.incremental && stamp_path.exists() {
+            if let Ok(prev) = std::fs::read_to_string(&stamp_path) {
+                if prev.trim() == fp.to_string() && out_path.exists() {
+                    modules.push(stem);
+                    continue;
+                }
+            }
+        }
+
+        let code = compile_one(path, includes, config)?;
         std::fs::write(&out_path, &code).with_context(|| format!("writing {}", out_path.display()))?;
+        std::fs::write(&stamp_path, fp.to_string()).with_context(|| format!("writing {}", stamp_path.display()))?;
         modules.push(stem);
     }
 
@@ -84,7 +140,7 @@ pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path) 
 }
 
 /// Compile a single `.proto` file into generated Rust source.
-fn compile_one(path: &Path, includes: &[PathBuf]) -> Result<String> {
+fn compile_one(path: &Path, includes: &[PathBuf], config: &BuildConfig) -> Result<String> {
     let src = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let name = path
         .file_name()
@@ -116,7 +172,11 @@ fn compile_one(path: &Path, includes: &[PathBuf]) -> Result<String> {
     }
     let (fd, _cdiags) = compile(&parsed.file);
     let set = FileDescriptorSet { file: vec![fd] };
-    let opts = GenerateOptions::default();
+    let opts = GenerateOptions {
+        grpc: config.grpc,
+        module_per_package: config.module_per_package,
+        ..GenerateOptions::default()
+    };
     generate(&set, &opts).map_err(|e| anyhow::anyhow!("codegen error in {}: {e}", path.display()))
 }
 
@@ -141,5 +201,34 @@ mod tests {
         let mut files = collect_protos(&tmp).unwrap();
         files.sort();
         assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn incremental_skips_unchanged() {
+        let root = std::env::temp_dir().join("tpt_incr_test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let src = root.join("m.proto");
+        std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; }").unwrap();
+        let out = root.join("out");
+        std::fs::create_dir_all(&out).unwrap();
+
+        let config = BuildConfig { incremental: true, ..Default::default() };
+        compile_protos(&[src.clone()], &[], &out, &config).unwrap();
+        let out_rs = out.join("m.rs");
+        assert!(out_rs.exists());
+        let first_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
+
+        // Second build with identical inputs should not rewrite the output.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        compile_protos(&[src.clone()], &[], &out, &config).unwrap();
+        let second_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
+        assert_eq!(first_mtime, second_mtime, "output was rewritten despite no changes");
+
+        // Changing the source should force regeneration.
+        std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; string b = 2; }").unwrap();
+        compile_protos(&[src.clone()], &[], &out, &config).unwrap();
+        let third_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
+        assert_ne!(second_mtime, third_mtime, "output was not regenerated after source change");
     }
 }

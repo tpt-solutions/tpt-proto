@@ -42,6 +42,11 @@ impl Compression {
         }
     }
 
+    /// Alias of [`Compression::as_header`].
+    pub fn name(&self) -> &str {
+        self.as_header()
+    }
+
     /// Compress `data`, returning the compressed payload.
     pub fn compress(&self, data: &[u8]) -> Result<Vec<u8>> {
         match self {

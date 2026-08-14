@@ -34,6 +34,9 @@ pub struct TextOptions {
     pub use_braces: bool,
     /// Emit field numbers instead of names.
     pub use_field_numbers: bool,
+    /// Deterministic output: fields are emitted in ascending field-number order
+    /// (rather than declaration order) and map entries are sorted by key.
+    pub deterministic: bool,
 }
 
 /// Print a [`DynamicMessage`] to text format.
@@ -60,10 +63,15 @@ fn print_message(
     let close = if opts.use_braces { "}" } else { ">" };
     out.push_str(open);
     out.push('\n');
-    for field in &descriptor.field {
-        if field.extendee.is_some() {
-            continue;
-        }
+    let mut fields: Vec<&FieldDescriptorProto> = descriptor
+        .field
+        .iter()
+        .filter(|f| f.extendee.is_none())
+        .collect();
+    if opts.deterministic {
+        fields.sort_by_key(|f| f.number.unwrap_or(0));
+    }
+    for field in fields {
         let num = field.number.unwrap_or(0);
         let name = if opts.use_field_numbers {
             num.to_string()
@@ -96,6 +104,10 @@ fn print_value(
             }
         }
         Value::Map(entries) => {
+            let mut entries: Vec<&(Value, Value)> = entries.iter().collect();
+            if opts.deterministic {
+                entries.sort_by(|a, b| map_key_cmp(&a.0, &b.0));
+            }
             for (k, v) in entries {
                 out.push_str(&pad);
                 out.push_str(name);
@@ -169,6 +181,38 @@ fn print_message_inline(
             .lookup_message(field.type_name.as_deref().unwrap_or(""))
             .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
         print_message(pool, &sub, dm, opts, indent, out);
+    }
+}
+
+/// Total order over map keys used for deterministic text output. Keys compare
+/// first by a stable type rank, then by value.
+fn map_key_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    use RScalar::*;
+    fn rank(v: &Value) -> u8 {
+        match v {
+            Value::Scalar(String(_)) => 0,
+            Value::Scalar(Bytes(_)) => 1,
+            Value::Scalar(Bool(_)) => 2,
+            Value::Scalar(I64(_)) => 3,
+            Value::Scalar(U64(_)) => 4,
+            Value::Scalar(F64(_)) => 5,
+            _ => 6,
+        }
+    }
+    let ra = rank(a);
+    let rb = rank(b);
+    if ra != rb {
+        return ra.cmp(&rb);
+    }
+    match (a, b) {
+        (Value::Scalar(String(x)), Value::Scalar(String(y))) => x.cmp(y),
+        (Value::Scalar(Bytes(x)), Value::Scalar(Bytes(y))) => x.cmp(y),
+        (Value::Scalar(Bool(x)), Value::Scalar(Bool(y))) => x.cmp(y),
+        (Value::Scalar(I64(x)), Value::Scalar(I64(y))) => x.cmp(y),
+        (Value::Scalar(U64(x)), Value::Scalar(U64(y))) => x.cmp(y),
+        (Value::Scalar(F64(x)), Value::Scalar(F64(y))) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
+        _ => Ordering::Equal,
     }
 }
 
@@ -776,5 +820,53 @@ sub {
             Some(Value::Map(entries)) => assert_eq!(entries.len(), 1),
             other => panic!("expected map, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn deterministic_ordering() {
+        let src = r#"
+syntax = "proto3";
+package dt;
+message Messy {
+  string c = 3;
+  string a = 1;
+  string b = 2;
+  map<string, int32> labels = 4;
+}
+"#;
+        let parsed = parse_file("dt.proto", src);
+        assert!(!parsed.diagnostics.iter().any(|d| d.severity == tpt_proto_language::Severity::Error));
+        let (fd, diags) = compile(&parsed.file);
+        assert!(!diags.iter().any(|d| d.severity == tpt_proto_language::Severity::Error), "diags: {:?}", diags);
+        let pool = DescriptorPool::from_file(&fd);
+        let m = pool.lookup_message("dt.Messy").unwrap();
+
+        let mut dm = DynamicMessage::new(m.clone(), pool.clone());
+        dm.set_field(3, Value::Scalar(RScalar::String("three".into())));
+        dm.set_field(1, Value::Scalar(RScalar::String("one".into())));
+        dm.set_field(2, Value::Scalar(RScalar::String("two".into())));
+        dm.set_field(4, Value::Map(vec![
+            (Value::Scalar(RScalar::String("z".into())), Value::Scalar(RScalar::I64(1))),
+            (Value::Scalar(RScalar::String("a".into())), Value::Scalar(RScalar::I64(2))),
+        ]));
+
+        // Non-deterministic: declaration order (c, a, b).
+        let nondet = message_to_text(&pool, &m, &dm, &TextOptions::default());
+        let first_nondet = nondet.lines().nth(1).unwrap().trim().split(':').next().unwrap().trim();
+        assert_eq!(first_nondet, "c");
+
+        // Deterministic: ascending field-number order (a, b, c, labels).
+        let det = message_to_text(
+            &pool,
+            &m,
+            &dm,
+            &TextOptions { deterministic: true, ..Default::default() },
+        );
+        let first_det = det.lines().nth(1).unwrap().trim().split(':').next().unwrap().trim();
+        assert_eq!(first_det, "a");
+        // Map keys should be emitted in sorted order: "a" before "z".
+        let a_idx = det.find("key: \"a\"").unwrap();
+        let z_idx = det.find("key: \"z\"").unwrap();
+        assert!(a_idx < z_idx);
     }
 }
