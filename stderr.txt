@@ -1,0 +1,5 @@
+TEST: calling unary
+
+thread 'observability_records_metrics_for_health_check' (83020) panicked at crates\tpt-proto-grpc\tests\observability_security.rs:58:6:
+unary did not time out: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

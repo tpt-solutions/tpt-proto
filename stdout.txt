@@ -1,0 +1,11 @@
+
+running 1 test
+test observability_records_metrics_for_health_check ... FAILED
+
+failures:
+
+failures:
+    observability_records_metrics_for_health_check
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 8.03s
+

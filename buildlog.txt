@@ -1,2 +1,4 @@
-   Compiling tpt-proto-codegen-rust v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-codegen-rust)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.69s
+   Compiling tpt-proto-cli v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-cli)
+   Compiling tpt-proto-build v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-build)
+   Compiling tpt-proto-conformance v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-conformance)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.26s

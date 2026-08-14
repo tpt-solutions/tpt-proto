@@ -1,0 +1,192 @@
+   Compiling tpt-proto-codegen-rust v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-codegen-rust)
+   Compiling tpt-proto-grpc v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-grpc)
+warning: unused import: `BoxStream`
+  --> crates\tpt-proto-grpc\src\health.rs:14:29
+   |
+14 | use futures::stream::{self, BoxStream};
+   |                             ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\src\client.rs:538:27
+    |
+538 |         let (resp_future, mut send_stream) =
+    |                           ----^^^^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\src\client.rs:603:27
+    |
+603 |         let (resp_future, mut send_stream) =
+    |                           ----^^^^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: function `unimplemented_method` is never used
+  --> crates\tpt-proto-grpc\src\service.rs:68:15
+   |
+68 | pub(crate) fn unimplemented_method(method: &str) -> Status {
+   |               ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `tpt-proto-grpc` (lib) generated 4 warnings (run `cargo fix --lib -p tpt-proto-grpc` to apply 3 suggestions)
+warning: unused import: `WireType`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:3:56
+  |
+3 | use __core::{Message, Reader, Writer, UnknownFieldSet, WireType};
+  |                                                        ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `__core::packed`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:5:5
+  |
+5 | use __core::packed;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:6:5
+  |
+6 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Channel`, `ClientStream`, and `ServerStream`
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:10:14
+   |
+10 | use __grpc::{Channel, ClientStream, ServerStream};
+   |              ^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates\tpt-proto-grpc\tests\runtime_echo.rs:13:5
+   |
+13 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:115:9
+    |
+115 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:128:9
+    |
+128 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:146:9
+    |
+146 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:165:9
+    |
+165 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:189:9
+    |
+189 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:21:15
+   |
+19 | impl ExPing {
+   | ----------- associated constant in this implementation
+20 |     /// Protobuf full name of this message.
+21 |     pub const PROTO_FULL_NAME: &'static str = "ex.Ping";
+   |               ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ExPingBuilder` is never constructed
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:50:12
+   |
+50 | pub struct ExPingBuilder {
+   |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:56:12
+   |
+54 | impl ExPingBuilder {
+   | ------------------ associated items in this implementation
+55 |     /// Create a new builder seeded with default values.
+56 |     pub fn new() -> Self {
+   |            ^^^
+...
+60 |     pub fn msg(mut self, v: String) -> Self {
+   |            ^^^
+...
+65 |     pub fn try_build(self) -> Result<ExPing, String> {
+   |            ^^^^^^^^^
+...
+69 |     pub fn build(self) -> ExPing {
+   |            ^^^^^
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:100:15
+    |
+ 98 | impl ExPong {
+    | ----------- associated constant in this implementation
+ 99 |     /// Protobuf full name of this message.
+100 |     pub const PROTO_FULL_NAME: &'static str = "ex.Pong";
+    |               ^^^^^^^^^^^^^^^
+
+warning: struct `ExPongBuilder` is never constructed
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:129:12
+    |
+129 | pub struct ExPongBuilder {
+    |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:135:12
+    |
+133 | impl ExPongBuilder {
+    | ------------------ associated items in this implementation
+134 |     /// Create a new builder seeded with default values.
+135 |     pub fn new() -> Self {
+    |            ^^^
+...
+139 |     pub fn msg(mut self, v: String) -> Self {
+    |            ^^^
+...
+144 |     pub fn try_build(self) -> Result<ExPong, String> {
+    |            ^^^^^^^^^
+...
+148 |     pub fn build(self) -> ExPong {
+    |            ^^^^^
+
+warning: `tpt-proto-grpc` (test "runtime_echo") generated 16 warnings (run `cargo fix --test "runtime_echo" -p tpt-proto-grpc` to apply 10 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.59s
+     Running tests\runtime_echo.rs (target\debug\deps\runtime_echo-cb781024f3546580.exe)
+
+running 5 tests
+test client_streaming_over_tcp ... ok
+test server_streaming_over_tcp ... ok
+test unary_error_status_surfaces ... ok
+test unary_over_tcp ... ok
+test bidi_streaming_over_tcp ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

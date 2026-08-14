@@ -1,0 +1,472 @@
+warning: unused import: `BoxStream`
+  --> crates\tpt-proto-grpc\src\health.rs:14:29
+   |
+14 | use futures::stream::{self, BoxStream};
+   |                             ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\src\client.rs:538:27
+    |
+538 |         let (resp_future, mut send_stream) =
+    |                           ----^^^^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\src\client.rs:603:27
+    |
+603 |         let (resp_future, mut send_stream) =
+    |                           ----^^^^^^^^^^^
+    |                           |
+    |                           help: remove this `mut`
+
+warning: function `unimplemented_method` is never used
+  --> crates\tpt-proto-grpc\src\service.rs:68:15
+   |
+68 | pub(crate) fn unimplemented_method(method: &str) -> Status {
+   |               ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling tpt-proto-grpc v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-grpc)
+warning: `tpt-proto-grpc` (lib) generated 4 warnings (run `cargo fix --lib -p tpt-proto-grpc` to apply 3 suggestions)
+warning: unused import: `WireType`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:3:56
+  |
+3 | use __core::{Message, Reader, Writer, UnknownFieldSet, WireType};
+  |                                                        ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `__core::packed`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:5:5
+  |
+5 | use __core::packed;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:6:5
+  |
+6 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Channel`, `ClientStream`, and `ServerStream`
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:10:14
+   |
+10 | use __grpc::{Channel, ClientStream, ServerStream};
+   |              ^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates\tpt-proto-grpc\tests\runtime_echo.rs:13:5
+   |
+13 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:115:9
+    |
+115 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:128:9
+    |
+128 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:146:9
+    |
+146 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:165:9
+    |
+165 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\tests\runtime_echo.rs:189:9
+    |
+189 |     let mut client = client_for(addr);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:21:15
+   |
+19 | impl ExPing {
+   | ----------- associated constant in this implementation
+20 |     /// Protobuf full name of this message.
+21 |     pub const PROTO_FULL_NAME: &'static str = "ex.Ping";
+   |               ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ExPingBuilder` is never constructed
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:50:12
+   |
+50 | pub struct ExPingBuilder {
+   |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:56:12
+   |
+54 | impl ExPingBuilder {
+   | ------------------ associated items in this implementation
+55 |     /// Create a new builder seeded with default values.
+56 |     pub fn new() -> Self {
+   |            ^^^
+...
+60 |     pub fn msg(mut self, v: String) -> Self {
+   |            ^^^
+...
+65 |     pub fn try_build(self) -> Result<ExPing, String> {
+   |            ^^^^^^^^^
+...
+69 |     pub fn build(self) -> ExPing {
+   |            ^^^^^
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:100:15
+    |
+ 98 | impl ExPong {
+    | ----------- associated constant in this implementation
+ 99 |     /// Protobuf full name of this message.
+100 |     pub const PROTO_FULL_NAME: &'static str = "ex.Pong";
+    |               ^^^^^^^^^^^^^^^
+
+warning: struct `ExPongBuilder` is never constructed
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:129:12
+    |
+129 | pub struct ExPongBuilder {
+    |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:135:12
+    |
+133 | impl ExPongBuilder {
+    | ------------------ associated items in this implementation
+134 |     /// Create a new builder seeded with default values.
+135 |     pub fn new() -> Self {
+    |            ^^^
+...
+139 |     pub fn msg(mut self, v: String) -> Self {
+    |            ^^^
+...
+144 |     pub fn try_build(self) -> Result<ExPong, String> {
+    |            ^^^^^^^^^
+...
+148 |     pub fn build(self) -> ExPong {
+    |            ^^^^^
+
+warning: `tpt-proto-grpc` (test "runtime_echo") generated 16 warnings (run `cargo fix --test "runtime_echo" -p tpt-proto-grpc` to apply 10 suggestions)
+warning: unused import: `WireType`
+ --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:3:56
+  |
+3 | use __core::{Message, Reader, Writer, UnknownFieldSet, WireType};
+  |                                                        ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `__core::packed`
+ --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:5:5
+  |
+5 | use __core::packed;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:6:5
+  |
+6 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Channel`, `ClientStream`, and `ServerStream`
+  --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:10:14
+   |
+10 | use __grpc::{Channel, ClientStream, ServerStream};
+   |              ^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `tpt_proto_core::Message`
+  --> crates\tpt-proto-grpc\examples\grpc_echo\main.rs:17:5
+   |
+17 | use tpt_proto_core::Message;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates\tpt-proto-grpc\examples\grpc_echo\main.rs:113:9
+    |
+113 |     let mut client = EchoClient::new(channel);
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+  --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:21:15
+   |
+19 | impl ExPing {
+   | ----------- associated constant in this implementation
+20 |     /// Protobuf full name of this message.
+21 |     pub const PROTO_FULL_NAME: &'static str = "ex.Ping";
+   |               ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ExPingBuilder` is never constructed
+  --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:50:12
+   |
+50 | pub struct ExPingBuilder {
+   |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+  --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:56:12
+   |
+54 | impl ExPingBuilder {
+   | ------------------ associated items in this implementation
+55 |     /// Create a new builder seeded with default values.
+56 |     pub fn new() -> Self {
+   |            ^^^
+...
+60 |     pub fn msg(mut self, v: String) -> Self {
+   |            ^^^
+...
+65 |     pub fn try_build(self) -> Result<ExPing, String> {
+   |            ^^^^^^^^^
+...
+69 |     pub fn build(self) -> ExPing {
+   |            ^^^^^
+
+warning: method `encode_to_vec` is never used
+  --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:86:12
+   |
+74 | impl ExPing {
+   | ----------- method in this implementation
+...
+86 |     pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {
+   |            ^^^^^^^^^^^^^
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:100:15
+    |
+ 98 | impl ExPong {
+    | ----------- associated constant in this implementation
+ 99 |     /// Protobuf full name of this message.
+100 |     pub const PROTO_FULL_NAME: &'static str = "ex.Pong";
+    |               ^^^^^^^^^^^^^^^
+
+warning: struct `ExPongBuilder` is never constructed
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:129:12
+    |
+129 | pub struct ExPongBuilder {
+    |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:135:12
+    |
+133 | impl ExPongBuilder {
+    | ------------------ associated items in this implementation
+134 |     /// Create a new builder seeded with default values.
+135 |     pub fn new() -> Self {
+    |            ^^^
+...
+139 |     pub fn msg(mut self, v: String) -> Self {
+    |            ^^^
+...
+144 |     pub fn try_build(self) -> Result<ExPong, String> {
+    |            ^^^^^^^^^
+...
+148 |     pub fn build(self) -> ExPong {
+    |            ^^^^^
+
+warning: associated function `decode` is never used
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:158:12
+    |
+153 | impl ExPong {
+    | ----------- associated function in this implementation
+...
+158 |     pub fn decode(buf: &[u8]) -> ::tpt_proto_core::Result<Self> {
+    |            ^^^^^^
+
+warning: methods `server_stream`, `client_stream`, and `bidi` are never used
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:177:14
+    |
+173 | pub trait Echo: Send + Sync {
+    |           ---- methods in this trait
+...
+177 |     async fn server_stream(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<Ex...
+    |              ^^^^^^^^^^^^^
+178 |     /// Handler for `ex.Echo.client_stream`.
+179 |     async fn client_stream(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<E...
+    |              ^^^^^^^^^^^^^
+180 |     /// Handler for `ex.Echo.bidi`.
+181 |     async fn bidi(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc::Se...
+    |              ^^^^
+
+warning: methods `server_stream`, `client_stream`, and `bidi` are never used
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:206:18
+    |
+189 | impl EchoClient {
+    | --------------- methods in this implementation
+...
+206 |     pub async fn server_stream(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStrea...
+    |                  ^^^^^^^^^^^^^
+...
+219 |     pub async fn client_stream(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Respon...
+    |                  ^^^^^^^^^^^^^
+...
+232 |     pub async fn bidi(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc...
+    |                  ^^^^
+
+warning: struct `EchoServer` is never constructed
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:253:12
+    |
+253 | pub struct EchoServer<T: Echo + ?Sized> {
+    |            ^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> crates\tpt-proto-grpc\examples\grpc_echo\echo_gen.rs:259:12
+    |
+257 | impl<T: Echo + 'static> EchoServer<T> {
+    | ------------------------------------- associated function in this implementation
+258 |     /// Wrap a service implementation.
+259 |     pub fn new(inner: T) -> Self { Self { inner: std::sync::Arc::new(inner) } }
+    |            ^^^
+
+warning: `tpt-proto-grpc` (example "grpc_echo") generated 18 warnings (run `cargo fix --example "grpc_echo" -p tpt-proto-grpc` to apply 5 suggestions)
+warning: `tpt-proto-grpc` (lib test) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.37s
+     Running unittests src\lib.rs (target\debug\deps\tpt_proto_grpc-741aa02b0fe42176.exe)
+
+running 66 tests
+test cancellation::tests::cancel_propagates_to_clones ... ok
+test cancellation::tests::not_cancelled_initially ... ok
+test compression::tests::header_roundtrip ... ok
+test codec::tests::rejects_bad_flag ... ok
+test codec::tests::rejects_length_mismatch ... ok
+test codec::tests::rejects_short_frame ... ok
+test context::tests::request_response_wrappers ... ok
+test health::tests::check_response_roundtrip ... ok
+test codec::tests::uncompressed_roundtrip ... ok
+test codec::tests::enforces_max_size ... ok
+test compression::tests::unsupported_fails ... ok
+test cancellation::tests::wait_returns_after_cancel ... ok
+test cancellation::tests::async_cancel_wakes ... ok
+test context::tests::deadline_and_remaining ... ok
+test context::tests::extensions_type_keyed ... ok
+test health::tests::check_request_roundtrip ... ok
+test compression::tests::identity_is_passthrough ... ok
+test health::tests::check_returns_service_unknown_for_missing ... ok
+test health::tests::check_handler_maps_unknown_to_not_found ... ok
+test health::tests::overall_aggregates_not_serving ... ok
+test health::tests::status_wire_roundtrip ... ok
+test compression::tests::gzip_roundtrip ... ok
+test metadata::tests::allows_reserved_in_trailers ... ok
+test metadata::tests::binary_roundtrip ... ok
+test health::tests::watch_emits_current_then_changes ... ok
+test metadata::tests::rejects_reserved_key ... ok
+test metadata::tests::rejects_uppercase_key ... ok
+test metadata::tests::enforces_size_limit ... ok
+test metadata::tests::text_roundtrip ... ok
+test method::tests::builds_service_with_paths ... ok
+test method::tests::classifies_kinds ... ok
+test codec::tests::compressed_roundtrip ... ok
+test observability::tests::drop_finishes_call ... ok
+test observability::tests::json_logger_emits_valid_shape ... ok
+test observability::tests::outcome_from_status ... ok
+test observability::tests::instrumentor_records_cancellation_and_deadline ... FAILED
+test observability::tests::instrumentor_records_completion ... FAILED
+test observability::tests::request_id_log_bounded ... ok
+test observability::tests::streaming_type_classify ... ok
+test reflection::tests::all_extension_numbers_unknown ... FAILED
+test reflection::tests::file_containing_symbol_message ... ok
+test reflection::tests::file_by_filename ... ok
+test reflection::tests::file_containing_symbol_unknown_errors ... ok
+test security::tests::bearer_auth_accepts_valid ... ok
+test reflection::tests::request_messages_roundtrip ... ok
+test security::tests::bearer_auth_rejects_invalid ... ok
+test reflection::tests::lists_services ... FAILED
+test security::tests::role_authorizer_enforces ... ok
+test security::tests::parse_pem_roundtrip ... FAILED
+test security::tests::security_policy_applies ... ok
+test security::tests::tls_validate_mutual_requires_ca ... ok
+test security::tests::tls_validate_ok ... ok
+test security::tests::tls_validate_requires_h2 ... ok
+test status::tests::code_roundtrip ... ok
+test status::tests::missing_status_defaults_unknown ... ok
+test status::tests::trailers_roundtrip_ok ... ok
+test status::tests::rich_details_roundtrip ... ok
+test tests::path_roundtrip_with_package ... ok
+test tests::path_roundtrip_without_package ... ok
+test tests::path_with_nested_package ... ok
+test timeout::tests::format_prefers_largest_unit ... ok
+test timeout::tests::format_roundtrip ... ok
+test timeout::tests::parse_errors ... ok
+test timeout::tests::parse_units ... ok
+test transport::tests::channel_clone_shares_transport ... ok
+test transport::tests::channel_unary_roundtrip ... ok
+
+failures:
+
+---- observability::tests::instrumentor_records_cancellation_and_deadline stdout ----
+
+thread 'observability::tests::instrumentor_records_cancellation_and_deadline' (12812) panicked at crates\tpt-proto-grpc\src\observability.rs:781:9:
+assertion `left == right` failed
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- observability::tests::instrumentor_records_completion stdout ----
+
+thread 'observability::tests::instrumentor_records_completion' (21208) panicked at crates\tpt-proto-grpc\src\observability.rs:762:9:
+assertion `left == right` failed
+  left: 0
+ right: 1
+
+---- reflection::tests::all_extension_numbers_unknown stdout ----
+
+thread 'reflection::tests::all_extension_numbers_unknown' (83260) panicked at crates\tpt-proto-grpc\src\reflection.rs:789:51:
+called `Option::unwrap()` on a `None` value
+
+---- reflection::tests::lists_services stdout ----
+
+thread 'reflection::tests::lists_services' (80556) panicked at crates\tpt-proto-grpc\src\reflection.rs:726:9:
+assertion `left == right` failed
+  left: [".ex.UserService"]
+ right: ["ex.UserService"]
+
+---- security::tests::parse_pem_roundtrip stdout ----
+
+thread 'security::tests::parse_pem_roundtrip' (83320) panicked at crates\tpt-proto-grpc\src\security.rs:525:9:
+assertion `left == right` failed
+  left: [48, 130, 1]
+ right: [48, 130, 4]
+
+
+failures:
+    observability::tests::instrumentor_records_cancellation_and_deadline
+    observability::tests::instrumentor_records_completion
+    reflection::tests::all_extension_numbers_unknown
+    reflection::tests::lists_services
+    security::tests::parse_pem_roundtrip
+
+test result: FAILED. 61 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tpt-proto-grpc --lib`

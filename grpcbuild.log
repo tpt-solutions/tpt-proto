@@ -1,0 +1,16 @@
+warning: unused import: `BoxStream`
+  --> crates\tpt-proto-grpc\src\health.rs:14:29
+   |
+14 | use futures::stream::{self, BoxStream};
+   |                             ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `BoxStream`
+  --> crates\tpt-proto-grpc\src\transport_http2.rs:16:29
+   |
+16 | use futures::stream::{self, BoxStream};
+   |                             ^^^^^^^^^
+
+warning: `tpt-proto-grpc` (lib) generated 2 warnings (run `cargo fix --lib -p tpt-proto-grpc` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s

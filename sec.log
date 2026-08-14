@@ -1,0 +1,48 @@
+warning: unused variable: `resp_meta`
+   --> crates\tpt-proto-grpc\src\transport_http2.rs:293:13
+    |
+293 |         let resp_meta = merge_metadata(&headers, trailers.as_ref());
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_resp_meta`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `tpt-proto-grpc` (lib) generated 1 warning (run `cargo fix --lib -p tpt-proto-grpc` to apply 1 suggestion)
+warning: variable does not need to be mutable
+  --> crates\tpt-proto-grpc\tests\observability_security.rs:38:9
+   |
+38 |     let mut registry = HealthRegistry::new();
+   |         ----^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> crates\tpt-proto-grpc\tests\observability_security.rs:81:9
+   |
+81 |     let mut registry = HealthRegistry::new();
+   |         ----^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: `tpt-proto-grpc` (test "observability_security") generated 2 warnings (run `cargo fix --test "observability_security" -p tpt-proto-grpc` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running tests\observability_security.rs (target\debug\deps\observability_security-a7a632fa29f0d610.exe)
+
+thread 'security_policy_enforces_authentication' (82012) panicked at crates\tpt-proto-grpc\tests\observability_security.rs:97:5:
+assertion `left == right` failed
+  left: Internal
+
+ right: Unauthenticated
+running 1 test
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test security_policy_enforces_authentication ... FAILED
+
+failures:
+
+failures:
+    security_policy_enforces_authentication
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tpt-proto-grpc --test observability_security`
