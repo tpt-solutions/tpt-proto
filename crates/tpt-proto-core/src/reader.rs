@@ -215,6 +215,13 @@ impl<'a> Reader<'a> {
 
     /// Skip a value of the given wire type, correctly descending into groups.
     pub fn skip(&mut self, wire_type: WireType) -> crate::Result<()> {
+        self.skip_inner(wire_type, self.depth)
+    }
+
+    /// Recursive helper for [`Reader::skip`] that tracks nesting `depth` so the
+    /// `max_depth` limit is enforced when skipping legacy groups (groups can
+    /// nest arbitrarily and would otherwise recurse without bound).
+    fn skip_inner(&mut self, wire_type: WireType, depth: u32) -> crate::Result<()> {
         match wire_type {
             WireType::Varint => {
                 self.read_varint()?;
@@ -231,7 +238,11 @@ impl<'a> Reader<'a> {
                 self.advance(len)?;
             }
             WireType::StartGroup => {
-                // Consume until the matching EndGroup tag.
+                // Consume until the matching EndGroup tag, enforcing depth.
+                let child_depth = depth + 1;
+                if child_depth > self.limits.max_depth {
+                    return Err(Error::DepthLimitExceeded);
+                }
                 loop {
                     if self.is_empty() {
                         return Err(Error::UnterminatedGroup(0));
@@ -240,7 +251,7 @@ impl<'a> Reader<'a> {
                     if tag.wire_type == WireType::EndGroup {
                         break;
                     }
-                    self.skip(tag.wire_type)?;
+                    self.skip_inner(tag.wire_type, child_depth)?;
                 }
             }
             WireType::EndGroup => {

@@ -28,6 +28,7 @@ pub fn well_known_to_json(
     descriptor: &DescriptorProto,
     msg: &DynamicMessage,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<Option<Json>, JsonError> {
     let Some(name) = wkt_name(pool, descriptor) else {
         return Ok(None);
@@ -36,10 +37,10 @@ pub fn well_known_to_json(
         "Timestamp" => timestamp_to_json(msg)?,
         "Duration" => duration_to_json(msg)?,
         "FieldMask" => field_mask_to_json(msg)?,
-        "Struct" => struct_to_json(pool, msg, opts)?,
-        "Value" => value_to_json(pool, msg, opts)?,
-        "ListValue" => list_value_to_json(pool, msg, opts)?,
-        "Any" => any_to_json(pool, msg, opts)?,
+        "Struct" => struct_to_json(pool, msg, opts, depth)?,
+        "Value" => value_to_json(pool, msg, opts, depth)?,
+        "ListValue" => list_value_to_json(pool, msg, opts, depth)?,
+        "Any" => any_to_json(pool, msg, opts, depth)?,
         "Empty" => Json::Object(Map::new()),
         _wrapper if is_wrapper(&name) => wrapper_to_json(descriptor, msg)?,
         _ => return Ok(None),
@@ -54,6 +55,7 @@ pub fn well_known_from_json(
     descriptor: &DescriptorProto,
     json: &Json,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<Option<DynamicMessage>, JsonError> {
     let Some(name) = wkt_name(pool, descriptor) else {
         return Ok(None);
@@ -62,10 +64,10 @@ pub fn well_known_from_json(
         "Timestamp" => timestamp_from_json(descriptor, json)?,
         "Duration" => duration_from_json(descriptor, json)?,
         "FieldMask" => field_mask_from_json(descriptor, json)?,
-        "Struct" => struct_from_json(pool, descriptor, json, opts)?,
-        "Value" => value_from_json(pool, descriptor, json, opts)?,
-        "ListValue" => list_value_from_json(pool, descriptor, json, opts)?,
-        "Any" => any_from_json(pool, descriptor, json, opts)?,
+        "Struct" => struct_from_json(pool, descriptor, json, opts, depth)?,
+        "Value" => value_from_json(pool, descriptor, json, opts, depth)?,
+        "ListValue" => list_value_from_json(pool, descriptor, json, opts, depth)?,
+        "Any" => any_from_json(pool, descriptor, json, opts, depth)?,
         "Empty" => DynamicMessage::new(Arc::new(descriptor.clone()), pool.clone()),
         _wrapper if is_wrapper(&name) => wrapper_from_json(descriptor, json)?,
         _ => return Ok(None),
@@ -297,7 +299,7 @@ fn wrapper_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMessa
 // Struct / Value / ListValue.
 // ---------------------------------------------------------------------------
 
-fn struct_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions) -> Result<Json, JsonError> {
+fn struct_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
     let mut out = Map::new();
     if let Some(Value::Map(entries)) = msg.get_field(1) {
         let value_desc = pool.lookup_message(".google.protobuf.Value");
@@ -307,7 +309,7 @@ fn struct_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOption
                 _ => continue,
             };
             let json_val = if let (Some(d), Value::Message(m)) = (&value_desc, v) {
-                super::message_to_json(pool, &d, m, opts)?
+                super::message_to_json_impl(pool, &d, m, opts, depth + 1)?
             } else {
                 Json::Null
             };
@@ -322,13 +324,14 @@ fn struct_from_json(
     desc: &DescriptorProto,
     json: &Json,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
     let obj = json.as_object().ok_or_else(|| JsonError::TypeMismatch("Struct".into(), "expected object".into()))?;
     let value_desc = pool.lookup_message(".google.protobuf.Value");
     let mut entries = Vec::with_capacity(obj.len());
     for (k, v) in obj {
         let value_msg = match &value_desc {
-            Some(d) => super::json_to_message(pool, d, v, opts)?,
+            Some(d) => super::json_to_message_impl(pool, d, v, opts, depth + 1)?,
             None => DynamicMessage::new(Arc::new(DescriptorProto::default()), pool.clone()),
         };
         entries.push((Value::Scalar(RScalar::String(k.clone())), Value::Message(value_msg)));
@@ -338,7 +341,7 @@ fn struct_from_json(
     Ok(msg)
 }
 
-fn value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions) -> Result<Json, JsonError> {
+fn value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
     if let Some(v) = get_i64(msg, 1) {
         // null_value enum; any value maps to JSON null.
         let _ = v;
@@ -355,11 +358,11 @@ fn value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions
     }
     if let Some(m) = get_msg(msg, 5) {
         let d = pool.lookup_message(".google.protobuf.Struct").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.Struct".into()))?;
-        return super::message_to_json(pool, &d, m, opts);
+        return super::message_to_json_impl(pool, &d, m, opts, depth + 1);
     }
     if let Some(m) = get_msg(msg, 6) {
         let d = pool.lookup_message(".google.protobuf.ListValue").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.ListValue".into()))?;
-        return super::message_to_json(pool, &d, m, opts);
+        return super::message_to_json_impl(pool, &d, m, opts, depth + 1);
     }
     Ok(Json::Null)
 }
@@ -376,6 +379,7 @@ fn value_from_json(
     desc: &DescriptorProto,
     json: &Json,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
     let mut msg = DynamicMessage::new(Arc::new(desc.clone()), pool.clone());
     match json {
@@ -393,25 +397,25 @@ fn value_from_json(
         }
         Json::Object(_) => {
             let d = pool.lookup_message(".google.protobuf.Struct").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.Struct".into()))?;
-            let inner = super::json_to_message(pool, &d, json, opts)?;
+            let inner = super::json_to_message_impl(pool, &d, json, opts, depth + 1)?;
             msg.set_field(5, Value::Message(inner));
         }
         Json::Array(_arr) => {
             let d = pool.lookup_message(".google.protobuf.ListValue").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.ListValue".into()))?;
-            let inner = super::json_to_message(pool, &d, json, opts)?;
+            let inner = super::json_to_message_impl(pool, &d, json, opts, depth + 1)?;
             msg.set_field(6, Value::Message(inner));
         }
     }
     Ok(msg)
 }
 
-fn list_value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions) -> Result<Json, JsonError> {
+fn list_value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
     let mut out = Vec::new();
     if let Some(Value::List(items)) = msg.get_field(1) {
         let value_desc = pool.lookup_message(".google.protobuf.Value");
         for it in items {
             let json_val = if let (Some(d), Value::Message(m)) = (&value_desc, it) {
-                super::message_to_json(pool, &d, m, opts)?
+                super::message_to_json_impl(pool, &d, m, opts, depth + 1)?
             } else {
                 Json::Null
             };
@@ -426,13 +430,14 @@ fn list_value_from_json(
     desc: &DescriptorProto,
     json: &Json,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
     let arr = json.as_array().ok_or_else(|| JsonError::TypeMismatch("ListValue".into(), "expected array".into()))?;
     let value_desc = pool.lookup_message(".google.protobuf.Value");
     let mut items = Vec::with_capacity(arr.len());
     for it in arr {
         let value_msg = match &value_desc {
-            Some(d) => super::json_to_message(pool, d, it, opts)?,
+            Some(d) => super::json_to_message_impl(pool, d, it, opts, depth + 1)?,
             None => DynamicMessage::new(Arc::new(DescriptorProto::default()), pool.clone()),
         };
         items.push(Value::Message(value_msg));
@@ -446,7 +451,7 @@ fn list_value_from_json(
 // Any.
 // ---------------------------------------------------------------------------
 
-fn any_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions) -> Result<Json, JsonError> {
+fn any_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
     let type_url = get_str(msg, 1).unwrap_or_default();
     let value_bytes = match msg.get_field(2) {
         Some(Value::Scalar(RScalar::Bytes(b))) => b.clone(),
@@ -459,7 +464,7 @@ fn any_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions) 
             let mut r = Reader::new(&value_bytes);
             let inner = DynamicMessage::decode(pool, desc.clone(), &mut r)
                 .map_err(|e| JsonError::WellKnown(e.to_string()))?;
-            if let Json::Object(inner_obj) = super::message_to_json(pool, &desc, &inner, opts)? {
+            if let Json::Object(inner_obj) = super::message_to_json_impl(pool, &desc, &inner, opts, depth + 1)? {
                 for (k, v) in inner_obj {
                     out.insert(k, v);
                 }
@@ -477,6 +482,7 @@ fn any_from_json(
     desc: &DescriptorProto,
     json: &Json,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
     let obj = json.as_object().ok_or_else(|| JsonError::TypeMismatch("Any".into(), "expected object".into()))?;
     let type_url = obj
@@ -491,7 +497,7 @@ fn any_from_json(
             let mut inner_obj = obj.clone();
             inner_obj.remove("@type");
             let inner_json = Json::Object(inner_obj);
-            let inner = super::json_to_message(pool, &d, &inner_json, opts)?;
+            let inner = super::json_to_message_impl(pool, &d, &inner_json, opts, depth + 1)?;
             let bytes = inner
                 .encode()
                 .map_err(|e| JsonError::WellKnown(e.to_string()))?;

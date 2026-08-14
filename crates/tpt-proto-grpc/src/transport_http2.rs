@@ -138,6 +138,7 @@ impl H2Transport {
         let resp = resp_future
             .await
             .map_err(|e| Status::new(Code::Unavailable, format!("response: {e}")))?;
+        eprintln!("DBG exchange: response headers received");
 
         // Send the request body.
         if let Some(bytes) = request_body {
@@ -164,11 +165,14 @@ impl H2Transport {
         }
 
         let (parts, mut recv) = resp.into_parts();
+        eprintln!("DBG exchange: headers received");
         let body = collect_body(&mut recv, self.max_message_size).await?;
+        eprintln!("DBG exchange: body collected len={}", body.len());
         let trailers = recv
             .trailers()
             .await
             .map_err(|e| Status::new(Code::Internal, format!("trailers: {e}")))?;
+        eprintln!("DBG exchange: trailers={:?}", trailers.is_some());
         Ok((body, parts.headers, trailers))
     }
 }
@@ -177,14 +181,21 @@ impl H2Transport {
 /// from the buffer afterwards).
 async fn collect_body(recv: &mut h2::RecvStream, max: usize) -> Result<Vec<u8>, Status> {
     let mut buf = Vec::new();
-    while let Some(chunk) = recv.data().await {
-        let chunk = chunk.map_err(|e| Status::new(Code::Internal, format!("recv data: {e}")))?;
-        buf.extend_from_slice(&chunk);
-        if buf.len() > max {
-            return Err(Status::new(
-                Code::ResourceExhausted,
-                format!("response body exceeds {max} bytes"),
-            ));
+    loop {
+        match recv.data().await {
+            Some(Ok(chunk)) => {
+                buf.extend_from_slice(&chunk);
+                if buf.len() > max {
+                    return Err(Status::new(
+                        Code::ResourceExhausted,
+                        format!("response body exceeds {max} bytes"),
+                    ));
+                }
+            }
+            Some(Err(e)) => {
+                return Err(Status::new(Code::Internal, format!("recv data: {e}")));
+            }
+            None => break,
         }
     }
     Ok(buf)

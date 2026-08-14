@@ -19,7 +19,11 @@ fn main() {
     );
     let code = tpt_proto_codegen_rust::generate(
         &res.set,
-        &tpt_proto_codegen_rust::GenerateOptions::default(),
+        &tpt_proto_codegen_rust::GenerateOptions {
+            json: true,
+            text: true,
+            ..Default::default()
+        },
     )
     .expect("codegen failed");
 

@@ -49,10 +49,15 @@ async fn observability_records_metrics_for_health_check() {
         service: String::new(),
     };
     let bytes = req.encode_to_vec().unwrap();
-    let (resp, _trailers) = transport
-        .unary("/grpc.health.v1.Health/Check", Metadata::new(), bytes)
-        .await
-        .expect("check succeeded");
+    eprintln!("TEST: calling unary");
+    let (resp, _trailers) = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        transport.unary("/grpc.health.v1.Health/Check", Metadata::new(), bytes),
+    )
+    .await
+    .expect("unary did not time out")
+    .expect("check succeeded");
+    eprintln!("TEST: got response");
     let resp = HealthCheckResponse::decode(&resp).unwrap();
     assert_eq!(resp.status, ServingStatus::Serving);
 
@@ -63,6 +68,7 @@ async fn observability_records_metrics_for_health_check() {
         labels.iter().any(|l| l.service == "grpc.health.v1.Health" && l.method == "Check"),
         "expected metrics labelled for health Check, got {labels:?}"
     );
+    shutdown.cancel();
 }
 
 #[tokio::test]
@@ -99,6 +105,7 @@ async fn security_policy_enforces_authentication() {
         .expect("authenticated check succeeds");
     let resp = HealthCheckResponse::decode(&resp).unwrap();
     assert_eq!(resp.status, ServingStatus::Serving);
+    shutdown.cancel();
 }
 
 #[tokio::test]
@@ -149,4 +156,5 @@ async fn reflection_lists_registered_services() {
         .map(|s| s.name)
         .collect();
     assert_eq!(names, vec!["ex.UserService".to_string()]);
+    shutdown.cancel();
 }

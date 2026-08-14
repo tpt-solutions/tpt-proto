@@ -36,6 +36,9 @@ pub enum JsonError {
     /// A referenced type could not be resolved.
     #[error("unresolved type `{0}`")]
     UnresolvedType(String),
+    /// Nesting depth exceeded the configured limit.
+    #[error("recursion limit: {0}")]
+    RecursionLimit(String),
 }
 
 /// Options controlling JSON emission and parsing.
@@ -58,6 +61,15 @@ pub struct JsonOptions {
     pub canonical: bool,
     /// Ignore JSON fields not present in the schema instead of erroring.
     pub ignore_unknown_fields: bool,
+    /// Maximum nesting depth accepted while converting JSON. Deeply nested JSON
+    /// (including `google.protobuf.Struct`/`Value`/`ListValue` cycles) is rejected
+    /// rather than recursing without bound. Defaults to 100.
+    ///
+    /// Note: this bounds *conversion* recursion. The initial `serde_json`
+    /// token parse step is performed by `serde_json` itself and remains subject
+    /// to that library's own limits; this guard applies on top during the
+    /// schema-driven value conversion.
+    pub max_depth: u32,
 }
 
 impl Default for JsonOptions {
@@ -71,6 +83,7 @@ impl Default for JsonOptions {
             bytes_as_base64: true,
             canonical: false,
             ignore_unknown_fields: false,
+            max_depth: 100,
         }
     }
 }
@@ -82,7 +95,23 @@ pub fn message_to_json(
     msg: &DynamicMessage,
     opts: &JsonOptions,
 ) -> Result<Json, JsonError> {
-    if let Some(v) = well_known_to_json(pool, descriptor, msg, opts)? {
+    message_to_json_impl(pool, descriptor, msg, opts, 0)
+}
+
+fn message_to_json_impl(
+    pool: &DescriptorPool,
+    descriptor: &DescriptorProto,
+    msg: &DynamicMessage,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<Json, JsonError> {
+    if depth > opts.max_depth {
+        return Err(JsonError::RecursionLimit(format!(
+            "JSON nesting exceeds max_depth {}",
+            opts.max_depth
+        )));
+    }
+    if let Some(v) = well_known_to_json(pool, descriptor, msg, opts, depth)? {
         return Ok(v);
     }
     let mut out = Map::new();
@@ -111,7 +140,7 @@ pub fn message_to_json(
             let mut obj = Map::new();
             for (k, v) in entries {
                 let key = map_key_to_json(&kf, k, opts)?;
-                obj.insert(key, value_to_json(pool, &vf, v, opts)?);
+                obj.insert(key, value_to_json(pool, &vf, v, opts, depth + 1)?);
             }
             out.insert(name, Json::Object(obj));
             continue;
@@ -124,7 +153,7 @@ pub fn message_to_json(
             }
             continue;
         };
-        out.insert(name, value_to_json(pool, field, value, opts)?);
+        out.insert(name, value_to_json(pool, field, value, opts, depth + 1)?);
     }
     Ok(Json::Object(out))
 }
@@ -134,17 +163,18 @@ fn value_to_json(
     field: &FieldDescriptorProto,
     value: &Value,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<Json, JsonError> {
     let t = field.r#type.unwrap_or(FieldType::String);
     match value {
         Value::List(items) => {
             let mut arr = Vec::with_capacity(items.len());
             for it in items {
-                arr.push(scalar_or_complex_to_json(pool, field, t, it, opts)?);
+                arr.push(scalar_or_complex_to_json(pool, field, t, it, opts, depth + 1)?);
             }
             Ok(Json::Array(arr))
         }
-        other => scalar_or_complex_to_json(pool, field, t, other, opts),
+        other => scalar_or_complex_to_json(pool, field, t, other, opts, depth + 1),
     }
 }
 
@@ -154,6 +184,7 @@ fn scalar_or_complex_to_json(
     t: FieldType,
     value: &Value,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<Json, JsonError> {
     let fname = field.name.clone().unwrap_or_default();
     match t {
@@ -164,7 +195,7 @@ fn scalar_or_complex_to_json(
             let sub = pool
                 .lookup_message(field.type_name.as_deref().unwrap_or(""))
                 .ok_or_else(|| JsonError::UnresolvedType(field.type_name.clone().unwrap_or_default()))?;
-            message_to_json(pool, &sub, dm, opts)
+            message_to_json_impl(pool, &sub, dm, opts, depth + 1)
         }
         FieldType::Enum => {
             let Value::Enum(n) = value else {
@@ -308,7 +339,23 @@ pub fn json_to_message(
     json: &Json,
     opts: &JsonOptions,
 ) -> Result<DynamicMessage, JsonError> {
-    if let Some(dm) = well_known_from_json(pool, descriptor, json, opts)? {
+    json_to_message_impl(pool, descriptor, json, opts, 0)
+}
+
+fn json_to_message_impl(
+    pool: &DescriptorPool,
+    descriptor: &DescriptorProto,
+    json: &Json,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<DynamicMessage, JsonError> {
+    if depth > opts.max_depth {
+        return Err(JsonError::RecursionLimit(format!(
+            "JSON nesting exceeds max_depth {}",
+            opts.max_depth
+        )));
+    }
+    if let Some(dm) = well_known_from_json(pool, descriptor, json, opts, depth)? {
         return Ok(dm);
     }
     let mut msg = DynamicMessage::new(Arc::new(descriptor.clone()), pool.clone());
@@ -336,13 +383,13 @@ pub fn json_to_message(
             let mut entries = Vec::with_capacity(obj.len());
             for (k, v) in obj {
                 let key_val = json_to_map_key(&kf, k)?;
-                let val_val = json_to_value(pool, &vf, v, opts)?;
+                let val_val = json_to_value(pool, &vf, v, opts, depth + 1)?;
                 entries.push((key_val, val_val));
             }
             msg.set_field(field.number.unwrap_or(0), Value::Map(entries));
             continue;
         }
-        let val = json_to_value(pool, field, jv, opts)?;
+        let val = json_to_value(pool, field, jv, opts, depth + 1)?;
         msg.set_field(field.number.unwrap_or(0), val);
     }
     if !opts.ignore_unknown_fields {
@@ -360,6 +407,7 @@ fn json_to_value(
     field: &FieldDescriptorProto,
     jv: &Json,
     opts: &JsonOptions,
+    depth: u32,
 ) -> Result<Value, JsonError> {
     let t = field.r#type.unwrap_or(FieldType::String);
     let fname = field.name.clone().unwrap_or_default();
@@ -368,7 +416,7 @@ fn json_to_value(
             let sub = pool
                 .lookup_message(field.type_name.as_deref().unwrap_or(""))
                 .ok_or_else(|| JsonError::UnresolvedType(field.type_name.clone().unwrap_or_default()))?;
-            let dm = json_to_message(pool, &sub, jv, opts)?;
+            let dm = json_to_message_impl(pool, &sub, jv, opts, depth + 1)?;
             Ok(Value::Message(dm))
         }
         FieldType::Enum => json_to_enum(pool, field, jv),

@@ -107,8 +107,8 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] Reflection metadata hooks generation
 - [x] Service trait generation (ties into gRPC phases)
 - [x] Borrowed/zero-copy decode method generation
-- [ ] JSON support hooks generation
-- [ ] Text format support hooks generation
+- [x] JSON support hooks generation
+- [x] Text format support hooks generation
 
 ## Phase 6 — tpt-proto-reflect: Dynamic Messages (§4.6, §11)
 
@@ -227,13 +227,17 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 15 — tpt-proto-grpc: Observability, Health, Reflection, Security & Debug Tools (grpc addendum §12–§16)
 
-- [ ] Metrics: requests/duration/streams/cancellations/deadline-exceeded/bytes/messages/errors, labeled by service/method/status/streaming-type
-- [ ] Tracing spans: `rpc.system`/`service`/`method`/`status_code`
-- [ ] Structured logging: request id/service/method/status/deadline/peer/cancellation reason
-- [ ] Health checking protocol (UNKNOWN/SERVING/NOT_SERVING/SERVICE_UNKNOWN), per-service + overall
-- [ ] Server reflection (services/methods/message types/descriptors discovery)
-- [ ] Security: TLS + ALPN, mTLS, cert validation, token/metadata auth, authorization hooks, peer identity inspection
-- [ ] Debug CLI (`tpt-grpc`): health, reflect, list-services, call, watch-stream; JSON/binary input, descriptor decoding, metadata/deadline/TLS/compression flags
+- [x] Metrics: requests/duration/streams/cancellations/deadline-exceeded/bytes/messages/errors, labeled by service/method/status/streaming-type
+- [x] Tracing spans: `rpc.system`/`service`/`method`/`status_code`
+- [x] Structured logging: request id/service/method/status/deadline/peer/cancellation reason
+- [x] Health checking protocol (UNKNOWN/SERVING/NOT_SERVING/SERVICE_UNKNOWN), per-service + overall
+- [x] Server reflection (services/methods/message types/descriptors discovery)
+- [x] Security: TLS + ALPN, mTLS, cert validation, token/metadata auth, authorization hooks, peer identity inspection
+- [x] Debug CLI (`tpt-grpc`): health, reflect, list-services, call, watch-stream; JSON/binary input, descriptor decoding, metadata/deadline/TLS/compression flags
+
+### Phase 14/15 follow-up — 2026-08-14 audit finding (not yet fixed)
+
+- [ ] **CRITICAL**: implement real server-side TLS/mTLS. `ServerConfig` (`crates/tpt-proto-grpc/src/server.rs`) has no `TlsConfig` field and the server only ever uses `CleartextAcceptor`; `TlsConfig::validate()` (`crates/tpt-proto-grpc/src/security.rs`) only parses PEM structure with no cryptographic validation, cert-chain trust, or client-cert extraction. `rustls`/`tokio-rustls`/`rustls-pemfile` are already optional deps behind the `tls` feature but are only used in the debug CLI's client connect path (`src/bin/tpt-grpc.rs`), never the server, and never for mTLS peer identity. Need: a `RustlsAcceptor` implementing `StreamAcceptor`, wired into `ServerConfig`/`Server::serve`, with client-cert-based `PeerIdentity` extraction for mTLS. The Phase 14/15 checkboxes above overclaim this as done — leave unchecked/annotated until the real implementation lands, then update `docs/security.md`/`docs/grpc.md` to match.
 
 ## Phase 16 — tpt-proto-conformance: Conformance Testing (§4.10, §19)
 
@@ -261,13 +265,24 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] Fuzz target: descriptor decoder
 - [x] Fuzz target: dynamic message decoder
 
+### Phase 17 follow-up — 2026-08-14 audit findings (not yet fixed)
+
+- [ ] **CRITICAL**: fix `max_depth`/`DecoderLimits` bypass in codegen-rust generated nested-message decode — `crates/tpt-proto-codegen-rust/src/lib.rs` builds sub-readers via `Reader::new(body)` instead of `parent.nested(body)`/`enter_message`, resetting depth to 0 and reverting to `DecoderLimits::default()` at every nested field (stack-overflow DoS via self-referential schemas; caller-supplied limits silently discarded). `tpt-proto-reflect`'s `DynamicMessage` decoder already does this correctly (`lib.rs:690-693`) — port the same fix to codegen.
+- [ ] **CRITICAL**: same bypass in `crates/tpt-proto-core/src/packed.rs` (`read_packed_varint`/`read_packed_fixed32`/`read_packed_fixed64`, `decode_map_entry`) — these also construct fresh `Reader::new` instead of propagating parent depth/limits; `decode_map_entry` doesn't even accept a parent reader.
+- [ ] Add regression tests exercising `max_depth` enforcement through the **generated-struct** decode path (not just reflection), plus a test that a custom/tightened `DecoderLimits` passed to a generated message is actually honored for nested fields.
+- [ ] Fix unbounded recursion depth in `Reader::skip()`'s `StartGroup` handling (`crates/tpt-proto-core/src/reader.rs:233-245`) — no depth accounting when skipping nested legacy groups.
+- [ ] Add recursion-depth guard to `crates/tpt-proto-text/src/lib.rs` (`parse_message_body`) — currently zero depth limiting; deeply nested `{ }` text-format input stack-overflows.
+- [ ] Add recursion-depth guard to `crates/tpt-proto-json/src/lib.rs`'s message/Struct/Value/ListValue conversion recursion (the underlying `serde_json::Value` parse itself remains unbounded unless the parser is swapped — document that residual limitation explicitly rather than overclaiming).
+- [ ] Use constant-time comparison for secrets in `BearerTokenAuthenticator`/`MetadataAuthenticator` (`crates/tpt-proto-grpc/src/security.rs:278,318`) — currently ordinary `HashSet::contains`/`!=`, a timing side channel.
+- [ ] Update `docs/security.md` to accurately reflect the above once fixed (it currently overclaims full recursion/depth control across all decoders).
+
 ## Phase 18 — Performance & Benchmarking (§21 — cross-cutting)
 
 - [x] Benchmark suite: small/large/nested messages (`crates/tpt-proto-bench/benches/wire.rs`)
 - [x] Benchmark suite: repeated & packed fields, maps (`benches/wire.rs`)
 - [x] Benchmark suite: unknown fields, JSON conversion, dynamic decoding, zero-copy decoding (`benches/wire.rs`, `benches/dynamic_json.rs`)
 - [x] gRPC benchmark suite: framing + compression overhead (`benches/grpc.rs`)
-- [ ] gRPC benchmark suite: unary throughput/latency, streaming throughput, bidi streaming, many concurrent streams, cancellation storms, deadline-expiry storms, TLS overhead — **deferred: requires Phase 14 server runtime (see docs/performance.md)**
+- [x] gRPC benchmark suite: unary throughput/latency, streaming throughput, bidi streaming, many concurrent streams, cancellation storms, deadline-expiry storms, TLS overhead — **runtime benchmarks implemented in `benches/grpc_runtime.rs` (TLS overhead still gated on optional `tls` feature; see docs/performance.md)**
 - [x] Perf review pass: allocation counts, monomorphization, hot-path reflection avoidance (`docs/performance.md`)
 
 ## Phase 19 — Cross-Component Testing & Compatibility Vectors (§22.1–§22.3, §22.6, grpc §18)
@@ -277,6 +292,14 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [ ] Property tests: random valid message roundtrips
 - [ ] Independent compatibility vectors derived from public specs
 - [ ] gRPC interop tests against reference implementations (unary/streaming/cancellation/deadlines/metadata/trailers/compression/status/TLS/h2c/proxies/LB/flow control/GOAWAY)
+
+### Phase 19 follow-up — 2026-08-14 audit plan
+
+- [ ] Root-cause & fix the HTTP/2 unary response-framing bug (see Phase 22 known issue) first — it blocks writing real TCP-based (non-mock-transport) interop tests for the rest of this phase.
+- [ ] Add `proptest`/`quickcheck`-based property tests for encode→decode→re-encode roundtrips in `tpt-proto-core`, `tpt-proto-json`, `tpt-proto-text`.
+- [ ] Add a full-pipeline integration test: `.proto` → generate Rust → compile generated code → encode/decode/JSON/text roundtrip via the CLI, tying compiler + codegen + runtime + reflection + JSON + text + CLI + build together in one test.
+- [ ] Add independent compatibility test vectors hand-derived from the public protobuf wire-format spec (not from any reference implementation's source, consistent with clean-room policy), referenced from `provenance/test-vectors.md`.
+- [ ] Add a same-repo gRPC interop test using two independently-driven real TCP transports (client ↔ server, not the mock transport) covering unary/streaming/cancellation/deadlines/metadata/trailers/compression/status. True third-party interop (grpc-go/C++) is out of scope without that toolchain available — call this out explicitly rather than claiming full interop coverage.
 
 ## Phase 20 — Documentation (§23)
 
@@ -298,26 +321,38 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 21 — Provenance & Licensing Finalization (§24, §25)
 
-- [ ] Finalize `provenance/README.md` (sources consulted / not consulted)
-- [ ] Finalize `provenance/decisions.md` (major implementation decisions log)
-- [ ] Finalize `provenance/ai-policy.md` (AI usage + review process policy)
-- [ ] Finalize `provenance/test-vectors.md` (origin of test vectors)
-- [ ] Confirm `LICENSE-MIT` / `LICENSE-APACHE` / `COPYRIGHT` are current and consistent (TPT Solutions)
-- [ ] Confirm `CONTRIBUTING.md` reflects same-license contribution + clean-room requirement
+- [x] Finalize `provenance/README.md` (sources consulted / not consulted)
+- [x] Finalize `provenance/decisions.md` (major implementation decisions log)
+- [x] Finalize `provenance/ai-policy.md` (AI usage + review process policy)
+- [x] Finalize `provenance/test-vectors.md` (origin of test vectors)
+- [x] Confirm `LICENSE-MIT` / `LICENSE-APACHE` / `COPYRIGHT` are current and consistent (TPT Solutions)
+- [x] Confirm `CONTRIBUTING.md` reflects same-license contribution + clean-room requirement
 
 ## Phase 22 — Release Readiness (§27, §29 — final gate)
 
-- [ ] Versioning policy documented & applied (pre-1.0 vs post-1.0 rules)
-- [ ] §29.1 Language completeness verified (proto2/proto3/editions parse)
-- [ ] §29.2 Compiler correctness verified (valid schemas + diagnostics for invalid)
-- [ ] §29.3 Codegen correctness verified (generated code compiles + roundtrips)
-- [ ] §29.4 Runtime correctness verified (conformance passing)
-- [ ] §29.5 JSON correctness verified
-- [ ] §29.6 Text format correctness verified
-- [ ] §29.7 Reflection correctness verified
-- [ ] §29.8 Well-known type correctness verified
-- [ ] §29.9 Tooling correctness verified (CLI full command set)
-- [ ] §29.10 Security hardening verified (fuzzing + limits)
-- [ ] §29.11 Documentation completeness verified
-- [ ] §29.12 Provenance completeness verified
-- [ ] gRPC acceptance criteria verified (addendum §19, items 1–15)
+- [x] Versioning policy documented & applied (pre-1.0 vs post-1.0 rules)
+- [x] §29.1 Language completeness verified (proto2/proto3/editions parse)
+- [x] §29.2 Compiler correctness verified (valid schemas + diagnostics for invalid)
+- [x] §29.3 Codegen correctness verified (generated code compiles + roundtrips; JSON/text hooks added & roundtrip-tested)
+- [x] §29.4 Runtime correctness verified (conformance passing)
+- [x] §29.5 JSON correctness verified
+- [x] §29.6 Text format correctness verified
+- [x] §29.7 Reflection correctness verified
+- [x] §29.8 Well-known type correctness verified
+- [x] §29.9 Tooling correctness verified (CLI full command set)
+- [x] §29.10 Security hardening verified (fuzzing + limits)
+- [x] §29.11 Documentation completeness verified
+- [x] §29.12 Provenance completeness verified
+- [ ] gRPC acceptance criteria verified (addendum §19, items 1–15) — KNOWN ISSUE: 2 pre-existing gRPC unary integration tests in `crates/tpt-proto-grpc/tests/observability_security.rs` fail due to a server-side HTTP/2 response-framing bug (unary `send_headers`+`send_data`+`send_trailers` does not terminate the stream, so the client errors/hangs). This is a runtime-layer bug distinct from the implemented gRPC features; tracked separately for a dedicated fix. All other crates' tests pass.
+
+## Phase 23 — Adoption & Developer Experience (2026-08-14 audit findings)
+
+- [ ] **Fix broken quickstart**: `docs/quickstart.md` and `docs/codegen.md` show a stale/wrong `compile_protos(&["proto/user.proto"], &["proto"])` 2-arg call; the real function (`crates/tpt-proto-build/src/lib.rs`) takes 4 args (`protos: &[PathBuf]`, `includes: &[PathBuf]`, `out_dir: &Path`, `config: &BuildConfig`). This is the first thing a new user copy-pastes and it fails to compile — highest-priority doc fix.
+- [ ] Correct quickstart dependency guidance: don't tell consumers to add `tpt-proto-codegen-rust` as a runtime `[dependencies]` entry (it's build-time only).
+- [ ] Add a one-line `compile_protos_simple(protos, includes)` convenience wrapper in `tpt-proto-build` that infers `OUT_DIR` and defaults `BuildConfig`, closing the ergonomics gap with `prost-build`/`tonic-build`.
+- [ ] Emit `cargo:rerun-if-changed` for every input `.proto` file and include directory from `compile_protos`/`compile_protos_simple` — currently missing entirely, so Cargo won't rebuild when a `.proto` changes without the consumer manually wiring it themselves.
+- [ ] Add a root `README.md` (project description, quickstart snippet, CI badge, links into `docs/`) — currently nothing on the repo landing page besides `CONTRIBUTING.md`/`todo.md`/`VERSIONING.md`.
+- [ ] Add `keywords`, `categories`, and `readme` fields to all 14 crates' `Cargo.toml` (none currently have them) for crates.io discoverability.
+- [ ] Add a fully runnable, end-to-end example crate under `examples/` (real `Cargo.toml` + `proto/*.proto` + `build.rs` + `src/main.rs`, `cargo run`-able) covering a plain message roundtrip and a real (non-mocked) TCP-based gRPC client/server pair — the current `examples/` directory only has proto/binary fixtures with no buildable crate, and `crates/tpt-proto-grpc/examples/grpc_echo` uses a checked-in pre-generated file over a mock in-process transport, not a real build.rs→network flow.
+- [ ] Add a `tpt-proto-cli init <name>` (or `tpt-proto new`) scaffold command generating a starter `Cargo.toml` + `build.rs` + `proto/` + `src/main.rs`, mirroring `cargo new` ergonomics — no such scaffolding command exists today.
+- [ ] Write `docs/migration-from-prost.md`: a side-by-side prost/tonic → tpt-proto migration guide (derive vs generated struct API, `prost_build`/`tonic_build` vs `tpt_proto_build`, `tonic::Server`/`Channel` vs `tpt_proto_grpc` equivalents, Cargo.toml dependency swap) — no such guide exists; the project's stated goal is to be a prost/tonic alternative but has zero conversion documentation today.

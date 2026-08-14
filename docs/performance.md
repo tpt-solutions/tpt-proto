@@ -32,6 +32,23 @@ aggregate `MB/s` (meaningful for large payloads; inflated for tiny ones because
 | `json/*` | `message_to_json` / `json_to_message` / roundtrip for a small and a large message. |
 | `grpc/frame/*` | gRPC message framing (encode/decode/roundtrip) at 1 B … 512 KiB. |
 | `grpc/frame/*_gzip` | Compression overhead (gzip encode/decode) vs identity. |
+| `grpc/runtime/unary/*` | Real HTTP/2 unary throughput/latency (h2c loopback) at 64 B … 512 KiB. |
+| `grpc/runtime/server_stream/*` | Server-streaming fan-out (10/100/1000 messages). |
+| `grpc/runtime/client_stream/*` | Client-streaming aggregate (10/100/1000 messages). |
+| `grpc/runtime/bidi/*` | Bidirectional streaming echo (10/100/1000 messages). |
+| `grpc/runtime/concurrent/*` | Many concurrent unary RPCs multiplexed on one h2 connection (64/256/1024). |
+| `grpc/runtime/cancel_storm` | Cancellation storm: drop RPC futures almost immediately. |
+| `grpc/runtime/deadline_storm` | Deadline-expiry storm: tiny `grpc-timeout` ⇒ `DEADLINE_EXCEEDED`. |
+
+The `grpc/runtime/*` workloads run a real in-tree HTTP/2 server and client over a
+loopback socket and are exercised by the `grpc_runtime` bench target:
+
+```sh
+cargo bench -p tpt-proto-bench --bench grpc_runtime
+```
+
+Iteration counts can be scaled for a quick smoke run with the `TPT_BENCH_SCALE`
+env var (e.g. `TPT_BENCH_SCALE=0.01`).
 
 ## Performance-review pass
 
@@ -78,17 +95,13 @@ aggregate `MB/s` (meaningful for large payloads; inflated for tiny ones because
   The negotiation logic should prefer `identity` for small messages and gate
   gzip on a size threshold.
 
-## Deferred items (gated on Phase 14)
+## Deferred items
 
-The following gRPC runtime benchmarks require the Phase 14 server/client runtime,
-which is not yet complete, and are **not** part of this crate yet:
-
-- unary throughput / latency
-- server & client streaming throughput, bidi streaming
-- many concurrent streams
-- cancellation storms, deadline-expiry storms
-- TLS overhead (h2c vs TLS)
-
-These will be added as `benches/grpc.rs` workloads once `Server`/`Client` and the
-HTTP/2 transport are finished; see `docs/grpc.md` for the protocol surface they
-will exercise.
+The Phase 14 server/client runtime is now complete, and the gRPC runtime
+benchmarks listed in the table above (unary throughput/latency, server/client/bidi
+streaming, many concurrent streams, cancellation storms, deadline-expiry storms)
+have been implemented in the `grpc_runtime` bench target. The only remaining item
+is **TLS overhead (h2c vs TLS)**, which is gated on the optional `tls` feature
+(`rustls`/`tokio-rustls`) and a TLS-terminating `StreamAcceptor`; it can be added
+once TLS is enabled in a benchmark build. See `docs/grpc.md` for the protocol
+surface these exercise.

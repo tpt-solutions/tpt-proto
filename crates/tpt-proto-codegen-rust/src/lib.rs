@@ -36,6 +36,14 @@ pub struct GenerateOptions {
     /// Emit async gRPC server traits and client stubs for `service` blocks,
     /// referencing the `tpt_proto_grpc` runtime types.
     pub grpc: bool,
+    /// Emit JSON conversion hooks (`to_json`/`from_json`) on every generated
+    /// message, using the embedded descriptor set and the `tpt_proto_json`
+    /// crate.
+    pub json: bool,
+    /// Emit text-format conversion hooks (`to_text`/`from_text`) on every
+    /// generated message, using the embedded descriptor set and the
+    /// `tpt_proto_text` crate.
+    pub text: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +455,24 @@ pub fn generate(
         );
     }
 
+    // JSON / text conversion hooks need the descriptor set (to drive
+    // `tpt_proto_json` / `tpt_proto_text` via `DynamicMessage`) embedded into
+    // the generated output. Emit it once, plus the shared lookup helpers.
+    if options.json || options.text {
+        out.push_str(
+            "use tpt_proto_descriptor as __desc;\n\
+             use tpt_proto_reflect as __reflect;\n",
+        );
+        if options.json {
+            out.push_str("use tpt_proto_json as __json;\n");
+        }
+        if options.text {
+            out.push_str("use tpt_proto_text as __text;\n");
+        }
+        out.push('\n');
+        out.push_str(&gen_descriptor_support(set));
+    }
+
     // Enums first so messages can reference them. Nested enums are emitted
     // inline by `gen_message` as it recurses, so they stay forward-visible.
     for file in &set.file {
@@ -464,7 +490,7 @@ pub fn generate(
         let pkg = file.package.clone().unwrap_or_default();
         let syntax = file.syntax.clone().unwrap_or_else(|| "proto2".to_string());
         for m in &file.message_type {
-            gen_message(&pkg, m, &schema, &mut out, &syntax);
+            gen_message(&pkg, m, &schema, &mut out, &syntax, options);
         }
     }
 
@@ -478,6 +504,113 @@ pub fn generate(
     }
 
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Embedded-descriptor support for JSON/text conversion hooks.
+// ---------------------------------------------------------------------------
+
+/// Emit the embedded-descriptor support block: a `const` holding the serialized
+/// `FileDescriptorSet` and the shared `__descriptor_pool` / `__message_descriptor`
+/// helpers used by the JSON/text conversion hooks generated on each message.
+fn gen_descriptor_support(set: &FileDescriptorSet) -> String {
+    let bytes = tpt_proto_core::Message::encode_to_vec(set).unwrap_or_default();
+    let literal = if bytes.is_empty() {
+        "b\"\"".to_string()
+    } else {
+        let mut s = String::from("&[");
+        for (i, b) in bytes.iter().enumerate() {
+            if i != 0 {
+                s.push(',');
+            }
+            s.push_str(&format!("{b}u8"));
+        }
+        s.push(']');
+        s
+    };
+    format!(
+        "/// Embedded serialized `FileDescriptorSet` for this compilation unit.\n\
+         const __FILE_DESCRIPTOR_SET: &[u8] = {literal};\n\n\
+         /// Lazily decode and index the embedded descriptor set into a pool.\n\
+         fn __descriptor_pool() -> &'static __reflect::DescriptorPool {{\n\
+             static POOL: std::sync::OnceLock<__reflect::DescriptorPool> = std::sync::OnceLock::new();\n\
+             POOL.get_or_init(|| {{\n\
+                 let set = <__desc::FileDescriptorSet as __core::Message>::decode(\n\
+                     __FILE_DESCRIPTOR_SET,\n\
+                 )\n\
+                 .expect(\"embedded descriptor set is valid\");\n\
+                 __reflect::DescriptorPool::from_set(&set)\n\
+             }})\n\
+         }}\n\n\
+         /// Look up a message descriptor by its protobuf full name.\n\
+         fn __message_descriptor(name: &str) -> std::sync::Arc<__desc::DescriptorProto> {{\n\
+             __descriptor_pool().lookup_message(name).expect(\"message descriptor present\")\n\
+         }}\n\n"
+    )
+}
+
+/// Generate the JSON/text conversion hook methods on a message struct.
+fn gen_json_text_methods(ctx: &MessageContext<'_>, options: &GenerateOptions) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("impl {} {{\n", ctx.rust));
+
+    if options.json {
+        s.push_str(
+            "    /// Serialize this message to its protobuf JSON representation.\n",
+        );
+        s.push_str(
+            "    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {\n",
+        );
+        s.push_str("        let pool = __descriptor_pool();\n");
+        s.push_str("        let desc = __message_descriptor(Self::PROTO_FULL_NAME);\n");
+        s.push_str("        let buf = self.encode_to_vec()?;\n");
+        s.push_str("        let mut __r = __core::Reader::new(&buf);\n");
+        s.push_str("        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;\n");
+        s.push_str(
+            "        let json = __json::message_to_json_string(pool, &desc, &dm, &__json::JsonOptions::default())?;\n",
+        );
+        s.push_str("        Ok(json)\n");
+        s.push_str("    }\n");
+        s.push_str("    /// Parse this message from its protobuf JSON representation.\n");
+        s.push_str(
+            "    pub fn from_json(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {\n",
+        );
+        s.push_str("        let pool = __descriptor_pool();\n");
+        s.push_str("        let desc = __message_descriptor(Self::PROTO_FULL_NAME);\n");
+        s.push_str("        let dm = __json::json_string_to_message(pool, &desc, input, &__json::JsonOptions::default())?;\n");
+        s.push_str("        let buf = dm.encode()?;\n");
+        s.push_str("        Ok(Self::decode(&buf)?)\n");
+        s.push_str("    }\n");
+    }
+
+    if options.text {
+        s.push_str("    /// Serialize this message to protobuf text format.\n");
+        s.push_str(
+            "    pub fn to_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {\n",
+        );
+        s.push_str("        let pool = __descriptor_pool();\n");
+        s.push_str("        let desc = __message_descriptor(Self::PROTO_FULL_NAME);\n");
+        s.push_str("        let buf = self.encode_to_vec()?;\n");
+        s.push_str("        let mut __r = __core::Reader::new(&buf);\n");
+        s.push_str("        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;\n");
+        s.push_str("        Ok(__text::message_to_text(pool, &desc, &dm, &__text::TextOptions::default()))\n");
+        s.push_str("    }\n");
+        s.push_str("    /// Parse this message from protobuf text format.\n");
+        s.push_str(
+            "    pub fn from_text(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {\n",
+        );
+        s.push_str("        let pool = __descriptor_pool();\n");
+        s.push_str("        let desc = __message_descriptor(Self::PROTO_FULL_NAME);\n");
+        s.push_str(
+            "        let dm = __text::text_to_message(pool, &desc, input, &__text::TextOptions::default())?;\n",
+        );
+        s.push_str("        let buf = dm.encode()?;\n");
+        s.push_str("        Ok(Self::decode(&buf)?)\n");
+        s.push_str("    }\n");
+    }
+
+    s.push_str("}\n\n");
+    s
 }
 
 // (Nested enums are emitted inline by `gen_message`.)
@@ -544,11 +677,18 @@ struct MessageContext<'a> {
     schema: &'a Schema,
 }
 
-fn gen_message(prefix: &str, m: &DescriptorProto, schema: &Schema, out: &mut String, syntax: &str) {
+fn gen_message(
+    prefix: &str,
+    m: &DescriptorProto,
+    schema: &Schema,
+    out: &mut String,
+    syntax: &str,
+    options: &GenerateOptions,
+) {
     let fqn = qualify(prefix, &m.name.clone().unwrap_or_default());
     if schema.skip.contains(&fqn) {
         for n in &m.nested_type {
-            gen_message(&fqn, n, schema, out, syntax);
+            gen_message(&fqn, n, schema, out, syntax, options);
         }
         for e in &m.enum_type {
             let efqn = qualify(&fqn, &e.name.clone().unwrap_or_default());
@@ -634,9 +774,14 @@ fn gen_message(prefix: &str, m: &DescriptorProto, schema: &Schema, out: &mut Str
     // Convenience encode/decode methods (zero-copy decode from a borrowed slice).
     out.push_str(&gen_convenience_methods(&ctx));
 
+    // JSON / text conversion hooks (when enabled via `GenerateOptions`).
+    if options.json || options.text {
+        out.push_str(&gen_json_text_methods(&ctx, options));
+    }
+
     // Nested messages/enums.
     for n in &m.nested_type {
-        gen_message(&fqn, n, schema, out, syntax);
+        gen_message(&fqn, n, schema, out, syntax, options);
     }
     for e in &m.enum_type {
         let efqn = qualify(&fqn, &e.name.clone().unwrap_or_default());
@@ -1002,12 +1147,12 @@ fn decode_assign(target: &str, tyref: &TyRef, r: &str, is_option: bool) -> Strin
             let t = m.clone();
             if is_option {
                 format!(
-                    "            let body = {r}.read_length_delimited()?;\n            {target}.get_or_insert_with({}::default).merge_from(&mut {r}.nested(body)?)?;\n",
+                    "            let __body = {r}.read_length_delimited()?;\n            let mut __sub = {r}.nested(__body)?;\n            {target}.get_or_insert_with({}::default).merge_from(&mut __sub)?;\n",
                     to_rust_type_name(&t)
                 )
             } else {
                 format!(
-                    "            {target} = {}::default();\n            {target}.merge_from(&mut {r}.nested({r}.read_length_delimited()?)?)?;\n",
+                    "            let __body = {r}.read_length_delimited()?;\n            let mut __sub = {r}.nested(__body)?;\n            {target} = {}::default();\n            {target}.merge_from(&mut __sub)?;\n",
                     to_rust_type_name(&t)
                 )
             }
@@ -1051,7 +1196,7 @@ fn gen_repeated_decode(tyref: &TyRef, snake: &str, ctx: &MessageContext<'_>) -> 
         TyRef::Message(m) => {
             let t = to_rust_type_name(m);
             format!(
-                "            let body = r.read_length_delimited()?;\n            let mut mv = {t}::default();\n            mv.merge_from(&mut r.nested(body)?)?;\n            {target}.push(mv);\n"
+                "            let __body = r.read_length_delimited()?;\n            let mut __sub = r.nested(__body)?;\n            let mut mv = {t}::default();\n            mv.merge_from(&mut __sub)?;\n            {target}.push(mv);\n"
             )
         }
         TyRef::Scalar(FieldType::String) => {
@@ -1154,7 +1299,7 @@ fn dec_value_expr(ctx: &MessageContext<'_>, tyref: &TyRef, r: &str) -> String {
                 .get(m)
                 .cloned()
                 .unwrap_or_else(|| to_rust_type_name(m));
-            format!("{{ let body = {r}.read_length_delimited()?; let mut __m = {t}::default(); __m.merge_from(&mut {r}.nested(body)?)?; __m }}")
+            format!("{{ let __body = {r}.read_length_delimited()?; let mut __sub = {r}.nested(__body)?; let mut __m = {t}::default(); __m.merge_from(&mut __sub)?; __m }}")
         }
         TyRef::Enum(e) => {
             let en = ctx
@@ -1234,11 +1379,13 @@ fn map_val_val_expr(v: &TyRef, var: &str) -> String {
 fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &str) -> String {
     let (k, v) = map_kv(f, ctx.schema);
     let mut s = String::new();
-    s.push_str("            let body = r.read_length_delimited()?;\n");
-    s.push_str("            let (k_raw, v_raw) = packed::decode_map_entry(body)?;\n");
-    // key
-    s.push_str("            let mut __kr_tmp = Reader::new(&k_raw);\n");
-    s.push_str("            let __kr = &mut __kr_tmp;\n");
+    // `decode_map_entry_frames` reads the entry body and returns slices that
+    // borrow the parent buffer; depth is enforced through the nested entry
+    // reader, and the key/value sub-readers below inherit it again so nested
+    // message keys/values are also bounded.
+    s.push_str("            let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;\n");
+    s.push_str("            let k = {\n");
+    s.push_str("                let mut __kr = r.nested(__k_raw)?;\n");
     let key_expr = match &k {
         TyRef::Scalar(t) => dec_scalar_expr(*t, "__kr"),
         TyRef::Enum(e) => {
@@ -1257,13 +1404,13 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
                 .get(m)
                 .cloned()
                 .unwrap_or_else(|| to_rust_type_name(m));
-            format!("{{ let body = __kr.read_length_delimited()?; let mut __m = {t}::default(); __m.merge_from(&mut __kr.nested(body)?)?; __m }}")
+            format!("{{ let __body = __kr.read_length_delimited()?; let mut __sub = __kr.nested(__body)?; let mut __m = {t}::default(); __m.merge_from(&mut __sub)?; __m }}")
         }
     };
-    s.push_str(&format!("            let k = {key_expr};\n"));
-    // value
-    s.push_str("            let mut __vr_tmp = Reader::new(&v_raw);\n");
-    s.push_str("            let __vr = &mut __vr_tmp;\n");
+    s.push_str(&format!("                {key_expr}\n"));
+    s.push_str("            };\n");
+    s.push_str("            let v = {\n");
+    s.push_str("                let mut __vr = r.nested(__v_raw)?;\n");
     let val_expr = match &v {
         TyRef::Message(mv) => {
             let t = ctx
@@ -1272,7 +1419,7 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
                 .get(mv)
                 .cloned()
                 .unwrap_or_else(|| to_rust_type_name(mv));
-            format!("{{ let __body = __vr.read_length_delimited()?; let mut __mv = {t}::default(); __mv.merge_from(&mut Reader::new(__body))?; __mv }}")
+            format!("{{ let __body = __vr.read_length_delimited()?; let mut __sub = __vr.nested(__body)?; let mut __mv = {t}::default(); __mv.merge_from(&mut __sub)?; __mv }}")
         }
         TyRef::Enum(e) => {
             let en = ctx
@@ -1285,7 +1432,8 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
         }
         TyRef::Scalar(t) => dec_scalar_expr(*t, "__vr"),
     };
-    s.push_str(&format!("            let v = {val_expr};\n"));
+    s.push_str(&format!("                {val_expr}\n"));
+    s.push_str("            };\n");
     s.push_str(&format!("            self.{snake}.insert(k, v);\n"));
     s
 }

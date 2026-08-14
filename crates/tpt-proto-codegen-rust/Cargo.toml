@@ -17,3 +17,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tpt-proto-core = { workspace = true }
+tpt-proto-descriptor = { workspace = true }
+tpt-proto-reflect = { workspace = true }
+tpt-proto-json = { workspace = true }
+tpt-proto-text = { workspace = true }

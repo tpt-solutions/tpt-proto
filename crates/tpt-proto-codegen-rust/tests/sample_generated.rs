@@ -5,6 +5,31 @@ use __core::scalar;
 use __core::packed;
 use std::collections::HashMap;
 
+use tpt_proto_descriptor as __desc;
+use tpt_proto_reflect as __reflect;
+use tpt_proto_json as __json;
+use tpt_proto_text as __text;
+
+/// Embedded serialized `FileDescriptorSet` for this compilation unit.
+const __FILE_DESCRIPTOR_SET: &[u8] = &[10u8,233u8,6u8,10u8,12u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,112u8,114u8,111u8,116u8,111u8,18u8,6u8,115u8,97u8,109u8,112u8,108u8,101u8,34u8,177u8,2u8,10u8,7u8,83u8,99u8,97u8,108u8,97u8,114u8,115u8,18u8,12u8,10u8,1u8,100u8,24u8,1u8,32u8,1u8,40u8,1u8,82u8,1u8,100u8,18u8,12u8,10u8,1u8,102u8,24u8,2u8,32u8,1u8,40u8,2u8,82u8,1u8,102u8,18u8,16u8,10u8,3u8,105u8,51u8,50u8,24u8,3u8,32u8,1u8,40u8,5u8,82u8,3u8,105u8,51u8,50u8,18u8,16u8,10u8,3u8,105u8,54u8,52u8,24u8,4u8,32u8,1u8,40u8,3u8,82u8,3u8,105u8,54u8,52u8,18u8,16u8,10u8,3u8,117u8,51u8,50u8,24u8,5u8,32u8,1u8,40u8,13u8,82u8,3u8,117u8,51u8,50u8,18u8,16u8,10u8,3u8,117u8,54u8,52u8,24u8,6u8,32u8,1u8,40u8,4u8,82u8,3u8,117u8,54u8,52u8,18u8,16u8,10u8,3u8,115u8,51u8,50u8,24u8,7u8,32u8,1u8,40u8,17u8,82u8,3u8,115u8,51u8,50u8,18u8,16u8,10u8,3u8,115u8,54u8,52u8,24u8,8u8,32u8,1u8,40u8,18u8,82u8,3u8,115u8,54u8,52u8,18u8,16u8,10u8,3u8,102u8,51u8,50u8,24u8,9u8,32u8,1u8,40u8,7u8,82u8,3u8,102u8,51u8,50u8,18u8,16u8,10u8,3u8,102u8,54u8,52u8,24u8,10u8,32u8,1u8,40u8,6u8,82u8,3u8,102u8,54u8,52u8,18u8,18u8,10u8,4u8,115u8,102u8,51u8,50u8,24u8,11u8,32u8,1u8,40u8,15u8,82u8,4u8,115u8,102u8,51u8,50u8,18u8,18u8,10u8,4u8,115u8,102u8,54u8,52u8,24u8,12u8,32u8,1u8,40u8,16u8,82u8,4u8,115u8,102u8,54u8,52u8,18u8,12u8,10u8,1u8,98u8,24u8,13u8,32u8,1u8,40u8,8u8,82u8,1u8,98u8,18u8,12u8,10u8,1u8,115u8,24u8,14u8,32u8,1u8,40u8,9u8,82u8,1u8,115u8,18u8,14u8,10u8,2u8,98u8,121u8,24u8,15u8,32u8,1u8,40u8,12u8,82u8,2u8,98u8,121u8,18u8,38u8,10u8,6u8,110u8,101u8,115u8,116u8,101u8,100u8,24u8,16u8,32u8,1u8,40u8,11u8,50u8,14u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,78u8,101u8,115u8,116u8,101u8,100u8,82u8,6u8,110u8,101u8,115u8,116u8,101u8,100u8,34u8,28u8,10u8,6u8,78u8,101u8,115u8,116u8,101u8,100u8,18u8,18u8,10u8,4u8,110u8,97u8,109u8,101u8,24u8,1u8,32u8,1u8,40u8,9u8,82u8,4u8,110u8,97u8,109u8,101u8,34u8,244u8,2u8,10u8,11u8,67u8,111u8,108u8,108u8,101u8,99u8,116u8,105u8,111u8,110u8,115u8,18u8,18u8,10u8,4u8,110u8,117u8,109u8,115u8,24u8,1u8,32u8,3u8,40u8,5u8,82u8,4u8,110u8,117u8,109u8,115u8,18u8,18u8,10u8,4u8,115u8,116u8,114u8,115u8,24u8,2u8,32u8,3u8,40u8,9u8,82u8,4u8,115u8,116u8,114u8,115u8,18u8,36u8,10u8,5u8,105u8,116u8,101u8,109u8,115u8,24u8,3u8,32u8,3u8,40u8,11u8,50u8,14u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,78u8,101u8,115u8,116u8,101u8,100u8,82u8,5u8,105u8,116u8,101u8,109u8,115u8,18u8,35u8,10u8,5u8,99u8,111u8,108u8,111u8,114u8,24u8,6u8,32u8,1u8,40u8,14u8,50u8,13u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,67u8,111u8,108u8,111u8,114u8,82u8,5u8,99u8,111u8,108u8,111u8,114u8,18u8,37u8,10u8,6u8,99u8,111u8,108u8,111u8,114u8,115u8,24u8,7u8,32u8,3u8,40u8,14u8,50u8,13u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,67u8,111u8,108u8,111u8,114u8,82u8,6u8,99u8,111u8,108u8,111u8,114u8,115u8,18u8,47u8,10u8,6u8,108u8,97u8,98u8,101u8,108u8,115u8,24u8,4u8,32u8,3u8,40u8,11u8,50u8,31u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,67u8,111u8,108u8,108u8,101u8,99u8,116u8,105u8,111u8,110u8,115u8,46u8,108u8,97u8,98u8,101u8,108u8,115u8,69u8,110u8,116u8,114u8,121u8,18u8,45u8,10u8,5u8,98u8,121u8,95u8,105u8,100u8,24u8,5u8,32u8,3u8,40u8,11u8,50u8,30u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,67u8,111u8,108u8,108u8,101u8,99u8,116u8,105u8,111u8,110u8,115u8,46u8,98u8,121u8,95u8,105u8,100u8,69u8,110u8,116u8,114u8,121u8,26u8,45u8,10u8,11u8,108u8,97u8,98u8,101u8,108u8,115u8,69u8,110u8,116u8,114u8,121u8,18u8,11u8,10u8,3u8,107u8,101u8,121u8,24u8,1u8,32u8,1u8,40u8,9u8,18u8,13u8,10u8,5u8,118u8,97u8,108u8,117u8,101u8,24u8,2u8,32u8,1u8,40u8,5u8,58u8,2u8,56u8,1u8,26u8,60u8,10u8,10u8,98u8,121u8,95u8,105u8,100u8,69u8,110u8,116u8,114u8,121u8,18u8,11u8,10u8,3u8,107u8,101u8,121u8,24u8,1u8,32u8,1u8,40u8,5u8,18u8,29u8,10u8,5u8,118u8,97u8,108u8,117u8,101u8,24u8,2u8,32u8,1u8,40u8,11u8,50u8,14u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,78u8,101u8,115u8,116u8,101u8,100u8,58u8,2u8,56u8,1u8,34u8,89u8,10u8,9u8,87u8,105u8,116u8,104u8,79u8,110u8,101u8,111u8,102u8,18u8,14u8,10u8,1u8,97u8,24u8,1u8,32u8,1u8,40u8,9u8,72u8,0u8,82u8,1u8,97u8,18u8,14u8,10u8,1u8,110u8,24u8,2u8,32u8,1u8,40u8,5u8,72u8,0u8,82u8,1u8,110u8,18u8,34u8,10u8,3u8,111u8,98u8,106u8,24u8,3u8,32u8,1u8,40u8,11u8,50u8,14u8,46u8,115u8,97u8,109u8,112u8,108u8,101u8,46u8,78u8,101u8,115u8,116u8,101u8,100u8,72u8,0u8,82u8,3u8,111u8,98u8,106u8,66u8,8u8,10u8,6u8,99u8,104u8,111u8,105u8,99u8,101u8,42u8,37u8,10u8,5u8,67u8,111u8,108u8,111u8,114u8,18u8,7u8,10u8,3u8,82u8,69u8,68u8,16u8,0u8,18u8,9u8,10u8,5u8,71u8,82u8,69u8,69u8,78u8,16u8,1u8,18u8,8u8,10u8,4u8,66u8,76u8,85u8,69u8,16u8,2u8,98u8,6u8,112u8,114u8,111u8,116u8,111u8,51u8];
+
+/// Lazily decode and index the embedded descriptor set into a pool.
+fn __descriptor_pool() -> &'static __reflect::DescriptorPool {
+static POOL: std::sync::OnceLock<__reflect::DescriptorPool> = std::sync::OnceLock::new();
+POOL.get_or_init(|| {
+let set = <__desc::FileDescriptorSet as __core::Message>::decode(
+__FILE_DESCRIPTOR_SET,
+)
+.expect("embedded descriptor set is valid");
+__reflect::DescriptorPool::from_set(&set)
+})
+}
+
+/// Look up a message descriptor by its protobuf full name.
+fn __message_descriptor(name: &str) -> std::sync::Arc<__desc::DescriptorProto> {
+__descriptor_pool().lookup_message(name).expect("message descriptor present")
+}
+
 /// Generated from protobuf enum `sample.Color`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(i32)]
@@ -168,10 +193,12 @@ match tag.field_number {
 15 => {
             self.by = r.read_length_delimited()?.to_vec();
 }
-16 => {
-            self.nested = SampleNested::default();
-            self.nested.merge_from(&mut Reader::new(r.read_length_delimited()?))?;
-}
+            16 => {
+                let __body = r.read_length_delimited()?;
+                let mut __sub = r.nested(__body)?;
+                self.nested = SampleNested::default();
+                self.nested.merge_from(&mut __sub)?;
+            }
                 _ => {
 self.unknown_fields.store(tag, r)?;
 }
@@ -298,6 +325,44 @@ impl SampleScalars {
     }
 }
 
+impl SampleScalars {
+    /// Serialize this message to its protobuf JSON representation.
+    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        let json = __json::message_to_json_string(pool, &desc, &dm, &__json::JsonOptions::default())?;
+        Ok(json)
+    }
+    /// Parse this message from its protobuf JSON representation.
+    pub fn from_json(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __json::json_string_to_message(pool, &desc, input, &__json::JsonOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+    /// Serialize this message to protobuf text format.
+    pub fn to_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        Ok(__text::message_to_text(pool, &desc, &dm, &__text::TextOptions::default()))
+    }
+    /// Parse this message from protobuf text format.
+    pub fn from_text(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __text::text_to_message(pool, &desc, input, &__text::TextOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+}
+
 /// Generated from protobuf message `sample.Nested`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SampleNested {
@@ -377,6 +442,44 @@ impl SampleNested {
     }
 }
 
+impl SampleNested {
+    /// Serialize this message to its protobuf JSON representation.
+    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        let json = __json::message_to_json_string(pool, &desc, &dm, &__json::JsonOptions::default())?;
+        Ok(json)
+    }
+    /// Parse this message from its protobuf JSON representation.
+    pub fn from_json(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __json::json_string_to_message(pool, &desc, input, &__json::JsonOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+    /// Serialize this message to protobuf text format.
+    pub fn to_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        Ok(__text::message_to_text(pool, &desc, &dm, &__text::TextOptions::default()))
+    }
+    /// Parse this message from protobuf text format.
+    pub fn from_text(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __text::text_to_message(pool, &desc, input, &__text::TextOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+}
+
 /// Generated from protobuf message `sample.Collections`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SampleCollections {
@@ -453,34 +556,37 @@ match tag.field_number {
 2 => {
             self.strs.push(r.read_string_owned()?);
 }
-3 => {
-            let body = r.read_length_delimited()?;
-            let mut mv = SampleNested::default();
-            mv.merge_from(&mut r.nested(body)?)?;
-            self.items.push(mv);
-}
-4 => {
-            let body = r.read_length_delimited()?;
-            let (k_raw, v_raw) = packed::decode_map_entry(body)?;
-            let mut __kr_tmp = Reader::new(&k_raw);
-            let __kr = &mut __kr_tmp;
-            let k = __kr.read_string_owned()?;
-            let mut __vr_tmp = Reader::new(&v_raw);
-            let __vr = &mut __vr_tmp;
-            let v = scalar::read_int32(__vr)?;
-            self.labels.insert(k, v);
-}
-5 => {
-            let body = r.read_length_delimited()?;
-            let (k_raw, v_raw) = packed::decode_map_entry(body)?;
-            let mut __kr_tmp = Reader::new(&k_raw);
-            let __kr = &mut __kr_tmp;
-            let k = scalar::read_int32(__kr)?;
-            let mut __vr_tmp = Reader::new(&v_raw);
-            let __vr = &mut __vr_tmp;
-            let v = { let __body = __vr.read_length_delimited()?; let mut __mv = SampleNested::default(); __mv.merge_from(&mut Reader::new(__body))?; __mv };
-            self.by_id.insert(k, v);
-}
+            3 => {
+                let __body = r.read_length_delimited()?;
+                let mut __sub = r.nested(__body)?;
+                let mut mv = SampleNested::default();
+                mv.merge_from(&mut __sub)?;
+                self.items.push(mv);
+            }
+            4 => {
+                let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;
+                let k = {
+                    let mut __kr = r.nested(__k_raw)?;
+                    __kr.read_string_owned()?
+                };
+                let v = {
+                    let mut __vr = r.nested(__v_raw)?;
+                    scalar::read_int32(__vr)?
+                };
+                self.labels.insert(k, v);
+            }
+            5 => {
+                let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;
+                let k = {
+                    let mut __kr = r.nested(__k_raw)?;
+                    scalar::read_int32(__kr)?
+                };
+                let v = {
+                    let mut __vr = r.nested(__v_raw)?;
+                    { let __body = __vr.read_length_delimited()?; let mut __sub = __vr.nested(__body)?; let mut __mv = SampleNested::default(); __mv.merge_from(&mut __sub)?; __mv }
+                };
+                self.by_id.insert(k, v);
+            }
 6 => {
             self.color = SampleColor::from_i32(scalar::read_int32(r)?);
 }
@@ -577,6 +683,44 @@ impl SampleCollections {
     }
 }
 
+impl SampleCollections {
+    /// Serialize this message to its protobuf JSON representation.
+    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        let json = __json::message_to_json_string(pool, &desc, &dm, &__json::JsonOptions::default())?;
+        Ok(json)
+    }
+    /// Parse this message from its protobuf JSON representation.
+    pub fn from_json(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __json::json_string_to_message(pool, &desc, input, &__json::JsonOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+    /// Serialize this message to protobuf text format.
+    pub fn to_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        Ok(__text::message_to_text(pool, &desc, &dm, &__text::TextOptions::default()))
+    }
+    /// Parse this message from protobuf text format.
+    pub fn from_text(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __text::text_to_message(pool, &desc, input, &__text::TextOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SampleWithOneof_Choice {
     A(String),
@@ -628,7 +772,7 @@ match tag.field_number {
                     self.choice = Some(SampleWithOneof_Choice::N(x));
                 }
                 3 => {
-                    let x = { let body = r.read_length_delimited()?; let mut __m = SampleNested::default(); __m.merge_from(&mut r.nested(body)?)?; __m };
+                     let x = { let __body = r.read_length_delimited()?; let mut __sub = r.nested(__body)?; let mut __m = SampleNested::default(); __m.merge_from(&mut __sub)?; __m };
                     self.choice = Some(SampleWithOneof_Choice::Obj(x));
                 }
                 _ => {
@@ -689,6 +833,44 @@ impl SampleWithOneof {
     /// Encode this message into a freshly allocated byte vector.
     pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {
         ::tpt_proto_core::Message::encode_to_vec(self)
+    }
+}
+
+impl SampleWithOneof {
+    /// Serialize this message to its protobuf JSON representation.
+    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        let json = __json::message_to_json_string(pool, &desc, &dm, &__json::JsonOptions::default())?;
+        Ok(json)
+    }
+    /// Parse this message from its protobuf JSON representation.
+    pub fn from_json(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __json::json_string_to_message(pool, &desc, input, &__json::JsonOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
+    }
+    /// Serialize this message to protobuf text format.
+    pub fn to_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let buf = self.encode_to_vec()?;
+        let mut __r = __core::Reader::new(&buf);
+        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;
+        Ok(__text::message_to_text(pool, &desc, &dm, &__text::TextOptions::default()))
+    }
+    /// Parse this message from protobuf text format.
+    pub fn from_text(input: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let pool = __descriptor_pool();
+        let desc = __message_descriptor(Self::PROTO_FULL_NAME);
+        let dm = __text::text_to_message(pool, &desc, input, &__text::TextOptions::default())?;
+        let buf = dm.encode()?;
+        Ok(Self::decode(&buf)?)
     }
 }
 

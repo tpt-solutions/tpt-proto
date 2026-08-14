@@ -275,13 +275,14 @@ impl Authenticator for BearerTokenAuthenticator {
         let token = extract_bearer(metadata).ok_or_else(|| {
             Status::new(Code::Unauthenticated, "missing bearer token")
         })?;
-        if !self.accepted.contains(&token) {
+        if !self.accepted.iter().any(|t| constant_time_eq(t.as_bytes(), token.as_bytes())) {
             return Err(Status::new(Code::Unauthenticated, "invalid bearer token"));
         }
         let principal = self
             .principal_for
-            .get(&token)
-            .cloned()
+            .iter()
+            .find(|(t, _)| constant_time_eq(t.as_bytes(), token.as_bytes()))
+            .map(|(_, p)| p.clone())
             .unwrap_or_else(|| token.clone());
         Ok(PeerIdentity::new(principal).with_attribute("auth", "bearer"))
     }
@@ -315,7 +316,7 @@ impl Authenticator for MetadataAuthenticator {
         let value = metadata
             .get_text(&self.key)
             .ok_or_else(|| Status::new(Code::Unauthenticated, format!("missing {}", self.key)))?;
-        if value != self.expected {
+        if !constant_time_eq(value.as_bytes(), self.expected.as_bytes()) {
             return Err(Status::new(
                 Code::Unauthenticated,
                 format!("invalid {}", self.key),
@@ -323,6 +324,22 @@ impl Authenticator for MetadataAuthenticator {
         }
         Ok(PeerIdentity::new(self.principal.clone()).with_attribute("auth", "metadata"))
     }
+}
+
+/// Constant-time byte-slice comparison.
+///
+/// Compares two secrets without short-circuiting on the first differing byte,
+/// preventing timing side channels that could otherwise leak token/key
+/// contents. A length mismatch is folded into the accumulated difference so the
+/// result is still independent of the *content* comparison (only the lengths,
+/// which are generally not secret, remain observable).
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    let mut diff = a.len() ^ b.len();
+    let n = a.len().min(b.len());
+    for i in 0..n {
+        diff |= (a[i] ^ b[i]) as usize;
+    }
+    diff == 0
 }
 
 /// Derive a peer identity purely from transport-level [`PeerInfo`] (e.g. a

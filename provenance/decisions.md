@@ -68,3 +68,31 @@ as significant choices are made, with the rationale and alternatives considered.
 - **Alternatives considered:** Custom minimal HTTP/2 (rejected: high risk, low
   payoff); `tonic` as a dependency (rejected: would defeat the independent
   clean-room transport implementation).
+
+### 2024 — Generated JSON / text-format conversion hooks
+- **Decision:** When the `json` / `text` codegen options are enabled, the
+  generator embeds the input `FileDescriptorSet` (serialized) into the emitted
+  source and generates `to_json`/`from_json`/`to_text`/`from_text` methods on
+  every message. These bridge to the descriptor-driven `tpt_proto_json` /
+  `tpt_proto_text` crates by round-tripping through a `DynamicMessage` via the
+  wire format (`encode_to_vec` → `DynamicMessage::decode` → converter, and the
+  reverse on parse).
+- **Rationale:** Keeps generated code thin and correct — the heavy lifting
+  (JSON mapping rules, WKT special forms, text printing/parsing) lives once in
+  the descriptor-driven crates, and the same descriptor already used by
+  reflection/CLI is reused. No per-field bridge code is generated.
+- **Alternatives considered:** Emitting explicit per-field `DynamicMessage`
+  builders (rejected: large generated-code surface and high divergence risk);
+  run-time descriptor lookup by name only with no embedded set (rejected: needs
+  an externally-supplied pool, breaking standalone generated crates).
+
+### 2024 — Nested message decode borrows the buffer, not the parent reader
+- **Decision:** Generated message-field decoders construct a sub-`Reader` with
+  `Reader::new(r.read_length_delimited()?)` rather than `r.nested(...)`.
+- **Rationale:** `read_length_delimited` returns a `&'a [u8]` slice abstracted
+  from the parent reader, so a fresh `Reader` over it carries no borrow of the
+  parent and the borrow checker accepts the decode cleanly. `r.nested(..)` kept
+  an immutable borrow of the parent reader alive for the sub-reader's lifetime,
+  conflicting with the parent's earlier mutable borrow.
+- **Alternatives considered:** Cloning the slice before decoding (rejected:
+  needless allocation on hot paths).

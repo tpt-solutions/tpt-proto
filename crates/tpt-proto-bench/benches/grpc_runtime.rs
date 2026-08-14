@@ -42,11 +42,7 @@ impl Message for Echo {
         Ok(())
     }
     fn merge_from(&mut self, r: &mut Reader) -> tpt_proto_core::Result<()> {
-        loop {
-            let tag = match r.read_tag() {
-                Ok(t) => t,
-                Err(_) => break,
-            };
+        while let Ok(tag) = r.read_tag() {
             match tag.field_number {
                 1 => self.body = r.read_length_delimited()?.to_vec(),
                 2 => self.seq = scalar::read_int64(r)?,
@@ -68,11 +64,7 @@ impl Message for Count {
         Ok(())
     }
     fn merge_from(&mut self, r: &mut Reader) -> tpt_proto_core::Result<()> {
-        loop {
-            let tag = match r.read_tag() {
-                Ok(t) => t,
-                Err(_) => break,
-            };
+        while let Ok(tag) = r.read_tag() {
             match tag.field_number {
                 1 => self.n = scalar::read_int64(r)?,
                 _ => r.skip(tag.wire_type)?,
@@ -151,7 +143,7 @@ impl tpt_proto_grpc::service::ServiceHandler for BenchService {
         _ctx: RpcContext,
         req: ClientStream<Vec<u8>>,
     ) -> Result<ServerStream<Vec<u8>>, Status> {
-        let mapped = req.map(|r| r.map(|m| m));
+        let mapped = req.map(|r| r);
         Ok(Box::pin(mapped))
     }
 }
@@ -216,12 +208,12 @@ async fn bench_unary_throughput() {
         let label = format!("grpc/runtime/unary/{size}");
         // Warmup.
         for _ in 0..200 {
-            let _ = client.unary(&path, md.clone(), raw.clone()).await.unwrap();
+            let _ = client.unary(path, md.clone(), raw.clone()).await.unwrap();
         }
         let iters = scale(5_000u64);
         let start = std::time::Instant::now();
         for _ in 0..iters {
-            let (resp, _) = client.unary(&path, md.clone(), raw.clone()).await.unwrap();
+            let (resp, _) = client.unary(path, md.clone(), raw.clone()).await.unwrap();
             std::hint::black_box(resp);
         }
         let elapsed = start.elapsed();
@@ -245,15 +237,15 @@ async fn bench_server_streaming() {
         let label = format!("grpc/runtime/server_stream/{count}");
         let warm = 50;
         for _ in 0..warm {
-            let (mut s, _) = client.server_streaming(&path, md.clone(), req.clone()).await.unwrap();
-            while let Some(_) = s.next().await {}
+            let (mut s, _) = client.server_streaming(path, md.clone(), req.clone()).await.unwrap();
+            while s.next().await.is_some() {}
         }
         let iters = scale(1_000u64);
         let start = std::time::Instant::now();
         for _ in 0..iters {
-            let (mut s, _) = client.server_streaming(&path, md.clone(), req.clone()).await.unwrap();
+            let (mut s, _) = client.server_streaming(path, md.clone(), req.clone()).await.unwrap();
             let mut got = 0u64;
-            while let Some(_) = s.next().await {
+            while s.next().await.is_some() {
                 got += 1;
             }
             std::hint::black_box(got);
@@ -278,14 +270,14 @@ async fn bench_client_streaming() {
         let warm = 50;
         for _ in 0..warm {
             let s: ClientStream<Vec<u8>> = Box::pin(stream::iter(items.clone()));
-            let (resp, _) = client.client_streaming(&path, md.clone(), s).await.unwrap();
+            let (resp, _) = client.client_streaming(path, md.clone(), s).await.unwrap();
             std::hint::black_box(resp);
         }
         let iters = scale(1_000u64);
         let start = std::time::Instant::now();
         for _ in 0..iters {
             let s: ClientStream<Vec<u8>> = Box::pin(stream::iter(items.clone()));
-            let (resp, _) = client.client_streaming(&path, md.clone(), s).await.unwrap();
+            let (resp, _) = client.client_streaming(path, md.clone(), s).await.unwrap();
             std::hint::black_box(resp);
         }
         let elapsed = start.elapsed();
@@ -308,16 +300,16 @@ async fn bench_bidi_streaming() {
         let warm = 50;
         for _ in 0..warm {
             let s: ClientStream<Vec<u8>> = Box::pin(stream::iter(items.clone()));
-            let (mut r, _) = client.bidi_streaming(&path, md.clone(), s).await.unwrap();
-            while let Some(_) = r.next().await {}
+            let (mut r, _) = client.bidi_streaming(path, md.clone(), s).await.unwrap();
+            while r.next().await.is_some() {}
         }
         let iters = scale(1_000u64);
         let start = std::time::Instant::now();
         for _ in 0..iters {
             let s: ClientStream<Vec<u8>> = Box::pin(stream::iter(items.clone()));
-            let (mut r, _) = client.bidi_streaming(&path, md.clone(), s).await.unwrap();
+            let (mut r, _) = client.bidi_streaming(path, md.clone(), s).await.unwrap();
             let mut got = 0u64;
-            while let Some(_) = r.next().await {
+            while r.next().await.is_some() {
                 got += 1;
             }
             std::hint::black_box(got);
@@ -348,7 +340,7 @@ async fn bench_concurrent_streams() {
             let md = md.clone();
             tokio::spawn(async move {
                 b.wait().await;
-                let _ = c.unary(&path, md, r).await.unwrap();
+                let _ = c.unary(path, md, r).await.unwrap();
             });
         }
         let iters = scale(10_000u64);
@@ -362,7 +354,7 @@ async fn bench_concurrent_streams() {
                 let md = md.clone();
                 set.spawn(async move {
                     b.wait().await;
-                    let _ = c.unary(&path, md, r).await.unwrap();
+                    let _ = c.unary(path, md, r).await.unwrap();
                 });
             }
             while set.join_next().await.is_some() {}
@@ -395,7 +387,7 @@ async fn bench_cancellation_storm() {
         let r = raw.clone();
         // Cancel almost immediately: the select drops the RPC future.
         tokio::select! {
-            _ = c.unary(&path, md.clone(), r) => {}
+            _ = c.unary(path, md.clone(), r) => {}
             _ = tokio::time::sleep(Duration::from_nanos(1)) => {}
         }
     }
@@ -418,7 +410,7 @@ async fn bench_deadline_storm() {
     let start = std::time::Instant::now();
     let mut seen_deadline = 0u64;
     for _ in 0..iters {
-        let res = client.unary(&path, md.clone(), raw.clone()).await;
+        let res = client.unary(path, md.clone(), raw.clone()).await;
         if let Err(s) = &res {
             if s.code == tpt_proto_grpc::status::Code::DeadlineExceeded {
                 seen_deadline += 1;

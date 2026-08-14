@@ -444,6 +444,7 @@ async fn handle_request(
     shutdown: CancellationToken,
 ) {
     let path = request.uri().path().to_string();
+    eprintln!("DBG server: request {path}");
     let (package, svc, method) = crate::parse_path(&path).unwrap_or_default();
     let full_service = if package.is_empty() {
         svc
@@ -589,6 +590,7 @@ async fn handle_request(
 
     match result {
         Ok(output) => {
+            eprintln!("DBG server: sending response, has_msg={}", output.message.is_some());
             let mut send = match send_headers(&mut respond, false) {
                 Ok(s) => s,
                 Err(e) => {
@@ -624,9 +626,11 @@ async fn handle_request(
             if !output.status.message.is_empty() {
                 trailers.insert_raw("grpc-message", output.status.message.as_bytes());
             }
+            eprintln!("DBG server: sending trailers");
             if let Err(e) = send.send_trailers(trailers.to_header_map()) {
                 eprintln!("grpc server: send_trailers: {e}");
             }
+            eprintln!("DBG server: trailers sent");
         }
         Err(status) => {
             match send_headers(&mut respond, false) {
@@ -743,6 +747,7 @@ async fn dispatch(
     match kind {
         MethodKind::Unary => {
             let body = request.into_body();
+            eprintln!("DBG server: unary reading request body");
             let req = match read_single_message(body, request_encoding, max).await? {
                 Some(r) => r,
                 None => {
@@ -753,6 +758,7 @@ async fn dispatch(
                     })
                 }
             };
+            eprintln!("DBG server: unary calling handler");
             let raw = handler.call_unary(method, ctx, req).await?;
             Ok(HandlerOutput {
                 message: Some(raw),

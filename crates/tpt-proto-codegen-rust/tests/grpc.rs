@@ -22,6 +22,8 @@ fn generates_grpc_server_trait_and_client() {
     let opts = GenerateOptions {
         module_per_package: false,
         grpc: true,
+        json: false,
+        text: false,
     };
     let code = generate_from_source("ex.proto", SERVICE_PROTO, &opts).unwrap();
 
@@ -48,6 +50,8 @@ fn grpc_disabled_emits_placeholder_trait() {
     let opts = GenerateOptions {
         module_per_package: false,
         grpc: false,
+        json: false,
+        text: false,
     };
     let code = generate_from_source("ex.proto", SERVICE_PROTO, &opts).unwrap();
     assert!(code.contains("pub trait Echo"));

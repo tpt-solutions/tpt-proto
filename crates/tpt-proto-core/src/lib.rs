@@ -27,8 +27,9 @@ pub use error::{Error, Result};
 pub use limits::DecoderLimits;
 pub use message::{decode_with_limits, DeterministicConfig, Message, UnknownFieldPolicy};
 pub use packed::{
-    decode_map_entry, encode_map_entry, encode_packed_fixed32, encode_packed_fixed64,
-    encode_packed_varint, read_packed_fixed32, read_packed_fixed64, read_packed_varint,
+    decode_map_entry, decode_map_entry_frames, encode_map_entry, encode_packed_fixed32,
+    encode_packed_fixed64, encode_packed_varint, read_packed_fixed32, read_packed_fixed64,
+    read_packed_varint,
 };
 pub use reader::Reader;
 pub use unknown::{UnknownFieldSet, UnknownValue};

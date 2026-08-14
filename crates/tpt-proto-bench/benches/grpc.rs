@@ -1,10 +1,10 @@
 //! gRPC wire benchmarks (Phase 18).
 //!
-//! The full server/client *runtime* benchmarks (unary throughput, streaming,
-//! many concurrent streams, cancellation/deadline storms, TLS overhead) require
-//! the Phase 14 server runtime, which is not yet complete. This suite covers the
-//! pieces that are fully implemented and self-contained: message framing and
-//! compression (the hot path every gRPC call shares).
+//! This suite covers the message framing + compression hot path (the piece
+//! every gRPC call shares). The full server/client *runtime* benchmarks
+//! (unary throughput, streaming, many concurrent streams, cancellation/deadline
+//! storms, TLS overhead) live in the separate `grpc_runtime` bench, which
+//! exercises the real HTTP/2 transport against an in-tree loopback server.
 
 use tpt_proto_bench::bench;
 use tpt_proto_grpc::{decode_message, encode_message, Compression};

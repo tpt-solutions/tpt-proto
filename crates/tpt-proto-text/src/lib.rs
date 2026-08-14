@@ -25,10 +25,13 @@ pub enum TextError {
     /// A value that did not match the expected type.
     #[error("value error for `{0}`: {1}")]
     Value(String, String),
+    /// Nesting depth exceeded the configured limit.
+    #[error("recursion limit: {0}")]
+    RecursionLimit(String),
 }
 
 /// Options controlling text output.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TextOptions {
     /// Use `{ }` delimiters (default) vs `< >` delimiters.
     pub use_braces: bool,
@@ -37,6 +40,21 @@ pub struct TextOptions {
     /// Deterministic output: fields are emitted in ascending field-number order
     /// (rather than declaration order) and map entries are sorted by key.
     pub deterministic: bool,
+    /// Maximum nesting depth accepted while parsing text format. Deeply nested
+    /// input is rejected rather than recursing without bound (a stack-overflow
+    /// DoS vector). Defaults to 100.
+    pub max_depth: u32,
+}
+
+impl Default for TextOptions {
+    fn default() -> Self {
+        TextOptions {
+            use_braces: false,
+            use_field_numbers: false,
+            deterministic: false,
+            max_depth: 100,
+        }
+    }
 }
 
 /// Print a [`DynamicMessage`] to text format.
@@ -253,16 +271,16 @@ pub fn text_to_message(
     pool: &DescriptorPool,
     descriptor: &DescriptorProto,
     input: &str,
-    _opts: &TextOptions,
+    opts: &TextOptions,
 ) -> Result<DynamicMessage, TextError> {
     let tokens = tokenize(input)?;
-    let mut p = Parser { toks: tokens, pos: 0 };
+    let mut p = Parser { toks: tokens, pos: 0, opts };
     let mut msg = DynamicMessage::new(Arc::new(descriptor.clone()), pool.clone());
     // Skip the optional top-level message delimiter (`{`/`}` or `<`/`>`).
     if matches!(p.peek(), Some(Tok::LBrace) | Some(Tok::LAngle)) {
         p.next();
     }
-    p.parse_message_body(pool, descriptor, &mut msg)?;
+    p.parse_message_body(pool, descriptor, &mut msg, 0)?;
     if matches!(p.peek(), Some(Tok::RBrace) | Some(Tok::RAngle)) {
         p.next();
     }
@@ -454,12 +472,13 @@ fn parse_number(input: &str, start: usize) -> Result<(Tok, usize), TextError> {
     Err(TextError::Lex(start as u32, format!("bad number {word:?}")))
 }
 
-struct Parser {
+struct Parser<'a> {
     toks: Vec<Tok>,
     pos: usize,
+    opts: &'a TextOptions,
 }
 
-impl Parser {
+impl Parser<'_> {
     fn peek(&self) -> Option<Tok> {
         self.toks.get(self.pos).cloned()
     }
@@ -482,7 +501,14 @@ impl Parser {
         pool: &DescriptorPool,
         descriptor: &DescriptorProto,
         msg: &mut DynamicMessage,
+        depth: u32,
     ) -> Result<(), TextError> {
+        if depth > self.opts.max_depth {
+            return Err(TextError::RecursionLimit(format!(
+                "text nesting exceeds max_depth {}",
+                self.opts.max_depth
+            )));
+        }
         loop {
             match self.peek() {
                 None | Some(Tok::RBrace) | Some(Tok::RAngle) => {
@@ -503,7 +529,7 @@ impl Parser {
                     match self.peek() {
                         Some(Tok::LBrace) | Some(Tok::LAngle) => {
                             self.next();
-                            self.parse_message_body(pool, &sub, &mut inner)?;
+                            self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
                             self.close_delim()?;
                         }
                         _ => {}
@@ -514,11 +540,11 @@ impl Parser {
                 }
                 Some(Tok::Ident(name)) => {
                     self.pos += 1;
-                    self.parse_field(pool, descriptor, msg, &name)?;
+                    self.parse_field(pool, descriptor, msg, &name, depth)?;
                 }
                 Some(Tok::Raw(name)) => {
                     self.pos += 1;
-                    self.parse_field(pool, descriptor, msg, &name)?;
+                    self.parse_field(pool, descriptor, msg, &name, depth)?;
                 }
                 Some(other) => {
                     return Err(TextError::Syntax(format!("unexpected token in message body: {other:?}")));
@@ -540,6 +566,7 @@ impl Parser {
         descriptor: &DescriptorProto,
         msg: &mut DynamicMessage,
         name: &str,
+        depth: u32,
     ) -> Result<(), TextError> {
         // Look up the field by name or number.
         let field = descriptor
@@ -557,13 +584,13 @@ impl Parser {
                     .lookup_message(field.type_name.as_deref().unwrap_or(""))
                     .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
                 let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                self.parse_message_body(pool, &sub, &mut inner)?;
+                        self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
                 self.close_delim()?;
                 Value::Message(inner)
             }
             Some(Tok::Colon) => {
                 self.next();
-                self.parse_value(pool, &field)?
+                self.parse_value(pool, &field, depth + 1)?
             }
             other => {
                 return Err(TextError::Syntax(format!("expected ':' or '{{' after field {name}, got {other:?}")));
@@ -601,7 +628,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_value(&mut self, pool: &DescriptorPool, field: &FieldDescriptorProto) -> Result<Value, TextError> {
+    fn parse_value(&mut self, pool: &DescriptorPool, field: &FieldDescriptorProto, depth: u32) -> Result<Value, TextError> {
         let t = field.r#type.unwrap_or(FieldType::String);
         match t {
             FieldType::Message | FieldType::Group => {
@@ -613,7 +640,7 @@ impl Parser {
                             .lookup_message(field.type_name.as_deref().unwrap_or(""))
                             .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
                         let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                        self.parse_message_body(pool, &sub, &mut inner)?;
+                self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
                         self.close_delim()?;
                         Ok(Value::Message(inner))
                     }

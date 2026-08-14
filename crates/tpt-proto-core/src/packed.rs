@@ -43,7 +43,7 @@ where
     F: Fn(&mut Reader) -> crate::Result<T>,
 {
     let body = r.read_length_delimited()?;
-    let mut sub = Reader::new(body);
+    let mut sub = r.nested(body)?;
     let mut out = Vec::new();
     while !sub.is_empty() {
         out.push(read_one(&mut sub)?);
@@ -95,16 +95,34 @@ pub fn encode_map_entry(w: &mut Writer, field: u32, key: &[u8], value: &[u8]) {
 
 /// Decode the key and value byte bodies of a map entry.
 ///
-/// Returns the raw, untagged value bytes for field 1 (key) and field 2 (value),
-/// handling any wire type (varint, fixed, or length-delimited). Duplicate keys
-/// are resolved by the caller with last-value-wins semantics.
-pub fn decode_map_entry(body: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>)> {
-    let mut r = Reader::new(body);
-    let mut key = None;
-    let mut value = None;
-    while !r.is_empty() {
-        let tag = r.read_tag()?;
-        let bytes = read_raw_value(&mut r, tag.wire_type)?;
+/// Reads the length-delimited entry body from `r`, descending through a nested
+/// reader (so the parent [`DecoderLimits`], including `max_depth`, keep being
+/// enforced) and returns the raw, untagged, owned value bytes for field 1 (key)
+/// and field 2 (value), handling any wire type (varint, fixed, or
+/// length-delimited). Duplicate keys are resolved by the caller with
+/// last-value-wins semantics.
+pub fn decode_map_entry(r: &mut Reader) -> crate::Result<(Vec<u8>, Vec<u8>)> {
+    let (k, v) = decode_map_entry_frames(r)?;
+    Ok((k.to_vec(), v.to_vec()))
+}
+
+/// Decode the key and value byte bodies of a map entry, returning slices that
+/// borrow directly from the underlying buffer.
+///
+/// The nested entry reader inherits the parent's [`DecoderLimits`] (including
+/// `max_depth`) so depth is enforced across the whole nesting chain rather than
+/// reset to zero at the entry boundary. The returned slices are valid for as
+/// long as the original buffer lives.
+pub fn decode_map_entry_frames<'a>(
+    r: &mut Reader<'a>,
+) -> crate::Result<(&'a [u8], &'a [u8])> {
+    let body = r.read_length_delimited()?;
+    let mut er = r.nested(body)?;
+    let mut key: Option<&'a [u8]> = None;
+    let mut value: Option<&'a [u8]> = None;
+    while !er.is_empty() {
+        let tag = er.read_tag()?;
+        let bytes = read_raw_value(&mut er, tag.wire_type)?;
         match tag.field_number {
             1 => key = Some(bytes),
             2 => value = Some(bytes),
@@ -112,7 +130,7 @@ pub fn decode_map_entry(body: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>)> {
         }
     }
     let key = key.ok_or(crate::Error::MalformedInput("map entry missing key"))?;
-    let value = value.unwrap_or_default();
+    let value = value.unwrap_or(&[]);
     Ok((key, value))
 }
 
@@ -122,21 +140,24 @@ pub fn decode_map_entry(body: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>)> {
 /// the field tag, i.e. for `LengthDelimited` they include the length prefix so
 /// the caller can re-parse them with the normal `Reader` helpers (e.g.
 /// `read_string_owned` / `merge_from`). This lets map-entry value decode use the
-/// same code paths as top-level field decode.
-fn read_raw_value(r: &mut Reader, wt: WireType) -> crate::Result<Vec<u8>> {
+/// same code paths as top-level field decode. The slices borrow directly from
+/// the underlying buffer for `'a`.
+fn read_raw_value<'a>(r: &mut Reader<'a>, wt: WireType) -> crate::Result<&'a [u8]> {
     match wt {
         WireType::Varint => {
             let (v, raw) = r.read_varint_raw()?;
             let _ = v;
-            Ok(raw.to_vec())
+            Ok(raw)
         }
         WireType::Fixed32 => {
-            let v = r.read_fixed32()?;
-            Ok(v.to_le_bytes().to_vec())
+            let start = r.pos();
+            let _ = r.read_fixed32()?;
+            Ok(r.buf_slice(start, start + 4)?)
         }
         WireType::Fixed64 => {
-            let v = r.read_fixed64()?;
-            Ok(v.to_le_bytes().to_vec())
+            let start = r.pos();
+            let _ = r.read_fixed64()?;
+            Ok(r.buf_slice(start, start + 8)?)
         }
         WireType::LengthDelimited => {
             // Re-collect the length prefix alongside the delimited body so the
@@ -144,11 +165,11 @@ fn read_raw_value(r: &mut Reader, wt: WireType) -> crate::Result<Vec<u8>> {
             let start = r.pos();
             let len = r.read_varint()? as usize;
             r.limits().check_length(len)?;
-            if r.pos() + len > r.remaining() + r.pos() {
+            let end = r.pos() + len;
+            if end > r.buf().len() {
                 return Err(crate::Error::LengthLimitExceeded { len });
             }
-            let end = r.pos() + len;
-            let framed = r.buf_slice(start, end)?.to_vec();
+            let framed = r.buf_slice(start, end)?;
             r.set_pos(end)?;
             Ok(framed)
         }
@@ -196,11 +217,30 @@ mod tests {
         encode_map_entry(&mut w, 3, k.buf(), v.buf());
         let mut r = Reader::new(w.buf());
         let _ = r.read_tag().unwrap();
-        let body = r.read_length_delimited().unwrap();
-        let (mk, mv) = decode_map_entry(body).unwrap();
+        let (mk, mv) = decode_map_entry(&mut r).unwrap();
         // Values are returned framed exactly as on the wire, so they re-parse
         // with the ordinary `Reader` helpers (mirrors generated decode paths).
         assert_eq!(Reader::new(&mk).read_string_owned().unwrap(), "a");
         assert_eq!(Reader::new(&mv).read_varint().unwrap(), 7);
+    }
+
+    #[test]
+    fn map_entry_propagates_limits() {
+        use crate::limits::DecoderLimits;
+        let mut w = Writer::new();
+        let mut k = Writer::new();
+        crate::scalar::encode_string(&mut k, 1, "a");
+        let mut v = Writer::new();
+        crate::scalar::encode_int32(&mut v, 2, 7);
+        encode_map_entry(&mut w, 3, k.buf(), v.buf());
+        // A tiny max_length must still allow the entry body itself.
+        let mut limits = DecoderLimits::default();
+        limits.max_depth = 1;
+        let mut r = Reader::with_limits(w.buf(), limits);
+        let _ = r.read_tag().unwrap();
+        // The entry is one nesting level deep; decoding it at max_depth=1 must
+        // succeed (depth is counted, not reset to zero).
+        let res = decode_map_entry(&mut r);
+        assert!(res.is_ok(), "map entry decode must honor inherited limits");
     }
 }

@@ -133,3 +133,71 @@ fn proto_full_name_hook() {
     assert_eq!(SampleScalars::PROTO_FULL_NAME, "sample.Scalars");
     assert_eq!(SampleCollections::PROTO_FULL_NAME, "sample.Collections");
 }
+
+#[test]
+fn json_roundtrip_scalars() {
+    let mut m = SampleScalars::default();
+    m.d = 1.5;
+    m.i32 = -3;
+    m.u64 = 99;
+    m.s = "héllo".into();
+    m.by = vec![1, 2, 3];
+    m.nested = SampleNested {
+        name: "nested".into(),
+        ..Default::default()
+    };
+
+    let json = m.to_json().expect("to_json failed");
+    let back = SampleScalars::from_json(&json).expect("from_json failed");
+    assert_eq!(m, back);
+}
+
+#[test]
+fn json_roundtrip_collections() {
+    let mut c = SampleCollections::default();
+    c.nums = vec![1, 2, 300, -4];
+    c.strs = vec!["a".into(), "b".into()];
+    c.color = SampleColor::GREEN;
+    c.labels.insert("alpha".into(), 1);
+    c.by_id.insert(
+        7,
+        SampleNested {
+            name: "seven".into(),
+            ..Default::default()
+        },
+    );
+
+    let json = c.to_json().expect("to_json failed");
+    let back = SampleCollections::from_json(&json).expect("from_json failed");
+    assert_eq!(c, back);
+}
+
+#[test]
+fn json_roundtrip_oneof() {
+    let built = SampleWithOneofBuilder::new().n(123).build();
+    let json = built.to_json().expect("to_json failed");
+    let back = SampleWithOneof::from_json(&json).expect("from_json failed");
+    assert_eq!(built, back);
+}
+
+#[test]
+fn text_roundtrip_scalars() {
+    let mut m = SampleScalars::default();
+    m.i32 = 7;
+    m.s = "text".into();
+
+    let text = m.to_text().expect("to_text failed");
+    let back = SampleScalars::from_text(&text).expect("from_text failed");
+    assert_eq!(m, back);
+}
+
+#[test]
+fn text_roundtrip_collections() {
+    let mut c = SampleCollections::default();
+    c.nums = vec![5, 6];
+    c.labels.insert("k".into(), 9);
+
+    let text = c.to_text().expect("to_text failed");
+    let back = SampleCollections::from_text(&text).expect("from_text failed");
+    assert_eq!(c, back);
+}
