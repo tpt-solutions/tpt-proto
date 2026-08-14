@@ -8,6 +8,13 @@ repository.workspace = true
 rust-version.workspace = true
 description = "gRPC protocol, server, and client runtime"
 
+[features]
+default = []
+# Enables TLS client support in the `tpt-grpc` debug CLI. Pulls in `rustls` /
+# `tokio-rustls` and is off by default so the workspace builds without those
+# optional native dependencies.
+tls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile"]
+
 [dependencies]
 tpt-proto-core = { workspace = true }
 tpt-proto-descriptor = { workspace = true }
@@ -25,6 +32,14 @@ futures = { workspace = true }
 h2 = { workspace = true }
 http = { workspace = true }
 tokio = { workspace = true }
+clap = { version = "4.4", features = ["derive"] }
+serde_json = { workspace = true }
+hex = "0.4"
+rustls = { version = "0.23", optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+rustls-pemfile = { version = "2", optional = true }
 
 [dev-dependencies]
 tpt-proto-core = { workspace = true }
+tpt-proto-compiler = { workspace = true }
+tpt-proto-language = { workspace = true }

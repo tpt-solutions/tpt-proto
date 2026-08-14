@@ -50,3 +50,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - name: Fuzz build check
         run: cargo +nightly fuzz build
+
+  conformance:
+    name: Conformance suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release --bin tpt-conformance --bin tpt-conformance-testee
+      - name: Run built-in conformance harness
+        run: cargo run --release --bin tpt-conformance -- run
+      - name: Upload conformance report (JSON)
+        if: always()
+        run: cargo run --release --bin tpt-conformance -- run --json > conformance-report.json
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-report
+          path: conformance-report.json
+      - name: Official runner integration (if available)
+        if: false
+        run: bash conformance/run_conformance.sh

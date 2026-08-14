@@ -6,5 +6,8 @@ message Pong { string msg = 1; }
 
 service Echo {
   rpc Unary(Ping) returns (Pong);
+  rpc ServerStream(Ping) returns (stream Pong);
+  rpc ClientStream(stream Ping) returns (Pong);
+  rpc Bidi(stream Ping) returns (stream Pong);
 }
 

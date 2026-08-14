@@ -112,6 +112,34 @@ impl Report {
         }
         out
     }
+
+    /// Render a machine-readable (JSON) report suitable for CI artifact upload.
+    pub fn to_json(&self) -> String {
+        use serde_json::{json, Value as J};
+        let results: Vec<J> = self
+            .results
+            .iter()
+            .map(|r| {
+                json!({
+                    "name": r.name,
+                    "status": match r.status {
+                        Status::Pass => "PASS",
+                        Status::Fail => "FAIL",
+                        Status::Skip => "SKIP",
+                    },
+                    "detail": r.detail,
+                })
+            })
+            .collect();
+        let v = json!({
+            "total": self.total(),
+            "passed": self.passed(),
+            "failed": self.failures(),
+            "skipped": self.skipped(),
+            "results": results,
+        });
+        serde_json::to_string_pretty(&v).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+    }
 }
 
 /// Build a request message for the given message type and payload.
@@ -397,24 +425,6 @@ fn generate_cases(registry: &Registry) -> Vec<Case> {
     }
     cases.extend(behavior_cases(registry));
     cases
-}
-
-/// Build a short description of how two messages differ (field numbers).
-fn diff_message(a: &DynamicMessage, b: &DynamicMessage) -> String {
-    let mut out = String::new();
-    let keys: std::collections::BTreeSet<i32> =
-        a.fields.keys().chain(b.fields.keys()).copied().collect();
-    for k in keys {
-        let va = a.fields.get(&k);
-        let vb = b.fields.get(&k);
-        if va != vb {
-            out.push_str(&format!("  field {k}: expected={va:?} got={vb:?}\n"));
-        }
-    }
-    if out.is_empty() {
-        out.push_str("decoded output != expected message");
-    }
-    out
 }
 
 /// If the response is an error/skip oneof member, return a human description

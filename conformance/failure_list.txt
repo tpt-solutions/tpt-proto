@@ -1,0 +1,9 @@
+# Conformance failure list (consumed by `conformance_test_runner --failure_list`).
+#
+# Each line names a test case that is *expected* to fail and is therefore not
+# counted as a regression. Lines beginning with '#' are comments.
+#
+# tpt-proto is a clean-room implementation; cases listed here document known
+# divergences from the reference runner's expectations. An empty list means the
+# testee is expected to pass every case it accepts (cases it cannot run are
+# reported back to the runner as `skipped`, which the runner excludes).

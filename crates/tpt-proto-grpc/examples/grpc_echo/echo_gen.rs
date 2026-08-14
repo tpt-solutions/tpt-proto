@@ -71,6 +71,23 @@ impl ExPingBuilder {
     }
 }
 
+impl ExPing {
+    /// Decode this message from a borrowed byte slice.
+    ///
+    /// The slice is read directly (zero-copy) without copying the buffer
+    /// for scalar, string, or bytes payloads.
+    pub fn decode(buf: &[u8]) -> ::tpt_proto_core::Result<Self> {
+        let mut __msg = Self::default();
+        let mut __r = ::tpt_proto_core::Reader::new(buf);
+        ::tpt_proto_core::Message::merge_from(&mut __msg, &mut __r)?;
+        Ok(__msg)
+    }
+    /// Encode this message into a freshly allocated byte vector.
+    pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {
+        ::tpt_proto_core::Message::encode_to_vec(self)
+    }
+}
+
 /// Generated from protobuf message `ex.Pong`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ExPong {
@@ -133,12 +150,35 @@ impl ExPongBuilder {
     }
 }
 
+impl ExPong {
+    /// Decode this message from a borrowed byte slice.
+    ///
+    /// The slice is read directly (zero-copy) without copying the buffer
+    /// for scalar, string, or bytes payloads.
+    pub fn decode(buf: &[u8]) -> ::tpt_proto_core::Result<Self> {
+        let mut __msg = Self::default();
+        let mut __r = ::tpt_proto_core::Reader::new(buf);
+        ::tpt_proto_core::Message::merge_from(&mut __msg, &mut __r)?;
+        Ok(__msg)
+    }
+    /// Encode this message into a freshly allocated byte vector.
+    pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {
+        ::tpt_proto_core::Message::encode_to_vec(self)
+    }
+}
+
 /// gRPC server trait for `ex.Echo`.
 #[async_trait]
 #[allow(unused_variables)]
 pub trait Echo: Send + Sync {
     /// Handler for `ex.Echo.unary`.
     async fn unary(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<ExPong>, __grpc::Status>;
+    /// Handler for `ex.Echo.server_stream`.
+    async fn server_stream(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status>;
+    /// Handler for `ex.Echo.client_stream`.
+    async fn client_stream(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<ExPong>, __grpc::Status>;
+    /// Handler for `ex.Echo.bidi`.
+    async fn bidi(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status>;
 }
 
 /// gRPC client stub for `ex.Echo`.
@@ -161,6 +201,116 @@ impl EchoClient {
             )
             .await?;
         Ok(__grpc::Response::new(message).with_metadata(trailers))
+    }
+    /// Call `ex.Echo.server_stream`.
+    pub async fn server_stream(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status> {
+        let req_raw = request.message.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;
+        let (stream, trailers) = self.channel.transport().server_streaming(
+            "/ex.Echo/ServerStream",
+            request.context.metadata.clone(),
+            req_raw,
+        ).await?;
+        let mapped = __grpc::framed::map_server_stream(stream, |bytes| {
+            <ExPong>::decode(&bytes).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))
+        });
+        Ok(__grpc::Response::new(mapped).with_metadata(trailers))
+    }
+    /// Call `ex.Echo.client_stream`.
+    pub async fn client_stream(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<ExPong>, __grpc::Status> {
+        let req_stream = __grpc::framed::map_client_stream(request.message, |msg| {
+            msg.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))
+        });
+        let (message, trailers) = self.channel.transport().client_streaming(
+            "/ex.Echo/ClientStream",
+            request.context.metadata.clone(),
+            req_stream,
+        ).await?;
+        let resp = <ExPong>::decode(&message).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;
+        Ok(__grpc::Response::new(resp).with_metadata(trailers))
+    }
+    /// Call `ex.Echo.bidi`.
+    pub async fn bidi(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status> {
+        let req_stream = __grpc::framed::map_client_stream(request.message, |msg| {
+            msg.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))
+        });
+        let (stream, trailers) = self.channel.transport().bidi_streaming(
+            "/ex.Echo/Bidi",
+            request.context.metadata.clone(),
+            req_stream,
+        ).await?;
+        let mapped = __grpc::framed::map_server_stream(stream, |bytes| {
+            <ExPong>::decode(&bytes).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))
+        });
+        Ok(__grpc::Response::new(mapped).with_metadata(trailers))
+    }
+}
+
+/// gRPC server adapter for `ex.Echo`.
+///
+/// Wraps a user implementation of [`Echo`] and implements the runtime
+/// [`__grpc::ServiceHandler`] trait, translating between typed messages
+/// and the raw bytes the HTTP/2 server dispatches.
+pub struct EchoServer<T: Echo + ?Sized> {
+    inner: std::sync::Arc<T>,
+}
+
+impl<T: Echo + 'static> EchoServer<T> {
+    /// Wrap a service implementation.
+    pub fn new(inner: T) -> Self { Self { inner: std::sync::Arc::new(inner) } }
+}
+
+#[async_trait]
+impl<T: Echo + 'static> __grpc::ServiceHandler for EchoServer<T> {
+    fn full_name(&self) -> &str { "ex.Echo" }
+    fn methods(&self) -> std::vec::Vec<(std::string::String, __grpc::MethodKind)> {
+        std::vec![
+            (std::format!("/ex.Echo/Unary"), __grpc::MethodKind::Unary),
+            (std::format!("/ex.Echo/ServerStream"), __grpc::MethodKind::ServerStreaming),
+            (std::format!("/ex.Echo/ClientStream"), __grpc::MethodKind::ClientStreaming),
+            (std::format!("/ex.Echo/Bidi"), __grpc::MethodKind::BidiStreaming),
+        ]
+    }
+    async fn call_unary(&self, method: &str, ctx: __grpc::RpcContext, req: std::vec::Vec<u8>) -> std::result::Result<std::vec::Vec<u8>, __grpc::Status> {
+        match method {
+            "Unary" => {
+                let msg = <ExPing>::decode(&req).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;
+                let resp = self.inner.unary(__grpc::Request::with_context(msg, ctx)).await?;
+                resp.message.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))
+            },
+            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!("method {method} not found"))),
+        }
+    }
+    async fn call_server_streaming(&self, method: &str, ctx: __grpc::RpcContext, req: std::vec::Vec<u8>) -> std::result::Result<__grpc::ServerStream<std::vec::Vec<u8>>, __grpc::Status> {
+        match method {
+            "ServerStream" => {
+                let msg = <ExPing>::decode(&req).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;
+                let resp = self.inner.server_stream(__grpc::Request::with_context(msg, ctx)).await?;
+                let mapped = __grpc::framed::map_server_stream(resp.message, |m| m.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));
+                Ok(mapped)
+            },
+            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!("method {method} not found"))),
+        }
+    }
+    async fn call_client_streaming(&self, method: &str, ctx: __grpc::RpcContext, req: __grpc::ClientStream<std::vec::Vec<u8>>) -> std::result::Result<std::vec::Vec<u8>, __grpc::Status> {
+        match method {
+            "ClientStream" => {
+                let req_stream = __grpc::framed::map_client_stream(req, |b| <ExPing>::decode(&b).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));
+                let resp = self.inner.client_stream(__grpc::Request::with_context(req_stream, ctx)).await?;
+                resp.message.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))
+            },
+            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!("method {method} not found"))),
+        }
+    }
+    async fn call_bidi_streaming(&self, method: &str, ctx: __grpc::RpcContext, req: __grpc::ClientStream<std::vec::Vec<u8>>) -> std::result::Result<__grpc::ServerStream<std::vec::Vec<u8>>, __grpc::Status> {
+        match method {
+            "Bidi" => {
+                let req_stream = __grpc::framed::map_client_stream(req, |b| <ExPing>::decode(&b).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));
+                let resp = self.inner.bidi(__grpc::Request::with_context(req_stream, ctx)).await?;
+                let mapped = __grpc::framed::map_server_stream(resp.message, |m| m.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));
+                Ok(mapped)
+            },
+            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!("method {method} not found"))),
+        }
     }
 }
 

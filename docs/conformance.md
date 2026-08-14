@@ -43,9 +43,41 @@ published protobuf behavior and the project's own design (`spec.txt`).
 
 ## Running locally
 
-Refer to the crate's instructions and the CI workflow for invoking the testee
-against the conformance runner. (Exact invocation depends on the toolchain
-setup in CI; see `tpt-proto-conformance` for details.)
+### Built-in harness (no external dependencies)
+
+The `tpt-proto-conformance` crate ships a self-contained harness that exercises
+the full tpt-proto stack end-to-end and requires nothing beyond a Rust toolchain:
+
+```sh
+cargo run -p tpt-proto-conformance -- run          # human-readable report
+cargo run -p tpt-proto-conformance -- run --json   # machine-readable report
+cargo run -p tpt-proto-conformance -- cases        # list generated case names
+```
+
+The harness exits non-zero if any case fails, so it is CI-friendly.
+
+### Official `conformance_test_runner` integration
+
+The standalone `tpt-conformance-testee` binary speaks *only* the standard framed
+`ConformanceRequest`/`ConformanceResponse` protocol on stdin/stdout, with no
+subcommand, so the reference protobuf runner can drive it directly:
+
+```sh
+cargo build --release --bin tpt-conformance-testee
+conformance/run_conformance.sh            # locates conformance_test_runner on PATH
+# or explicitly:
+conformance_test_runner --enforce_recommended \
+    --failure_list conformance/failure_list.txt \
+    target/release/tpt-conformance-testee
+```
+
+Official suite message-type names (e.g.
+`protobuf_test_messages.proto3.TestAllTypesProto3`) are aliased to tpt-proto's
+dialect descriptors inside the testee (`schema.rs`), so genuine binary + JSON
+cases run instead of being skipped. Cases the testee cannot run (e.g. JSPB or
+text-format output) are reported back as `skipped`, which the reference runner
+excludes from the pass/fail tally. Known divergences can be listed in
+`conformance/failure_list.txt`.
 
 ## Status notes
 

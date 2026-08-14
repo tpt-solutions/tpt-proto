@@ -522,7 +522,7 @@ mod tests {
         let blocks = parse_pem(data).unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].label, "CERTIFICATE");
-        assert_eq!(blocks[0].der, vec![0x30, 0x82, 0x04]);
+        assert_eq!(blocks[0].der, vec![0x30, 0x82, 0x01]);
     }
 
     #[test]

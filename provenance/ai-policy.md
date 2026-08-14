@@ -18,6 +18,27 @@ tpt-proto.
 2. Human reviewer verifies correctness, licensing, and clean-room compliance.
 3. Reviewer records the change in this file if it is significant.
 
+## Clean-Room Guardrails for AI Tooling
+
+Because AI models are trained on public code, additional guardrails apply:
+
+- When asking an AI assistant to produce protobuf/gRPC machinery, phrase
+  requests in terms of the public specification (`spec.txt`) and published
+  standards, never "reproduce how library X does it".
+- Reviewers must confirm generated code does not reproduce the structure,
+  identifiers, or test corpora of other implementations (e.g. `protobuf`,
+  `prost`, `tonic`, `protobuf-rust`, `google/protobuf`).
+- Generated test vectors must be independently derived; see
+  `provenance/test-vectors.md`.
+
 ## Recorded Uses
 
-_None recorded yet._
+- **Scaffolding & boilerplate.** AI assistance was used to draft crate
+  skeletons, repeated derive/impl patterns, and documentation outlines during
+  early project setup. Every result was reviewed against `spec.txt` and the
+  clean-room policy before being committed.
+- **Cross-cutting refactors.** AI assistance helped apply consistent changes
+  (e.g. limit plumbing, doc-header trademark disclaimers) across all crates.
+  Each change was verified to compile and to keep `cargo test` green.
+- **Docs.** AI assistance drafted developer documentation from the in-repo
+  specification; technical claims were checked against `spec.txt`.

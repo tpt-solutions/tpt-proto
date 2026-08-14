@@ -20,7 +20,8 @@ use http::{HeaderMap, Response};
 use h2::server;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, Semaphore};
+use std::sync::RwLock;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::cancellation::CancellationToken;
@@ -30,6 +31,8 @@ use crate::framed::{deframe_stream, read_single_message};
 use crate::interceptor::{InterceptedHandler, Interceptor};
 use crate::metadata::Metadata;
 use crate::method::MethodKind;
+use crate::observability::{CallInstrumentor, CallLabels, Level, LogRecord, Observability, StreamingType};
+use crate::security::{identity_from_peer, SecurityPolicy};
 use crate::service::ServiceHandler;
 use crate::status::{Code, Status};
 use crate::timeout::parse_timeout;
@@ -87,6 +90,22 @@ pub struct ServerConfig {
     pub graceful_shutdown_timeout: Duration,
     /// Maximum number of concurrent in-flight RPCs across all connections.
     pub max_concurrent_rpcs: usize,
+    /// HTTP/2 keep-alive PING interval. `None` disables keepalive pings.
+    pub keepalive_interval: Option<Duration>,
+    /// HTTP/2 keep-alive timeout: time to await a PING ACK before closing the
+    /// connection. Only used when `keepalive_interval` is `Some`.
+    pub keepalive_timeout: Duration,
+    /// Observability sinks recording every RPC's lifecycle (metrics/tracing/logs).
+    ///
+    /// Defaults to the `Noop*` sinks so the server runs with zero overhead when
+    /// no observability is configured.
+    pub observability: Observability,
+    /// Optional security policy applied to every RPC before dispatch.
+    ///
+    /// When set, the policy authenticates the request and authorizes the
+    /// `<service>/<method>`; failures abort the call with `UNAUTHENTICATED`
+    /// or `PERMISSION_DENIED`.
+    pub security: Option<Arc<SecurityPolicy>>,
 }
 
 impl Default for ServerConfig {
@@ -101,6 +120,10 @@ impl Default for ServerConfig {
             response_compression: Compression::Identity,
             graceful_shutdown_timeout: Duration::from_secs(30),
             max_concurrent_rpcs: 1000,
+            keepalive_interval: Some(Duration::from_secs(30)),
+            keepalive_timeout: Duration::from_secs(20),
+            observability: Observability::default(),
+            security: None,
         }
     }
 }
@@ -162,9 +185,39 @@ impl ServerBuilder {
         self
     }
 
+    /// Enable HTTP/2 keepalive with the given PING interval.
+    pub fn keepalive_interval(mut self, interval: Duration) -> Self {
+        self.config.keepalive_interval = Some(interval);
+        self
+    }
+
+    /// Disable HTTP/2 keepalive pings.
+    pub fn disable_keepalive(mut self) -> Self {
+        self.config.keepalive_interval = None;
+        self
+    }
+
+    /// Set the keepalive PING ACK timeout (used when keepalive is enabled).
+    pub fn keepalive_timeout(mut self, timeout: Duration) -> Self {
+        self.config.keepalive_timeout = timeout;
+        self
+    }
+
     /// Add a middleware interceptor applied to every RPC.
     pub fn with_interceptor(mut self, interceptor: Arc<dyn Interceptor>) -> Self {
         self.interceptors.push(interceptor);
+        self
+    }
+
+    /// Attach an observability bundle (metrics/tracing/logging) recording every RPC.
+    pub fn with_observability(mut self, observability: Observability) -> Self {
+        self.config.observability = observability;
+        self
+    }
+
+    /// Attach a security policy (authentication + authorization) enforced before dispatch.
+    pub fn with_security(mut self, policy: Arc<SecurityPolicy>) -> Self {
+        self.config.security = Some(policy);
         self
     }
 
@@ -220,7 +273,7 @@ impl Server {
                 self.interceptors.clone(),
             ))
         };
-        let mut registry = self.registry.blocking_write();
+        let mut registry = self.registry.write().unwrap();
         for (path, kind) in handler.methods() {
             let mut methods = HashMap::new();
             methods.insert(path.clone(), kind);
@@ -319,7 +372,6 @@ async fn handle_connection(
         .max_header_list_size(config.max_header_list_size)
         .initial_window_size(config.http2_initial_stream_window)
         .initial_connection_window_size(config.http2_initial_connection_window);
-
     let mut conn = match builder.handshake::<_, Bytes>(stream).await {
         Ok(c) => c,
         Err(e) => {
@@ -327,6 +379,30 @@ async fn handle_connection(
             return Ok(());
         }
     };
+
+    // HTTP/2 keepalive: a decoupled task periodically sends a user PING and
+    // waits for the peer's PONG. The h2 `Connection` (driven by the `accept`
+    // loop below) processes the incoming PONG, so the ping task never blocks
+    // the connection. If a PONG is not received within `keepalive_timeout`, the
+    // connection is cancelled (graceful shutdown + drop).
+    if let (Some(interval), Some(mut pings)) = (config.keepalive_interval, conn.ping_pong()) {
+        let timeout = config.keepalive_timeout;
+        let ka_shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await;
+                match tokio::time::timeout(timeout, pings.ping(h2::Ping::opaque())).await {
+                    Ok(Ok(_)) => {}
+                    _ => {
+                        ka_shutdown.cancel();
+                        return;
+                    }
+                }
+            }
+        });
+    }
 
     loop {
         let next = tokio::select! {
@@ -368,8 +444,15 @@ async fn handle_request(
     shutdown: CancellationToken,
 ) {
     let path = request.uri().path().to_string();
+    let (package, svc, method) = crate::parse_path(&path).unwrap_or_default();
+    let full_service = if package.is_empty() {
+        svc
+    } else {
+        format!("{package}.{svc}")
+    };
+
     let (handler, kind) = {
-        let reg = registry.read().await;
+        let reg = registry.read().unwrap();
         match reg.get(&path) {
             Some(svc) => {
                 let kind = svc.methods.get(&path).copied().unwrap_or(MethodKind::Unary);
@@ -378,8 +461,6 @@ async fn handle_request(
             None => (None, MethodKind::Unary),
         }
     };
-
-    let (ctx, request_encoding) = build_context(&request, &peer_addr, config.max_metadata_size);
 
     let send_headers = |respond: &mut h2::server::SendResponse<Bytes>,
                          end: bool|
@@ -396,25 +477,81 @@ async fn handle_request(
             .map_err(|e| Status::new(Code::Internal, format!("send_response: {e}")))
     };
 
+    let (ctx, request_encoding) = build_context(&request, &peer_addr, config.max_metadata_size);
+
+    let streaming_type = StreamingType::from_flags(
+        matches!(kind, MethodKind::ClientStreaming | MethodKind::BidiStreaming),
+        matches!(kind, MethodKind::ServerStreaming | MethodKind::BidiStreaming),
+    );
+    let labels = CallLabels::new(full_service.clone(), method.clone(), Code::Ok, streaming_type);
+    let mut instrumentor = CallInstrumentor::start(labels, config.observability.clone());
+
+    let peer = ctx.peer.as_ref().and_then(|p| p.peer_addr.clone());
+    let deadline = ctx.deadline;
+    let request_id = ctx.metadata.get_text("x-request-id").map(|s| s.to_string());
+
+    let mut dispatch_ctx = ctx;
+    if let Some(policy) = &config.security {
+        match policy.apply(&dispatch_ctx, &full_service, &method) {
+            Ok(identity) => {
+                if let Some(p) = dispatch_ctx.peer.as_mut() {
+                    p.auth_principal = Some(identity.principal);
+                }
+            }
+            Err(status) => {
+                instrumentor.finish_with_status(status.code);
+                emit_call_log(
+                    &config.observability,
+                    &full_service,
+                    &method,
+                    status.code,
+                    peer.as_deref(),
+                    deadline,
+                    request_id,
+                );
+                match send_headers(&mut respond, false) {
+                    Ok(mut send) => finish_with_status(&mut send, status).await,
+                    Err(e) => finish_with_status_respond(&mut respond, e).await,
+                }
+                return;
+            }
+        }
+    } else if let Some(p) = dispatch_ctx.peer.as_mut() {
+        if let Some(id) = identity_from_peer(p) {
+            p.auth_principal = Some(id.principal);
+        }
+    }
+
     let handler = match handler {
         Some(h) => h,
         None => {
+            let status = Status::new(Code::Unimplemented, format!("no method `{path}`"));
+            instrumentor.finish_with_status(status.code);
+            emit_call_log(
+                &config.observability,
+                &full_service,
+                &method,
+                status.code,
+                peer.as_deref(),
+                deadline,
+                request_id,
+            );
             match send_headers(&mut respond, false) {
-                Ok(mut send) => finish_with_status(&mut send, Status::new(Code::Unimplemented, format!("no method `{path}`"))).await,
+                Ok(mut send) => finish_with_status(&mut send, status).await,
                 Err(e) => finish_with_status_respond(&mut respond, e).await,
             }
             return;
         }
     };
 
-    let deadline_opt = ctx.deadline;
+    let deadline_opt = dispatch_ctx.deadline;
     let call_cancel = CancellationToken::new();
     let path_clone = path.clone();
     let work = dispatch(
         kind,
         request,
         handler,
-        ctx,
+        dispatch_ctx,
         call_cancel,
         request_encoding,
         config.clone(),
@@ -438,6 +575,18 @@ async fn handle_request(
         },
     };
 
+    let code = result.as_ref().map(|_| Code::Ok).unwrap_or_else(|e| e.code);
+    instrumentor.finish_with_status(code);
+    emit_call_log(
+        &config.observability,
+        &full_service,
+        &method,
+        code,
+        peer.as_deref(),
+        deadline,
+        request_id,
+    );
+
     match result {
         Ok(output) => {
             let mut send = match send_headers(&mut respond, false) {
@@ -448,6 +597,7 @@ async fn handle_request(
                 }
             };
             if let Some(raw) = output.message {
+                instrumentor.message_sent(raw.len() as u64);
                 if let Err(e) = send_message(&mut send, &raw, &config) {
                     eprintln!("grpc server: send_message: {e}");
                     return;
@@ -462,6 +612,7 @@ async fn handle_request(
                             return;
                         }
                     };
+                    instrumentor.message_sent(raw.len() as u64);
                     if let Err(e) = send_message(&mut send, &raw, &config) {
                         eprintln!("grpc server: send_message: {e}");
                         return;
@@ -484,6 +635,34 @@ async fn handle_request(
             }
         }
     }
+}
+
+/// Emit a structured log record for a completed call.
+fn emit_call_log(
+    obs: &Observability,
+    service: &str,
+    method: &str,
+    code: Code,
+    peer: Option<&str>,
+    deadline: Option<SystemTime>,
+    request_id: Option<String>,
+) {
+    obs.logger.log(&LogRecord {
+        level: if code == Code::Ok {
+            Level::Info
+        } else {
+            Level::Warn
+        },
+        message: "rpc completed".to_string(),
+        request_id,
+        service: service.to_string(),
+        method: method.to_string(),
+        status: code.description().to_string(),
+        deadline,
+        peer: peer.map(|s| s.to_string()),
+        cancellation_reason: None,
+        span_id: None,
+    });
 }
 
 /// Frame `raw` and send it as one message on the h2 send stream.

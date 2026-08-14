@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use generated::{Echo, EchoClient, ExPing, ExPong};
 use tpt_proto_core::Message;
 use tpt_proto_grpc::{
-    Channel, Code, Metadata, Request, Response, ServerStream, Status, Transport,
+    Channel, ClientStream, Code, Metadata, Request, Response, ServerStream, Status, Transport,
 };
 
 /// A trivial server that echoes the request message.
@@ -31,6 +31,27 @@ impl Echo for MyEcho {
         let mut pong = ExPong::default();
         pong.msg = format!("echo: {}", request.message.msg);
         Ok(Response::new(pong))
+    }
+
+    async fn server_stream(
+        &self,
+        _request: Request<ExPing>,
+    ) -> Result<Response<ServerStream<ExPong>>, Status> {
+        Err(Status::new(Code::Unimplemented, "not used in this example"))
+    }
+
+    async fn client_stream(
+        &self,
+        _request: Request<ClientStream<ExPing>>,
+    ) -> Result<Response<ExPong>, Status> {
+        Err(Status::new(Code::Unimplemented, "not used in this example"))
+    }
+
+    async fn bidi(
+        &self,
+        _request: Request<ClientStream<ExPing>>,
+    ) -> Result<Response<ServerStream<ExPong>>, Status> {
+        Err(Status::new(Code::Unimplemented, "not used in this example"))
     }
 }
 

@@ -1608,7 +1608,158 @@ fn gen_service_grpc(
         ));
     }
     out.push_str("}\n\n");
+
+    // ---- Server adapter ----
+    out.push_str(&gen_server_adapter(&name, full_name, s, pkg));
     out
+}
+
+/// Map a method descriptor to its gRPC streaming `MethodKind` variant name.
+fn grpc_kind_name(m: &tpt_proto_descriptor::MethodDescriptorProto) -> &'static str {
+    let cs = m.client_streaming.unwrap_or(false);
+    let ss = m.server_streaming.unwrap_or(false);
+    match (cs, ss) {
+        (false, false) => "Unary",
+        (false, true) => "ServerStreaming",
+        (true, false) => "ClientStreaming",
+        (true, true) => "BidiStreaming",
+    }
+}
+
+/// Generate the `XxxServer<T>` adapter implementing the runtime
+/// [`ServiceHandler`] trait for a generated server trait.
+fn gen_server_adapter(
+    name: &str,
+    full_name: &str,
+    s: &tpt_proto_descriptor::ServiceDescriptorProto,
+    pkg: &str,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "/// gRPC server adapter for `{full_name}`.\n\
+         ///\n\
+         /// Wraps a user implementation of [`{name}`] and implements the runtime\n\
+         /// [`__grpc::ServiceHandler`] trait, translating between typed messages\n\
+         /// and the raw bytes the HTTP/2 server dispatches.\n\
+         pub struct {name}Server<T: {name} + ?Sized> {{\n    \
+             inner: std::sync::Arc<T>,\n\
+         }}\n\n"
+    ));
+    out.push_str(&format!(
+        "impl<T: {name} + 'static> {name}Server<T> {{\n    \
+             /// Wrap a service implementation.\n    \
+             pub fn new(inner: T) -> Self {{ Self {{ inner: std::sync::Arc::new(inner) }} }}\n\
+         }}\n\n"
+    ));
+    out.push_str(&format!(
+        "#[async_trait]\n\
+         impl<T: {name} + 'static> __grpc::ServiceHandler for {name}Server<T> {{\n    \
+             fn full_name(&self) -> &str {{ {full_name:?} }}\n    \
+             fn methods(&self) -> std::vec::Vec<(std::string::String, __grpc::MethodKind)> {{\n        \
+             std::vec![\n"
+    ));
+    for m in &s.method {
+        let pname = m.name.clone().unwrap_or_default();
+        let kind = grpc_kind_name(m);
+        out.push_str(&format!(
+            "            (std::format!(\"/{full_name}/{pname}\"), __grpc::MethodKind::{kind}),\n"
+        ));
+    }
+    out.push_str("        ]\n    }\n");
+
+    out.push_str(&format!(
+        "    async fn call_unary(&self, method: &str, ctx: __grpc::RpcContext, req: std::vec::Vec<u8>) -> std::result::Result<std::vec::Vec<u8>, __grpc::Status> {{\n        \
+         match method {{\n{}            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!(\"method {{method}} not found\"))),\n        \
+         }}\n    }}\n",
+        server_unary_arms(s, pkg)
+    ));
+    out.push_str(&format!(
+        "    async fn call_server_streaming(&self, method: &str, ctx: __grpc::RpcContext, req: std::vec::Vec<u8>) -> std::result::Result<__grpc::ServerStream<std::vec::Vec<u8>>, __grpc::Status> {{\n        \
+         match method {{\n{}            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!(\"method {{method}} not found\"))),\n        \
+         }}\n    }}\n",
+        server_stream_arms(s, pkg, "ServerStreaming")
+    ));
+    out.push_str(&format!(
+        "    async fn call_client_streaming(&self, method: &str, ctx: __grpc::RpcContext, req: __grpc::ClientStream<std::vec::Vec<u8>>) -> std::result::Result<std::vec::Vec<u8>, __grpc::Status> {{\n        \
+         match method {{\n{}            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!(\"method {{method}} not found\"))),\n        \
+         }}\n    }}\n",
+        server_stream_arms(s, pkg, "ClientStreaming")
+    ));
+    out.push_str(&format!(
+        "    async fn call_bidi_streaming(&self, method: &str, ctx: __grpc::RpcContext, req: __grpc::ClientStream<std::vec::Vec<u8>>) -> std::result::Result<__grpc::ServerStream<std::vec::Vec<u8>>, __grpc::Status> {{\n        \
+         match method {{\n{}            _ => Err(__grpc::Status::new(__grpc::Code::Unimplemented, std::format!(\"method {{method}} not found\"))),\n        \
+         }}\n    }}\n",
+        server_stream_arms(s, pkg, "BidiStreaming")
+    ));
+    out.push_str("}\n\n");
+    out
+}
+
+/// Match arms for unary dispatch, decoding the request and encoding the reply.
+fn server_unary_arms(
+    s: &tpt_proto_descriptor::ServiceDescriptorProto,
+    pkg: &str,
+) -> String {
+    let mut arms = String::new();
+    for m in &s.method {
+        if grpc_kind_name(m) != "Unary" {
+            continue;
+        }
+        let pname = m.name.clone().unwrap_or_default();
+        let mname = to_snake(m.name.as_deref().unwrap_or("method"));
+        let req = rust_type(m.input_type.as_deref(), pkg);
+        let _resp = rust_type(m.output_type.as_deref(), pkg);
+        arms.push_str(&format!(
+            "            {pname:?} => {{\n                \
+             let msg = <{req}>::decode(&req).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;\n                \
+             let resp = self.inner.{mname}(__grpc::Request::with_context(msg, ctx)).await?;\n                \
+             resp.message.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))\n            }},\n"
+        ));
+    }
+    arms
+}
+
+/// Match arms for streaming dispatch (server/client/bidi).
+fn server_stream_arms(
+    s: &tpt_proto_descriptor::ServiceDescriptorProto,
+    pkg: &str,
+    kind: &str,
+) -> String {
+    let mut arms = String::new();
+    for m in &s.method {
+        if grpc_kind_name(m) != kind {
+            continue;
+        }
+        let pname = m.name.clone().unwrap_or_default();
+        let mname = to_snake(m.name.as_deref().unwrap_or("method"));
+        let req = rust_type(m.input_type.as_deref(), pkg);
+        let _resp = rust_type(m.output_type.as_deref(), pkg);
+        let arm = match kind {
+            "ServerStreaming" => format!(
+                "            {pname:?} => {{\n                \
+                 let msg = <{req}>::decode(&req).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;\n                \
+                 let resp = self.inner.{mname}(__grpc::Request::with_context(msg, ctx)).await?;\n                \
+                 let mapped = __grpc::framed::map_server_stream(resp.message, |m| m.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));\n                \
+                 Ok(mapped)\n            }},\n"
+            ),
+            "ClientStreaming" => format!(
+                "            {pname:?} => {{\n                \
+                 let req_stream = __grpc::framed::map_client_stream(req, |b| <{req}>::decode(&b).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));\n                \
+                 let resp = self.inner.{mname}(__grpc::Request::with_context(req_stream, ctx)).await?;\n                \
+                 resp.message.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))\n            }},\n"
+            ),
+            "BidiStreaming" => format!(
+                "            {pname:?} => {{\n                \
+                 let req_stream = __grpc::framed::map_client_stream(req, |b| <{req}>::decode(&b).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));\n                \
+                 let resp = self.inner.{mname}(__grpc::Request::with_context(req_stream, ctx)).await?;\n                \
+                 let mapped = __grpc::framed::map_server_stream(resp.message, |m| m.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string())));\n                \
+                 Ok(mapped)\n            }},\n"
+            ),
+            _ => String::new(),
+        };
+        arms.push_str(&arm);
+    }
+    arms
 }
 
 /// The async method signature shared by the server trait and client stub.
@@ -1642,23 +1793,63 @@ fn grpc_client_body(
 ) -> String {
     let cs = m.client_streaming.unwrap_or(false);
     let ss = m.server_streaming.unwrap_or(false);
-    if cs || ss {
-        // Streaming client support is scaffolded; the transport streaming
-        // runtime is implemented in a later phase.
+    if !cs && !ss {
+        // Unary: the channel frames the request and deframes the response.
         return format!(
-            "        Err(__grpc::Status::new(__grpc::Code::Unimplemented, \
-             \"streaming call `{path}` not yet implemented\"))\n"
+            "        let (message, trailers) = self.channel\n            \
+         .unary::<{req}, {resp}>(\n                \
+         {path:?},\n                \
+         request.context.metadata.clone(),\n                \
+         &request.message,\n            \
+         )\n            \
+         .await?;\n        \
+         Ok(__grpc::Response::new(message).with_metadata(trailers))\n"
         );
     }
+    if !cs && ss {
+        // Server streaming: one request message, a stream of responses.
+        return format!(
+            "        let req_raw = request.message.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;\n        \
+             let (stream, trailers) = self.channel.transport().server_streaming(\n            \
+             {path:?},\n            \
+             request.context.metadata.clone(),\n            \
+             req_raw,\n        \
+             ).await?;\n        \
+             let mapped = __grpc::framed::map_server_stream(stream, |bytes| {{\n            \
+             <{resp}>::decode(&bytes).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))\n        \
+             }});\n        \
+             Ok(__grpc::Response::new(mapped).with_metadata(trailers))\n"
+        );
+    }
+    if cs && !ss {
+        // Client streaming: a stream of requests, one response.
+        return format!(
+            "        let req_stream = __grpc::framed::map_client_stream(request.message, |msg| {{\n            \
+             msg.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))\n        \
+             }});\n        \
+             let (message, trailers) = self.channel.transport().client_streaming(\n            \
+             {path:?},\n            \
+             request.context.metadata.clone(),\n            \
+             req_stream,\n        \
+             ).await?;\n        \
+             let resp = <{resp}>::decode(&message).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))?;\n        \
+             Ok(__grpc::Response::new(resp).with_metadata(trailers))\n"
+        );
+    }
+    // Bidi streaming.
     format!(
-        "        let (message, trailers) = self.channel\n            \
-             .unary::<{req}, {resp}>(\n                \
-             {path:?},\n                \
-             request.context.metadata.clone(),\n                \
-             &request.message,\n            \
-             )\n            \
-             .await?;\n        \
-             Ok(__grpc::Response::new(message).with_metadata(trailers))\n"
+        "        let req_stream = __grpc::framed::map_client_stream(request.message, |msg| {{\n            \
+         msg.encode_to_vec().map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))\n        \
+         }});\n        \
+         let (stream, trailers) = self.channel.transport().bidi_streaming(\n            \
+         {path:?},\n            \
+         request.context.metadata.clone(),\n            \
+         req_stream,\n        \
+         ).await?;\n        \
+         let mapped = __grpc::framed::map_server_stream(stream, |bytes| {{\n            \
+         <{resp}>::decode(&bytes).map_err(|e| __grpc::Status::new(__grpc::Code::Internal, e.to_string()))\n        \
+         }});\n        \
+         Ok(__grpc::Response::new(mapped).with_metadata(trailers))\n"
     )
 }
 

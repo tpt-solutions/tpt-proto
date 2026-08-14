@@ -535,7 +535,7 @@ impl Client {
     ) -> Result<(Vec<u8>, Metadata), Status> {
         let endpoint = self.endpoint.clone();
         let mut conn = self.connection().await?;
-        let (resp_future, mut send_stream) =
+        let (resp_future, send_stream) =
             send_request_headers(&mut conn, path, metadata, &endpoint, false).await?;
 
         let mut send_stream = send_stream;
@@ -600,7 +600,7 @@ impl Client {
     ) -> Result<(ServerStream<Vec<u8>>, Metadata), Status> {
         let endpoint = self.endpoint.clone();
         let mut conn = self.connection().await?;
-        let (resp_future, mut send_stream) =
+        let (resp_future, send_stream) =
             send_request_headers(&mut conn, path, metadata, &endpoint, false).await?;
 
         let mut send_stream = send_stream;

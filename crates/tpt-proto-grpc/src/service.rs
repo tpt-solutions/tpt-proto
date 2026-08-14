@@ -65,6 +65,7 @@ pub trait ServiceHandler: Send + Sync {
 }
 
 /// Helper: build a standard "method not found" status.
+#[allow(dead_code)]
 pub(crate) fn unimplemented_method(method: &str) -> Status {
     Status::new(
         crate::status::Code::Unimplemented,

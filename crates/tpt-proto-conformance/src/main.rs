@@ -4,8 +4,13 @@
 //! * `tpt-conformance testee`  — run the framed conformance protocol loop on
 //!   stdin/stdout (interoperates with `conformance_test_runner`).
 //! * `tpt-conformance run`     — run the built-in harness in-process and print a
-//!   report (default when no subcommand is given).
+//!   report (default when no subcommand is given). Pass `--json` for a
+//!   machine-readable report. Exits non-zero if any case fails.
 //! * `tpt-conformance cases`   — list the generated case names.
+//!
+//! The standalone `tpt-conformance-testee` binary speaks *only* the framed
+//! protocol with no subcommand, so it can be passed directly to the reference
+//! `conformance_test_runner` (see `conformance/run_conformance.sh`).
 
 use std::io::{IsTerminal, Read, Write};
 
@@ -37,8 +42,13 @@ fn main() {
             }
         }
         Some("run") | None => {
+            let json = args.iter().any(|a| a == "--json" || a == "-j");
             let report = run_all(&registry);
-            print!("{}", report.render());
+            if json {
+                println!("{}", report.to_json());
+            } else {
+                print!("{}", report.render());
+            }
             if report.failures() > 0 {
                 std::process::exit(1);
             }

@@ -275,10 +275,24 @@ impl Registry {
     /// Look up a message descriptor by fully-qualified or short name.
     pub fn lookup(&self, name: &str) -> Option<Arc<DescriptorProto>> {
         let norm = name.trim_start_matches('.');
+
+        // Official `conformance_test_runner` names the test messages under the
+        // `protobuf_test_messages` package. Map those to our dialect names so
+        // the testee can be driven directly by the reference runner instead of
+        // skipping every case.
+        let aliased = match norm {
+            "protobuf_test_messages.proto2.TestAllTypesProto2" => "proto2.TestAllTypes",
+            "protobuf_test_messages.proto3.TestAllTypesProto3" => "proto3.TestAllTypes",
+            "protobuf_test_messages.editions.TestAllTypesEdition2023" => "editions.TestAllTypes",
+            "protobuf_test_messages.editions.TestAllTypesEdition2024" => "editions.TestAllTypes",
+            other => other,
+        };
+
         self.messages
-            .get(norm)
+            .get(aliased)
             .or_else(|| {
-                norm.rsplit('.')
+                aliased
+                    .rsplit('.')
                     .next()
                     .and_then(|short| self.messages.get(short))
             })

@@ -18,15 +18,22 @@ pub mod codec;
 pub mod compression;
 pub mod context;
 pub mod health;
+pub mod interceptor;
 pub mod metadata;
 pub mod method;
 pub mod observability;
 pub mod reflection;
 pub mod security;
+pub mod server;
 pub mod status;
 pub mod timeout;
 pub mod transport;
 pub mod transport_http2;
+
+// Internal modules that back the generated server traits and client stubs.
+pub mod framed;
+pub mod service;
+pub mod client;
 
 pub use cancellation::CancellationToken;
 pub use codec::{
@@ -58,6 +65,16 @@ pub use security::{
 pub use status::{Code, Status};
 pub use timeout::{format_timeout, parse_timeout};
 pub use transport::{request, Channel, ClientStream, ServerStream, Transport};
+
+// Runtime building blocks referenced by generated code and integration tests.
+pub use framed::{deframe_stream, map_client_stream, map_server_stream, read_single_message};
+pub use service::ServiceHandler;
+pub use server::{
+    CleartextAcceptor, BoxedStream, Server, ServerBuilder, ServerConfig, StreamAcceptor,
+};
+pub use client::{
+    Client, ClientStreamAcceptor, Endpoint, LoadBalancer, RetryPolicy, StaticLoadBalancer,
+};
 pub use transport_http2::H2Transport;
 
 /// Primary gRPC content type.

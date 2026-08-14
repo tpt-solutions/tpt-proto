@@ -9,9 +9,17 @@
 
 use std::collections::BTreeSet;
 
-use tpt_proto_core::{Message, Reader, Result as CoreResult, WireType, Writer};
+use futures::channel::mpsc;
+use futures::{SinkExt, StreamExt};
+use tpt_proto_core::{Message, Reader, Result as CoreResult, Writer};
 use tpt_proto_core::scalar;
 use tpt_proto_descriptor::{DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto};
+
+use crate::context::RpcContext;
+use crate::method::MethodKind;
+use crate::service::ServiceHandler;
+use crate::status::{Code, Status};
+use crate::transport::{ClientStream, ServerStream};
 
 /// `grpc.reflection.v1alpha.ErrorResponse` — field 1 `error_code` (int32),
 /// field 2 `error_message` (string).
@@ -364,9 +372,9 @@ fn service_fqn(file: &FileDescriptorProto, svc: &ServiceDescriptorProto) -> Stri
 fn qualify(prefix: &str, name: &str) -> String {
     let prefix = prefix.strip_prefix('.').unwrap_or(prefix);
     if prefix.is_empty() {
-        format!(".{name}")
+        name.to_string()
     } else {
-        format!(".{prefix}.{name}")
+        format!("{prefix}.{name}")
     }
 }
 
@@ -521,9 +529,6 @@ impl ReflectionService {
         numbers: &mut BTreeSet<i32>,
     ) -> Option<bool> {
         let mut found = false;
-        if prefix.trim_start_matches('.') == norm {
-            found = true;
-        }
         for ext in &m.extension {
             if ext
                 .extendee
@@ -626,6 +631,98 @@ impl ReflectionService {
     /// symbol and extension-host queries).
     fn file_bytes_for_symbol_query(&self, symbol: &str) -> Option<Vec<u8>> {
         self.file_bytes_for_symbol(symbol)
+    }
+}
+
+#[async_trait::async_trait]
+impl ServiceHandler for ReflectionService {
+    fn full_name(&self) -> &str {
+        Self::SERVICE_NAME
+    }
+
+    fn methods(&self) -> Vec<(String, MethodKind)> {
+        vec![(
+            format!("/{}/ServerReflectionInfo", Self::SERVICE_NAME),
+            MethodKind::BidiStreaming,
+        )]
+    }
+
+    async fn call_bidi_streaming(
+        &self,
+        _method: &str,
+        _ctx: RpcContext,
+        req: ClientStream<Vec<u8>>,
+    ) -> Result<ServerStream<Vec<u8>>, Status> {
+        let this = self.clone();
+        let (mut tx, rx) = mpsc::channel(16);
+        tokio::spawn(async move {
+            let mut input = req;
+            while let Some(item) = input.next().await {
+                let raw = match item {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
+                        return;
+                    }
+                };
+                let req = match ServerReflectionRequest::decode(&raw) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let _ = tx.send(Err(Status::new(Code::Internal, e.to_string())));
+                        continue;
+                    }
+                };
+                for resp in this.handle(&req) {
+                    let bytes = match resp.encode_to_vec() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            let _ = tx.send(Err(Status::new(Code::Internal, e.to_string())));
+                            continue;
+                        }
+                    };
+                    if tx.send(Ok(bytes)).await.is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+        Ok(Box::pin(rx) as ServerStream<Vec<u8>>)
+    }
+
+    async fn call_unary(
+        &self,
+        method: &str,
+        _ctx: RpcContext,
+        _req: Vec<u8>,
+    ) -> Result<Vec<u8>, Status> {
+        Err(Status::new(
+            Code::Unimplemented,
+            format!("reflection method {method} is not unary"),
+        ))
+    }
+
+    async fn call_server_streaming(
+        &self,
+        method: &str,
+        _ctx: RpcContext,
+        _req: Vec<u8>,
+    ) -> Result<ServerStream<Vec<u8>>, Status> {
+        Err(Status::new(
+            Code::Unimplemented,
+            format!("reflection method {method} is not server-streaming"),
+        ))
+    }
+
+    async fn call_client_streaming(
+        &self,
+        method: &str,
+        _ctx: RpcContext,
+        _req: ClientStream<Vec<u8>>,
+    ) -> Result<Vec<u8>, Status> {
+        Err(Status::new(
+            Code::Unimplemented,
+            format!("reflection method {method} is not client-streaming"),
+        ))
     }
 }
 

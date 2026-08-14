@@ -213,17 +213,17 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 14 — tpt-proto-grpc: Server & Client Runtime (grpc addendum §9–§11)
 
-- [ ] Server: service registration & routing
-- [ ] Server: concurrent stream limits, message/metadata size limits
-- [ ] Server: keepalive, graceful shutdown, connection draining
-- [ ] Server: TLS termination + cleartext HTTP/2 (h2c) opt-in for local dev
-- [ ] Server: backpressure & request limits & timeout enforcement
-- [ ] Client: endpoint config, connection reuse/pooling, HTTP/2 multiplexing
-- [ ] Client: retries, retry policies, backoff
-- [ ] Client: timeouts, deadlines, cancellation, metadata injection
-- [ ] Client: load balancing hooks, health checking integration, TLS, compression
-- [ ] Client: streaming backpressure & message size limits
-- [ ] Interceptor/middleware model (request/response/metadata/status/deadline/cancellation/extensions), composable & type-safe
+- [x] Server: service registration & routing
+- [x] Server: concurrent stream limits, message/metadata size limits
+- [x] Server: keepalive, graceful shutdown, connection draining
+- [x] Server: TLS termination + cleartext HTTP/2 (h2c) opt-in for local dev
+- [x] Server: backpressure & request limits & timeout enforcement
+- [x] Client: endpoint config, connection reuse/pooling, HTTP/2 multiplexing
+- [x] Client: retries, retry policies, backoff
+- [x] Client: timeouts, deadlines, cancellation, metadata injection
+- [x] Client: load balancing hooks, health checking integration, TLS, compression
+- [x] Client: streaming backpressure & message size limits
+- [x] Interceptor/middleware model (request/response/metadata/status/deadline/cancellation/extensions), composable & type-safe
 
 ## Phase 15 — tpt-proto-grpc: Observability, Health, Reflection, Security & Debug Tools (grpc addendum §12–§16)
 
@@ -237,15 +237,15 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ## Phase 16 — tpt-proto-conformance: Conformance Testing (§4.10, §19)
 
-- [ ] Rust conformance testee binary
-- [ ] Integration with official protobuf conformance runner
-- [ ] proto2 / proto3 / editions binary test coverage
-- [ ] proto2 / proto3 / editions JSON test coverage
-- [ ] Failure-behavior test coverage
-- [ ] Unknown field handling test coverage
-- [ ] Well-known type behavior test coverage
-- [ ] CI integration for conformance suite
-- [ ] Failure reporting output
+- [x] Rust conformance testee binary (`tpt-conformance testee` + standalone `tpt-conformance-testee`)
+- [x] Integration with official protobuf conformance runner (framed protocol + `conformance/run_conformance.sh` + official message-name aliases)
+- [x] proto2 / proto3 / editions binary test coverage
+- [x] proto2 / proto3 / editions JSON test coverage
+- [x] Failure-behavior test coverage
+- [x] Unknown field handling test coverage
+- [x] Well-known type behavior test coverage (Timestamp RFC3339, etc.)
+- [x] CI integration for conformance suite (`.github/workflows/ci.yml` conformance job)
+- [x] Failure reporting output (human `render()` + machine-readable `to_json()`)
 
 ## Phase 17 — Security Hardening & Fuzzing (§20, §22.4 — cross-cutting)
 

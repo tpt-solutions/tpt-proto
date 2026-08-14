@@ -647,10 +647,10 @@ impl CallInstrumentor {
         self.finished = true;
         let duration = self.started.elapsed();
         let outcome = CallOutcome::from_status(status);
-        self.labels.status = status;
         self.obs
             .metrics
             .record_call_completed(&self.labels, duration, outcome);
+        self.labels.status = status;
         if self.labels.streaming_type != StreamingType::Unary {
             self.obs.metrics.record_stream_closed(&self.labels);
         }
@@ -798,7 +798,7 @@ mod tests {
         let logger = JsonLogger;
         let rec = LogRecord {
             level: Level::Info,
-            message: "done",
+            message: "done".to_string(),
             request_id: Some("abc".into()),
             service: "ex.Svc".into(),
             method: "Do".into(),

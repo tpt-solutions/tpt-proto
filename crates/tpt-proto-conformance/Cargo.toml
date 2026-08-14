@@ -12,6 +12,10 @@ description = "Conformance test harness and testee"
 name = "tpt-conformance"
 path = "src/main.rs"
 
+[[bin]]
+name = "tpt-conformance-testee"
+path = "src/testee_main.rs"
+
 [dependencies]
 tpt-proto-core = { workspace = true }
 tpt-proto-descriptor = { workspace = true }

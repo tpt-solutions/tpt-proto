@@ -159,7 +159,7 @@ pub fn run_testee_loop<R: Read, W: Write>(
                 );
                 let out = resp
                     .encode()
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+                    .map_err(|err| io::Error::other(err.to_string()))?;
                 write_frame(writer, &out)?;
                 continue;
             }
@@ -167,7 +167,7 @@ pub fn run_testee_loop<R: Read, W: Write>(
         let resp = process(registry, &request);
         let out = resp
             .encode()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         write_frame(writer, &out)?;
     }
     Ok(())

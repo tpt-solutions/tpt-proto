@@ -11,15 +11,15 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
-use futures::stream::{self, BoxStream};
-use futures::StreamExt;
-use tpt_proto_core::{Message, Reader, Result as CoreResult, WireType, Writer};
+use futures::stream;
+use tpt_proto_core::{Message, Reader, Result as CoreResult, Writer};
 use tpt_proto_core::scalar;
 
-use crate::context::{Request, Response};
+use crate::context::{Request, Response, RpcContext};
+use crate::method::MethodKind;
+use crate::service::ServiceHandler;
 use crate::status::{Code, Status};
-use crate::transport::ServerStream;
+use crate::transport::{ClientStream, ServerStream};
 
 /// The serving status of a service, as carried on the wire (`int32`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,10 +295,98 @@ impl HealthService {
     }
 }
 
+#[async_trait::async_trait]
+impl ServiceHandler for HealthService {
+    fn full_name(&self) -> &str {
+        Self::SERVICE_NAME
+    }
+
+    fn methods(&self) -> Vec<(String, MethodKind)> {
+        vec![
+            (format!("/{}/Check", Self::SERVICE_NAME), MethodKind::Unary),
+            (
+                format!("/{}/Watch", Self::SERVICE_NAME),
+                MethodKind::ServerStreaming,
+            ),
+        ]
+    }
+
+    async fn call_unary(
+        &self,
+        method: &str,
+        ctx: RpcContext,
+        req: Vec<u8>,
+    ) -> Result<Vec<u8>, Status> {
+        match method {
+            "Check" => {
+                let req = HealthCheckRequest::decode(&req)
+                    .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+                let resp = self.check(Request::with_context(req, ctx)).await?;
+                resp.message
+                    .encode_to_vec()
+                    .map_err(|e| Status::new(Code::Internal, e.to_string()))
+            }
+            other => Err(Status::new(
+                Code::Unimplemented,
+                format!("health method {other} is not unary"),
+            )),
+        }
+    }
+
+    async fn call_server_streaming(
+        &self,
+        method: &str,
+        ctx: RpcContext,
+        req: Vec<u8>,
+    ) -> Result<ServerStream<Vec<u8>>, Status> {
+        match method {
+            "Watch" => {
+                let req = HealthCheckRequest::decode(&req)
+                    .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+                let stream = self.watch(Request::with_context(req, ctx)).await?;
+                let mapped = crate::framed::map_server_stream(stream, |m| {
+                    m.encode_to_vec()
+                        .map_err(|e| Status::new(Code::Internal, e.to_string()))
+                });
+                Ok(mapped)
+            }
+            other => Err(Status::new(
+                Code::Unimplemented,
+                format!("health method {other} is not server-streaming"),
+            )),
+        }
+    }
+
+    async fn call_client_streaming(
+        &self,
+        method: &str,
+        _ctx: RpcContext,
+        _req: ClientStream<Vec<u8>>,
+    ) -> Result<Vec<u8>, Status> {
+        Err(Status::new(
+            Code::Unimplemented,
+            format!("health method {method} is not client-streaming"),
+        ))
+    }
+
+    async fn call_bidi_streaming(
+        &self,
+        method: &str,
+        _ctx: RpcContext,
+        _req: ClientStream<Vec<u8>>,
+    ) -> Result<ServerStream<Vec<u8>>, Status> {
+        Err(Status::new(
+            Code::Unimplemented,
+            format!("health method {method} is not bidi-streaming"),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::context::RpcContext;
+use super::*;
+use crate::context::RpcContext;
+use futures::StreamExt;
 
     #[test]
     fn status_wire_roundtrip() {

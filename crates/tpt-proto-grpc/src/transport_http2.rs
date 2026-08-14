@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::stream::{self, BoxStream};
+use futures::stream;
 use futures::StreamExt;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::Request as HttpRequest;
