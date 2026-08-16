@@ -1385,7 +1385,8 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
     // message keys/values are also bounded.
     s.push_str("            let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;\n");
     s.push_str("            let k = {\n");
-    s.push_str("                let mut __kr = r.nested(__k_raw)?;\n");
+    s.push_str("                let __kr_tmp = r.nested(__k_raw)?;\n");
+    s.push_str("                let __kr = &mut __kr_tmp;\n");
     let key_expr = match &k {
         TyRef::Scalar(t) => dec_scalar_expr(*t, "__kr"),
         TyRef::Enum(e) => {
@@ -1410,7 +1411,8 @@ fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &st
     s.push_str(&format!("                {key_expr}\n"));
     s.push_str("            };\n");
     s.push_str("            let v = {\n");
-    s.push_str("                let mut __vr = r.nested(__v_raw)?;\n");
+    s.push_str("                let __vr_tmp = r.nested(__v_raw)?;\n");
+    s.push_str("                let __vr = &mut __vr_tmp;\n");
     let val_expr = match &v {
         TyRef::Message(mv) => {
             let t = ctx

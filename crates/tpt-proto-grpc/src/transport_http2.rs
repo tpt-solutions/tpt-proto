@@ -131,48 +131,59 @@ impl H2Transport {
             let _ = conn.await;
         });
 
+        let compression = self.compression.clone();
+        let max = self.max_message_size;
+
         let req = self.build_request(path, &metadata)?;
         let (resp_future, mut body_send) = send
             .send_request(req, false)
             .map_err(|e| Status::new(Code::Unavailable, format!("send request: {e}")))?;
+
+        // Drive request-body production *before* (and concurrently with) waiting
+        // for the response. If we awaited `resp_future` first, the server would
+        // block reading the request body while we block on the response headers
+        // -- a deadlock that hangs every unary RPC. For a full body we can send it
+        // up front; for a streaming request we feed it in the background.
+        let req_driver = match request_body {
+            Some(bytes) => {
+                body_send
+                    .send_data(Bytes::from(bytes), true)
+                    .map_err(|e| Status::new(Code::Internal, format!("send data: {e}")))?;
+                None
+            }
+            None => Some(tokio::spawn(async move {
+                let mut body_send = body_send;
+                if let Some(mut cs) = client_stream.take() {
+                    while let Some(msg) = cs.next().await {
+                        let msg = match msg {
+                            Ok(m) => m,
+                            Err(_) => return,
+                        };
+                        let framed = match encode_message(&msg, compression.clone(), max) {
+                            Ok(f) => f,
+                            Err(_) => return,
+                        };
+                        if body_send.send_data(Bytes::from(framed), false).is_err() {
+                            return;
+                        }
+                    }
+                }
+                let _ = body_send.send_data(Bytes::new(), true);
+            })),
+        };
+
         let resp = resp_future
             .await
             .map_err(|e| Status::new(Code::Unavailable, format!("response: {e}")))?;
-        eprintln!("DBG exchange: response headers received");
-
-        // Send the request body.
-        if let Some(bytes) = request_body {
-            body_send
-                .send_data(Bytes::from(bytes), true)
-                .map_err(|e| Status::new(Code::Internal, format!("send data: {e}")))?;
-        } else if let Some(mut cs) = client_stream.take() {
-            while let Some(msg) = cs.next().await {
-                let msg =
-                    msg.map_err(|s| Status::new(Code::Internal, format!("client stream error: {s}")))?;
-                let framed = encode_message(&msg, self.compression.clone(), self.max_message_size)
-                    .map_err(|e| Status::new(Code::Internal, format!("frame: {e}")))?;
-                body_send
-                    .send_data(Bytes::from(framed), false)
-                    .map_err(|e| Status::new(Code::Internal, format!("send data: {e}")))?;
-            }
-            body_send
-                .send_data(Bytes::new(), true)
-                .map_err(|e| Status::new(Code::Internal, format!("end stream: {e}")))?;
-        } else {
-            body_send
-                .send_data(Bytes::new(), true)
-                .map_err(|e| Status::new(Code::Internal, format!("end stream: {e}")))?;
-        }
+        // `req_driver` (if any) drains the request stream in the background.
 
         let (parts, mut recv) = resp.into_parts();
-        eprintln!("DBG exchange: headers received");
         let body = collect_body(&mut recv, self.max_message_size).await?;
-        eprintln!("DBG exchange: body collected len={}", body.len());
         let trailers = recv
             .trailers()
             .await
             .map_err(|e| Status::new(Code::Internal, format!("trailers: {e}")))?;
-        eprintln!("DBG exchange: trailers={:?}", trailers.is_some());
+        let _ = req_driver;
         Ok((body, parts.headers, trailers))
     }
 }
@@ -235,6 +246,9 @@ impl Transport for H2Transport {
         let framed = encode_message(&message, self.compression.clone(), self.max_message_size)
             .map_err(|e| Status::new(Code::Internal, format!("frame: {e}")))?;
         let (body, headers, trailers) = self.exchange(path, metadata, Some(framed), None).await?;
+        if let Some(status) = status_from_trailers(&trailers) {
+            return Err(status);
+        }
         let frames = split_grpc_frames(&body)?;
         let raw = frames
             .into_iter()
@@ -273,6 +287,9 @@ impl Transport for H2Transport {
         stream: ClientStream<Vec<u8>>,
     ) -> Result<(Vec<u8>, Metadata), Status> {
         let (body, headers, trailers) = self.exchange(path, metadata, None, Some(stream)).await?;
+        if let Some(status) = status_from_trailers(&trailers) {
+            return Err(status);
+        }
         let frames = split_grpc_frames(&body)?;
         let raw = frames
             .into_iter()
@@ -322,4 +339,25 @@ fn merge_metadata(headers: &HeaderMap, trailers: Option<&HeaderMap>) -> Metadata
         add(t);
     }
     md
+}
+
+/// Extract a terminal gRPC [`Status`] from response trailers, if the server
+/// ended the stream with a non-OK `grpc-status`. This lets the client surface
+/// server-side errors (e.g. `UNAUTHENTICATED`) instead of treating a
+/// trailer-only/empty response as an "empty response body" internal error.
+fn status_from_trailers(trailers: &Option<HeaderMap>) -> Option<Status> {
+    let t = trailers.as_ref()?;
+    let code = t
+        .get("grpc-status")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i32>().ok())?;
+    if code == 0 {
+        return None;
+    }
+    let message = t
+        .get("grpc-message")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    Some(Status::new(Code::from_i32(code), message))
 }

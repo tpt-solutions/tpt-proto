@@ -380,6 +380,11 @@ async fn handle_connection(
         }
     };
 
+    // Per-connection cancellation: the keepalive task cancels this (not the
+    // server-global shutdown token) so a dead connection drops without tearing
+    // down the whole server.
+    let conn_shutdown = CancellationToken::new();
+
     // HTTP/2 keepalive: a decoupled task periodically sends a user PING and
     // waits for the peer's PONG. The h2 `Connection` (driven by the `accept`
     // loop below) processes the incoming PONG, so the ping task never blocks
@@ -387,7 +392,7 @@ async fn handle_connection(
     // connection is cancelled (graceful shutdown + drop).
     if let (Some(interval), Some(mut pings)) = (config.keepalive_interval, conn.ping_pong()) {
         let timeout = config.keepalive_timeout;
-        let ka_shutdown = shutdown.clone();
+        let ka_shutdown = conn_shutdown.clone();
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -406,6 +411,10 @@ async fn handle_connection(
 
     loop {
         let next = tokio::select! {
+            _ = conn_shutdown.cancelled() => {
+                conn.graceful_shutdown();
+                None
+            }
             _ = shutdown.cancelled() => {
                 conn.graceful_shutdown();
                 None
@@ -444,7 +453,6 @@ async fn handle_request(
     shutdown: CancellationToken,
 ) {
     let path = request.uri().path().to_string();
-    eprintln!("DBG server: request {path}");
     let (package, svc, method) = crate::parse_path(&path).unwrap_or_default();
     let full_service = if package.is_empty() {
         svc
@@ -590,7 +598,6 @@ async fn handle_request(
 
     match result {
         Ok(output) => {
-            eprintln!("DBG server: sending response, has_msg={}", output.message.is_some());
             let mut send = match send_headers(&mut respond, false) {
                 Ok(s) => s,
                 Err(e) => {
@@ -626,11 +633,9 @@ async fn handle_request(
             if !output.status.message.is_empty() {
                 trailers.insert_raw("grpc-message", output.status.message.as_bytes());
             }
-            eprintln!("DBG server: sending trailers");
             if let Err(e) = send.send_trailers(trailers.to_header_map()) {
                 eprintln!("grpc server: send_trailers: {e}");
             }
-            eprintln!("DBG server: trailers sent");
         }
         Err(status) => {
             match send_headers(&mut respond, false) {
@@ -747,7 +752,6 @@ async fn dispatch(
     match kind {
         MethodKind::Unary => {
             let body = request.into_body();
-            eprintln!("DBG server: unary reading request body");
             let req = match read_single_message(body, request_encoding, max).await? {
                 Some(r) => r,
                 None => {
@@ -758,7 +762,6 @@ async fn dispatch(
                     })
                 }
             };
-            eprintln!("DBG server: unary calling handler");
             let raw = handler.call_unary(method, ctx, req).await?;
             Ok(HandlerOutput {
                 message: Some(raw),
