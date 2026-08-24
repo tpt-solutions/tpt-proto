@@ -1,0 +1,37 @@
+{
+  "name": "tpt-proto",
+  "displayName": "tpt-proto",
+  "description": "Syntax highlighting for Protocol Buffers schemas (.proto), matching the tpt-proto-language lexer",
+  "version": "0.1.0",
+  "publisher": "tpt-solutions",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "tpt-proto",
+        "aliases": [
+          "tpt-proto",
+          "Protocol Buffers"
+        ],
+        "extensions": [
+          ".proto",
+          ".txtpb"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tpt-proto",
+        "scopeName": "source.tpt-proto",
+        "path": "./tpt-proto.tmLanguage.json"
+      }
+    ]
+  }
+}

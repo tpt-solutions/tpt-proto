@@ -33,8 +33,10 @@ auth/authz + peer identity).
 tpt-proto-grpc = "0.1"
 ```
 
-Enable `tls` for optional TLS client support in the debug CLI (pulls in
-`rustls` / `tokio-rustls`).
+Enable `tls` for TLS support on both sides: the `tpt-grpc` debug CLI client
+transport **and** server-side TLS/mTLS termination (`ServerBuilder::with_tls`,
+`RustlsAcceptor`; pulls in `rustls` / `tokio-rustls` / `x509-parser`). See
+`docs/grpc.md` § Security → "Configuring server TLS".
 
 ## Quick start
 

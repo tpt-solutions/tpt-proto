@@ -857,7 +857,10 @@ mod tls_transport {
             request_body: Option<Vec<u8>>,
             mut client_stream: Option<ClientStream<Vec<u8>>>,
         ) -> Result<(Vec<u8>, HeaderMap, Option<HeaderMap>), Status> {
-            let (mut send, conn) = self.connect().await?;
+            let (mut send, conn) = self
+                .connect()
+                .await
+                .map_err(|e| Status::new(Code::Unavailable, format!("connect: {e}")))?;
             tokio::spawn(async move {
                 let _ = conn.await;
             });
@@ -898,7 +901,9 @@ mod tls_transport {
         }
 
         fn build_request(&self, path: &str, metadata: &Metadata) -> Result<HttpRequest<()>, Status> {
-            let (host, port) = self.host_and_port()?;
+            let (host, port) = self
+                .host_and_port()
+                .map_err(|e| Status::new(Code::InvalidArgument, e.to_string()))?;
             let mut builder = HttpRequest::builder()
                 .method("POST")
                 .uri(format!("https://{host}:{port}{path}"))

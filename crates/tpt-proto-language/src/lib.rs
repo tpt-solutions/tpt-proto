@@ -8,7 +8,7 @@ mod lexer;
 mod parser;
 
 pub use diagnostic::{Diagnostic, Diagnostics, ErrorCode, Position, Severity, Span};
-pub use lexer::{lex, LexError, Token, TokenKind};
+pub use lexer::{lex, lex_with_comments, Comment, LexError, Token, TokenKind};
 pub use parser::{parse_file, ParseResult};
 
 #[cfg(test)]

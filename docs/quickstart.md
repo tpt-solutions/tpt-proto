@@ -48,14 +48,15 @@ message User {
 ### Option A — CLI
 
 ```sh
-tpt-proto generate --input proto --output src/generated
+# Generate Rust source for a schema (add -I DIR for import search paths).
+tpt-proto generate proto/user.proto --out src/user.rs
 ```
 
 Then include the generated module:
 
 ```rust
-// src/generated.rs
-pub mod user { include!("generated/user.rs"); }
+// src/main.rs
+include!("user.rs");
 ```
 
 ### Option B — `build.rs`
@@ -88,26 +89,37 @@ fn main() {
 }
 ```
 
-## 4. Use the CLI to inspect messages
+## 4. Use the CLI to inspect and convert messages
 
-With a compiled descriptor set you can convert between formats without writing
-Rust:
+The CLI compiles schemas (and their transitive imports via `-I`) on the fly —
+no pre-built descriptor file needed:
 
 ```sh
-# Emit a FileDescriptorSet
-tpt-proto descriptors --input proto --output descriptor.bin
+# Describe a schema's structure
+tpt-proto describe proto/user.proto
 
-# Decode a binary message to text
-tpt-proto decode --descriptor descriptor.bin --message example.User --input user.bin
+# Emit the serialized FileDescriptorSet (entry + all transitive imports)
+tpt-proto descriptors proto/user.proto descriptor.bin
+
+# Decode wire bytes against a schema (hex input)
+tpt-proto decode proto/user.proto example.User 082a1203416461
 
 # JSON -> binary
-tpt-proto encode --descriptor descriptor.bin --message example.User --input user.json
+tpt-proto to-binary --from json proto/user.proto example.User user.json user.bin
+
+# binary -> text format
+tpt-proto text proto/user.proto example.User user.bin
 ```
 
-See the [CLI](../spec.txt) (§18) for the full command set
-(`compile`, `generate`, `descriptors`, `decode`, `encode`,
-`json-to-binary`, `binary-to-json`, `text-to-binary`, `binary-to-text`,
-`lint`, `diff`).
+You can also scaffold a ready-to-build starter project:
+
+```sh
+tpt-proto init my-app   # creates Cargo.toml, build.rs, proto/, src/main.rs
+```
+
+See [the CLI section of the spec](../spec.txt) (§18) for the full command set
+(`compile`, `generate`, `descriptors`, `describe`, `decode`, `encode`,
+`json`, `text`, `to-binary`, `lint`, `diff`, `init`).
 
 ## 5. Work with messages dynamically
 

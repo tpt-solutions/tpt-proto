@@ -215,12 +215,6 @@ impl TlsConfig {
         if !self.alpn_protocols.iter().any(|p| p == "h2") {
             return Err(SecurityError::MissingH2Alpn);
         }
-        #[cfg(feature = "tls")]
-        {
-            // Full material check: parse certs, decode the key, wire up the
-            // client verifier, and assemble the rustls config end-to-end.
-            crate::tls::build_server_config(self)?;
-        }
         Ok(())
     }
 
@@ -577,8 +571,21 @@ mod tests {
             b"-----BEGIN CERTIFICATE-----\nMII=\n-----END CERTIFICATE-----".to_vec(),
             b"-----BEGIN PRIVATE KEY-----\nMII=\n-----END PRIVATE KEY-----".to_vec(),
         );
-        assert!(cfg.validate().is_ok());
         assert_eq!(cfg.alpn_as_bytes(), vec![b"h2".to_vec()]);
+        #[cfg(feature = "tls")]
+        {
+            // With real enforcement enabled, the 2-byte placeholder DER must
+            // be rejected as unusable TLS material rather than accepted.
+            assert!(matches!(
+                cfg.validate(),
+                Err(SecurityError::InvalidTlsMaterial(_))
+            ));
+        }
+        #[cfg(not(feature = "tls"))]
+        {
+            // Without the `tls` feature only PEM structure is checked.
+            assert!(cfg.validate().is_ok());
+        }
     }
 
     #[test]

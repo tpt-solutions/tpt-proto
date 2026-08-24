@@ -39,7 +39,7 @@ use tpt_proto_grpc::compression::Compression;
 use tpt_proto_grpc::metadata::Metadata;
 use tpt_proto_grpc::status::{Code, Status};
 use tpt_proto_grpc::{
-    ClientStream, RoleAuthorizer, SecurityPolicy, Server, ServerStream, TlsConfig, Transport,
+    ClientStream, RoleAuthorizer, SecurityPolicy, Server, ServerStream, TlsConfig,
     CONTENT_TYPE_GRPC,
 };
 
@@ -215,14 +215,16 @@ impl TlsClient {
 }
 
 fn merge_metadata(headers: &HeaderMap, trailers: Option<&HeaderMap>) -> Metadata {
-    let mut md = Metadata::new();
+    // `grpc-status` and friends are reserved keys that only the
+    // trailer-parsing path accepts, so round-trip through `from_trailers`.
+    let mut pairs: Vec<(String, String)> = Vec::new();
     let mut add = |h: &HeaderMap| {
         for (name, value) in h.iter() {
             if name.as_str().starts_with(':') {
                 continue;
             }
             if let Ok(v) = value.to_str() {
-                let _ = md.insert_text_received(name.as_str(), v);
+                pairs.push((name.as_str().to_string(), v.to_string()));
             }
         }
     };
@@ -230,7 +232,7 @@ fn merge_metadata(headers: &HeaderMap, trailers: Option<&HeaderMap>) -> Metadata
     if let Some(t) = trailers {
         add(t);
     }
-    md
+    Metadata::from_trailers(&pairs, usize::MAX).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +305,133 @@ fn client_for(
     }
 }
 
-// __CHUNK_4__
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+/// Plain server-side TLS: a client trusting the server certificate completes a
+/// real unary RPC over rustls.
+#[tokio::test]
+async fn plain_server_tls_roundtrip() {
+    let (cert, key) = self_signed_server();
+    let addr = spawn_tls_server(TlsConfig::from_pem(cert.clone(), key), None).await;
+
+    let client = client_for(addr, cert, None);
+    let mut ping = ExPing::default();
+    ping.msg = "over-tls".to_string();
+    let (pong, meta) = client.call_unary("/ex.Echo/Unary", ping).await.unwrap();
+    assert_eq!(pong.msg, "echo: over-tls");
+    assert_eq!(meta.get_text("grpc-status"), Some("0"));
+}
+
+/// A cleartext HTTP/2 preface sent to a TLS-only server must be rejected: the
+/// rustls handshake fails and the connection is torn down. The server may
+/// first emit a TLS alert record (opaque bytes to a cleartext reader).
+#[tokio::test]
+async fn cleartext_client_is_rejected_by_tls_server() {
+    let (cert, key) = self_signed_server();
+    let addr = spawn_tls_server(TlsConfig::from_pem(cert, key), None).await;
+
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    stream
+        .write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .await
+        .unwrap();
+    let mut buf = [0u8; 32];
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf)).await {
+            Ok(Ok(0)) | Ok(Err(_)) => break, // torn down by the server.
+            Ok(Ok(_)) => continue,           // alert bytes; keep draining to close.
+            Err(_) => panic!("server kept the cleartext connection open"),
+        }
+    }
+}
+
+/// An mTLS-required server must reject a client that presents no certificate.
+#[tokio::test]
+async fn mtls_required_without_client_certificate_is_rejected() {
+    let (ca_pem, ca_key, ca_cert) = make_ca("test-ca");
+    let (server_pem, server_key) = make_leaf("test-server", "localhost", &ca_cert, &ca_key);
+
+    let tls =
+        TlsConfig::from_pem(server_pem, server_key).with_client_ca(ca_pem.clone().into_bytes());
+    let addr = spawn_tls_server(tls, None).await;
+
+    let client = client_for(addr, ca_pem.into_bytes(), None);
+    let mut ping = ExPing::default();
+    ping.msg = "should-fail".to_string();
+    let err = client.call_unary("/ex.Echo/Unary", ping).await.unwrap_err();
+    assert_eq!(err.code, Code::Unavailable, "got: {err}");
+    // Under TLS 1.3 the client's handshake flight completes before the
+    // server's `certificate_required` alert arrives, so the rejection may
+    // surface either at connect time or on the first exchange.
+    assert!(
+        err.message.contains("handshake")
+            || err.message.to_lowercase().contains("cert"),
+        "got: {err}"
+    );
+}
+
+/// Full mTLS round trip: the verified client certificate's CN becomes the
+/// peer principal and satisfies a deny-by-default `RoleAuthorizer`.
+#[tokio::test]
+async fn full_mtls_roundtrip_identity_feeds_role_authorizer() {
+    let (ca_pem, ca_key, ca_cert) = make_ca("test-ca");
+    let (server_pem, server_key) = make_leaf("test-server", "localhost", &ca_cert, &ca_key);
+    let (client_pem, client_key) =
+        make_leaf("svc-client", "svc-client.internal", &ca_cert, &ca_key);
+
+    let tls =
+        TlsConfig::from_pem(server_pem, server_key).with_client_ca(ca_pem.clone().into_bytes());
+
+    // Deny by default; only `svc-client` may call the echo unary method. The
+    // server composes rules as `<service>/<method>` without a leading slash,
+    // and the principal here can only come from the verified client
+    // certificate (no token authenticator), proving cert-derived identity
+    // feeds authorization.
+    let mut authz = RoleAuthorizer::new().deny_by_default();
+    authz.allow("ex.Echo/Unary", "svc-client");
+    let policy = Arc::new(SecurityPolicy::none().with_authorizer(Arc::new(authz)));
+
+    let addr = spawn_tls_server(tls, Some(policy)).await;
+
+    let client = client_for(addr, ca_pem.into_bytes(), Some((client_pem, client_key)));
+    let mut ping = ExPing::default();
+    ping.msg = "mtls-ok".to_string();
+    let (pong, _) = client.call_unary("/ex.Echo/Unary", ping).await.unwrap();
+    assert_eq!(pong.msg, "echo: mtls-ok");
+}
+
+/// Malformed TLS material fails fast: both direct acceptor construction and
+/// `serve_listener` reject it up front instead of at first connection.
+#[tokio::test]
+async fn malformed_config_fails_fast() {
+    let (cert, _) = self_signed_server();
+    let bogus_key =
+        b"-----BEGIN PRIVATE KEY-----\nbm90IGEga2V5IGF0IGFsbA==\n-----END PRIVATE KEY-----";
+
+    let cfg = TlsConfig::from_pem(cert, bogus_key.to_vec());
+
+    // Direct acceptor construction surfaces the typed error.
+    let err = match tpt_proto_grpc::RustlsAcceptor::new(&cfg) {
+        Err(e) => e,
+        Ok(_) => panic!("expected malformed material to be rejected"),
+    };
+    assert!(matches!(
+        err,
+        tpt_proto_grpc::SecurityError::InvalidTlsMaterial(_)
+    ));
+
+    // Serving with the same config fails immediately with an InvalidInput IO
+    // error rather than accepting connections and failing lazily.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let result = Server::builder()
+        .with_tls(cfg)
+        .build()
+        .serve_listener(listener)
+        .await;
+    let io_err = result.unwrap_err();
+    assert_eq!(io_err.kind(), std::io::ErrorKind::InvalidInput, "got: {io_err}");
+}
 
 

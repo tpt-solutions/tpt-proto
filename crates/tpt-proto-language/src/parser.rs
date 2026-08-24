@@ -6,7 +6,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Diagnostics, ErrorCode, Span};
-use crate::lexer::{lex, Token, TokenKind};
+use crate::lexer::{lex_with_comments, Comment, Token, TokenKind};
 
 /// Parse result: the file AST and any diagnostics.
 #[derive(Debug, Clone)]
@@ -15,11 +15,15 @@ pub struct ParseResult {
     pub file: File,
     /// Diagnostics collected.
     pub diagnostics: Diagnostics,
+    /// Every comment in the source, in source order. The parser itself treats
+    /// comments as trivia; they are preserved here so tooling (formatter,
+    /// doc extractors) cannot silently drop documentation.
+    pub comments: Vec<Comment>,
 }
 
 /// Parse a complete proto source string.
 pub fn parse_file(name: &str, src: &str) -> ParseResult {
-    let tokens = match lex(src) {
+    let (tokens, comments) = match lex_with_comments(src) {
         Ok(t) => t,
         Err(e) => {
             let mut d = Diagnostics::new();
@@ -33,6 +37,7 @@ pub fn parse_file(name: &str, src: &str) -> ParseResult {
                     ..Default::default()
                 },
                 diagnostics: d,
+                comments: Vec::new(),
             };
         }
     };
@@ -47,6 +52,7 @@ pub fn parse_file(name: &str, src: &str) -> ParseResult {
     ParseResult {
         file,
         diagnostics: p.diagnostics,
+        comments,
     }
 }
 

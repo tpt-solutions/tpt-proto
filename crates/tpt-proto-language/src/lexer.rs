@@ -11,6 +11,19 @@ pub struct Token {
     pub span: Span,
 }
 
+/// A preserved comment (`// line` or `/* block */`) with its source span.
+///
+/// Comments are *trivia* to the parser — it never sees them — but they are
+/// retained here so tooling (most importantly the formatter) cannot silently
+/// drop documentation comments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment {
+    /// Source span covering the full comment text including delimiters.
+    pub span: Span,
+    /// The raw comment text, delimiters included, newlines trimmed.
+    pub text: String,
+}
+
 /// Token kinds.
 #[derive(Debug, Clone)]
 pub enum TokenKind {
@@ -67,6 +80,8 @@ struct Lexer<'a> {
     pos: usize,
     line: u32,
     col: u32,
+    /// Comments encountered so far, in source order (see [`Comment`]).
+    comments: Vec<Comment>,
 }
 
 impl<'a> Lexer<'a> {
@@ -77,6 +92,7 @@ impl<'a> Lexer<'a> {
             pos: 0,
             line: 1,
             col: 1,
+            comments: Vec::new(),
         }
     }
 
@@ -127,6 +143,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Record a comment spanning `off0..self.pos` (called after consuming it).
+    fn record_comment(&mut self, off0: usize, p0: Position) {
+        let text = self.src[off0..self.pos.min(self.src.len())]
+            .trim_end_matches(['\n', '\r'])
+            .to_string();
+        let span = self.span(p0, self.pos);
+        self.comments.push(Comment { span, text });
+    }
+
     fn skip_trivia(&mut self) {
         loop {
             match self.peek() {
@@ -134,14 +159,19 @@ impl<'a> Lexer<'a> {
                     self.bump();
                 }
                 Some(b'/') if self.bytes.get(self.pos + 1) == Some(&b'/') => {
+                    let off0 = self.pos;
+                    let p0 = self.pos_of(off0);
                     while let Some(b) = self.peek() {
                         if b == b'\n' {
                             break;
                         }
                         self.bump();
                     }
+                    self.record_comment(off0, p0);
                 }
                 Some(b'/') if self.bytes.get(self.pos + 1) == Some(&b'*') => {
+                    let off0 = self.pos;
+                    let p0 = self.pos_of(off0);
                     self.bump();
                     self.bump();
                     let mut depth = 1usize;
@@ -163,6 +193,7 @@ impl<'a> Lexer<'a> {
                             }
                         }
                     }
+                    self.record_comment(off0, p0);
                 }
                 _ => break,
             }
@@ -379,10 +410,19 @@ impl<'a> Lexer<'a> {
 
 /// Lex the entire source into a token vector, or return the first lex error.
 pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
+    Ok(lex_with_comments(src)?.0)
+}
+
+/// Lex `src`, returning the token stream plus every comment in source order.
+///
+/// The parser treats comments as trivia and ignores them; this entry point is
+/// for tooling (formatter, doc extractors) that must preserve them.
+pub fn lex_with_comments(src: &str) -> Result<(Vec<Token>, Vec<Comment>), LexError> {
     let mut lexer = Lexer::new(src);
     let mut out = Vec::new();
     while let Some(tok) = lexer.next_token()? {
         out.push(tok);
     }
-    Ok(out)
+    let comments = std::mem::take(&mut lexer.comments);
+    Ok((out, comments))
 }

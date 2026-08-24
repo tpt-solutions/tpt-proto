@@ -1,0 +1,15 @@
+[package]
+name = "tpt-proto-fmt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Formatter for .proto schema files (tpt-proto toolchain)"
+keywords = ["protobuf", "formatter", "proto3", "editions", "tooling"]
+categories = ["development-tools"]
+
+[dependencies]
+tpt-proto-language = { workspace = true }
+thiserror = { workspace = true }

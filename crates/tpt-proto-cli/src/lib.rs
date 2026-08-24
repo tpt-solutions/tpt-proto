@@ -4,12 +4,15 @@
 //! and conversion commands that drive the language parser, compiler,
 //! reflection, codegen, JSON, and text layers.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub mod config;
+
 use anyhow::{bail, Context, Result};
 use tpt_proto_codegen_rust::{generate, GenerateOptions};
-use tpt_proto_compiler::{compile, serialize_file_descriptor};
+use tpt_proto_compiler::{compile, resolve_and_parse, serialize_file_descriptor};
 use tpt_proto_core::{Message, Reader};
 use tpt_proto_descriptor::{DescriptorProto, FileDescriptorProto, FileDescriptorSet};
 use tpt_proto_json::{json_string_to_message, message_to_json_string, JsonOptions};
@@ -34,21 +37,6 @@ pub fn compile_path(path: &Path) -> Result<(FileDescriptorProto, Vec<Diagnostic>
     let mut all = diags;
     all.extend(compile_diags.iter().cloned());
     Ok((fd, all))
-}
-
-/// Decode a hex string as the named message from a compiled `.proto` file.
-pub fn decode_hex(proto_path: &Path, message: &str, hex: &str) -> Result<DynamicMessage> {
-    let (fd, diags) = compile_path(proto_path)?;
-    report_diagnostics(&diags)?;
-    let pool = DescriptorPool::from_file(&fd);
-    let desc = pool
-        .lookup_message(message)
-        .or_else(|| pool.lookup_message(&format!("{}.{}", fd.package.as_deref().unwrap_or(""), message)))
-        .context(format!("message '{message}' not found"))?;
-    let bytes = hex::decode(hex.trim())?;
-    let mut r = Reader::new(&bytes);
-    let dm = DynamicMessage::decode(&pool, desc, &mut r)?;
-    Ok(dm)
 }
 
 fn report_diagnostics(diags: &[Diagnostic]) -> Result<()> {
@@ -184,16 +172,43 @@ pub fn emit_descriptor_bin(fd: &FileDescriptorProto, out: &Path) -> Result<()> {
 // Higher-level command helpers.
 // ---------------------------------------------------------------------------
 
-/// Compile a `.proto` file into a full [`FileDescriptorSet`].
-pub fn compile_set(path: &Path) -> Result<FileDescriptorSet> {
-    let (fd, diags) = compile_path(path)?;
-    report_diagnostics(&diags)?;
-    Ok(FileDescriptorSet { file: vec![fd] })
+/// Compile a `.proto` file and its transitive imports into a full
+/// [`FileDescriptorSet`] through the shared import resolver and the compiler's
+/// multi-file pipeline.
+///
+/// `includes` are the `-I`-style search directories: each `import` statement's
+/// path is looked up relative to them, in order.
+pub fn compile_set_with_includes(entry: &Path, includes: &[PathBuf]) -> Result<FileDescriptorSet> {
+    let resolved = resolve_and_parse(entry, includes)
+        .with_context(|| format!("resolving imports of {}", entry.display()))?;
+    // Surface parser problems from every resolved file first.
+    report_diagnostics(&resolved.parse_diagnostics())?;
+    let result = resolved.compile();
+    // Then semantic (pipeline) diagnostics.
+    report_diagnostics(&result.diagnostics.iter().cloned().collect::<Vec<_>>())?;
+    Ok(result.set)
 }
 
-/// Generate Rust source code for a `.proto` file.
-pub fn generate_code(path: &Path, grpc: bool) -> Result<String> {
-    let set = compile_set(path)?;
+/// Load a [`DescriptorPool`] covering `entry` plus all transitive imports,
+/// returning the pool together with the entry file's own descriptor (useful
+/// for package-relative message lookups).
+pub fn load_pool(
+    entry: &Path,
+    includes: &[PathBuf],
+) -> Result<(DescriptorPool, FileDescriptorProto)> {
+    let set = compile_set_with_includes(entry, includes)?;
+    let pool = DescriptorPool::from_set(&set);
+    let entry_fd = set
+        .file
+        .last()
+        .cloned()
+        .context("resolved descriptor set is empty")?;
+    Ok((pool, entry_fd))
+}
+
+/// Generate Rust source code for a `.proto` file (and everything it imports).
+pub fn generate_code(path: &Path, includes: &[PathBuf], grpc: bool) -> Result<String> {
+    let set = compile_set_with_includes(path, includes)?;
     let opts = GenerateOptions {
         grpc,
         ..Default::default()
@@ -201,10 +216,26 @@ pub fn generate_code(path: &Path, grpc: bool) -> Result<String> {
     generate(&set, &opts).map_err(|e| anyhow::anyhow!("codegen error: {e}"))
 }
 
-/// Serialize a `.proto` file's descriptor set to bytes.
-pub fn descriptor_set_bytes(path: &Path) -> Result<Vec<u8>> {
-    let set = compile_set(path)?;
+/// Serialize a `.proto` file's (transitively complete) descriptor set to bytes.
+pub fn descriptor_set_bytes(path: &Path, includes: &[PathBuf]) -> Result<Vec<u8>> {
+    let set = compile_set_with_includes(path, includes)?;
     set.encode_to_vec().context("encoding descriptor set")
+}
+
+/// Decode a hex string as the named message from a compiled `.proto` file
+/// (imports resolved through `includes`).
+pub fn decode_hex(
+    proto_path: &Path,
+    includes: &[PathBuf],
+    message: &str,
+    hex: &str,
+) -> Result<DynamicMessage> {
+    let (pool, entry_fd) = load_pool(proto_path, includes)?;
+    let desc = lookup_message(&pool, &entry_fd, message)?;
+    let bytes = hex::decode(hex.trim())?;
+    let mut r = Reader::new(&bytes);
+    let dm = DynamicMessage::decode(&pool, desc, &mut r)?;
+    Ok(dm)
 }
 
 /// Read a binary file as bytes.
@@ -264,13 +295,62 @@ pub fn text_to_binary(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, text: 
     dm.encode().context("encoding message")
 }
 
-/// Lint the evolution from `old_proto` to `new_proto`.
-pub fn lint_files(old_proto: &Path, new_proto: &Path, json: bool) -> Result<String> {
-    let old_set = compile_set(old_proto)?;
-    let new_set = compile_set(new_proto)?;
-    let old_fd = old_set.file.first().context("old descriptor set empty")?;
-    let new_fd = new_set.file.first().context("new descriptor set empty")?;
-    let report = run_lint(old_fd, new_fd);
+/// Apply `[lint.severity]` overrides to a report: remap severities
+/// (case-insensitive rule codes) or drop findings mapped to `"ignore"`.
+///
+/// Unknown actions are warned about on stderr and left unchanged so a typo in
+/// the config cannot silently hide findings.
+pub fn apply_severity_overrides(
+    report: &mut tpt_proto_lint::Report,
+    overrides: &HashMap<String, String>,
+) {
+    use tpt_proto_lint::Severity;
+    if overrides.is_empty() {
+        return;
+    }
+    report.findings.retain_mut(|f| {
+        let action = overrides
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(f.code))
+            .map(|(_, v)| v.as_str());
+        match action {
+            None => true,
+            Some("error") => {
+                f.severity = Severity::Error;
+                true
+            }
+            Some("warning") => {
+                f.severity = Severity::Warning;
+                true
+            }
+            Some("ignore") => false,
+            Some(other) => {
+                eprintln!(
+                    "warning: unknown severity `{other}` for lint override `{}` (expected error|warning|ignore)",
+                    f.code
+                );
+                true
+            }
+        }
+    });
+}
+
+/// Lint the evolution from `old_proto` to `new_proto` (imports resolved via
+/// `includes`; `severity_overrides` applied before rendering); each side's
+/// *entry* file descriptor is compared.
+pub fn lint_files(
+    old_proto: &Path,
+    new_proto: &Path,
+    json: bool,
+    includes: &[PathBuf],
+    severity_overrides: &HashMap<String, String>,
+) -> Result<String> {
+    let old_set = compile_set_with_includes(old_proto, includes)?;
+    let new_set = compile_set_with_includes(new_proto, includes)?;
+    let old_fd = old_set.file.last().context("old descriptor set empty")?;
+    let new_fd = new_set.file.last().context("new descriptor set empty")?;
+    let mut report = run_lint(old_fd, new_fd);
+    apply_severity_overrides(&mut report, severity_overrides);
     Ok(if json { report.render_json() } else { report.render() })
 }
 /// Produce a textual diff summary between two descriptor-set binaries.

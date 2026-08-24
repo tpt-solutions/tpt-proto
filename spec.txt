@@ -1138,72 +1138,104 @@ The linter must support machine-readable output.
 
 ## 18. CLI design
 
-The `tpt-proto` CLI must provide at least the following commands.
+The `tpt-proto` CLI provides the following commands. Every command accepts a
+repeatable top-level `-I/--include DIR` flag: import statements resolve
+relative to those directories, in order. Schemas are always passed as
+positional `.proto` paths (never pre-compiled descriptor files); each command
+resolves and compiles the entry file plus its transitive imports itself.
 
 ### Compile schemas
 
+Parse, semantically compile, and describe a schema; optionally emit its
+serialized `FileDescriptorProto`:
+
 ```sh
-tpt-proto compile --input proto --output out
+tpt-proto [-I proto] compile proto/app.proto [--descriptor-out app.fdp.bin]
 ```
 
 ### Generate Rust code
 
 ```sh
-tpt-proto generate --input proto --output src/generated
+tpt-proto generate proto/user.proto --out src/user.rs [--grpc]
 ```
 
 ### Emit descriptors
 
+Emit the serialized `FileDescriptorSet` (entry + all transitive imports):
+
 ```sh
-tpt-proto descriptors --input proto --output descriptor.bin
+tpt-proto descriptors proto/user.proto descriptor.bin
 ```
 
-### Decode binary
+### Describe schemas
+
+Print a structural summary (package, syntax, messages, enums, services):
 
 ```sh
-tpt-proto decode --descriptor descriptor.bin --message example.User --input message.bin
+tpt-proto describe proto/user.proto
 ```
 
-### Encode binary
+### Decode wire bytes
+
+Decode hex-encoded bytes against a schema:
 
 ```sh
-tpt-proto encode --descriptor descriptor.bin --message example.User --input message.json
+tpt-proto decode proto/user.proto example.User 082a1203416461
+```
+
+### Encode from JSON / text / raw binary
+
+```sh
+tpt-proto encode --from json proto/user.proto example.User message.json --out message.bin
 ```
 
 ### Convert JSON to binary
 
 ```sh
-tpt-proto json-to-binary --descriptor descriptor.bin --message example.User
+tpt-proto to-binary --from json proto/user.proto example.User message.json message.bin
 ```
 
 ### Convert binary to JSON
 
 ```sh
-tpt-proto binary-to-json --descriptor descriptor.bin --message example.User
+tpt-proto json proto/user.proto example.User message.bin --out message.json
 ```
 
 ### Convert text to binary
 
 ```sh
-tpt-proto text-to-binary --descriptor descriptor.bin --message example.User
+tpt-proto to-binary --from text proto/user.proto example.User message.txtpb message.bin
 ```
 
 ### Convert binary to text
 
 ```sh
-tpt-proto binary-to-text --descriptor descriptor.bin --message example.User
+tpt-proto text proto/user.proto example.User message.bin
 ```
 
 ### Lint schemas
 
+Compare a baseline and candidate `.proto` for breaking changes / style drift:
+
 ```sh
-tpt-proto lint proto
+tpt-proto lint old.proto new.proto [--json]
 ```
 
-### Diff schemas
+### Diff descriptor sets
+
+Diff two serialized descriptor-set binaries by message name:
 
 ```sh
-tpt-proto diff old.proto new.proto
+tpt-proto diff old.bin new.bin
+```
+
+### Scaffold a new project
+
+Create a ready-to-build starter crate (`Cargo.toml`, `build.rs`, `proto/`,
+`src/main.rs` demonstrating an encode/decode roundtrip):
+
+```sh
+tpt-proto init my-app [--force]
 ```
 
 ---

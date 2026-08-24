@@ -14,6 +14,9 @@ use tpt_proto_descriptor::{
 };
 use tpt_proto_language::ast;
 use tpt_proto_language::diagnostic::{Diagnostic, Diagnostics, ErrorCode};
+use tpt_proto_language::ParseResult;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 mod features;
 mod pipeline;
@@ -451,6 +454,159 @@ pub fn to_json_name(field: &str) -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Multi-file import resolution (Phase 27).
+//
+// The pipeline's [`compile_set`] performs the *semantics* of imports (public
+// re-export propagation, weak-import tolerance, cross-file type references,
+// duplicate detection) but requires every participating `ast::File` up front,
+// keyed by its logical import-matching name. This module provides the missing
+// filesystem half: starting from an entry file, walk `import` statements on
+// disk through include search paths and produce exactly that list.
+// ---------------------------------------------------------------------------
+
+/// One parsed `.proto` file discovered by [`resolve_and_parse`].
+#[derive(Debug)]
+pub struct ResolvedFile {
+    /// The file's logical name: its path relative to the include directory
+    /// that contained it, with `/` separators — this is what `import`
+    /// statements must match. Files outside every include dir fall back to
+    /// their bare file name.
+    pub name: String,
+    /// Where the file was found on disk.
+    pub source_path: PathBuf,
+    /// The parse result (AST + parser diagnostics).
+    pub parsed: ParseResult,
+}
+
+/// The transitive closure of an entry `.proto` plus everything it imports,
+/// ordered **dependencies-first** so each file is compiled after the files it
+/// imports. The entry file itself is always last.
+#[derive(Debug)]
+pub struct ResolvedSet {
+    /// Resolved files in dependency order (entry last).
+    pub files: Vec<ResolvedFile>,
+}
+
+impl ResolvedSet {
+    /// The entry file (the one resolution started from).
+    pub fn entry(&self) -> &ResolvedFile {
+        self.files
+            .last()
+            .expect("a resolved set always contains its entry")
+    }
+
+    /// Parser diagnostics from every resolved file, in dependency order.
+    pub fn parse_diagnostics(&self) -> Vec<Diagnostic> {
+        self.files
+            .iter()
+            .flat_map(|f| f.parsed.diagnostics.iter().cloned())
+            .collect()
+    }
+
+    /// Compile through the full multi-file pipeline (import semantics, public
+    /// re-exports, weak imports, cross-file type references, duplicate
+    /// detection, editions features).
+    pub fn compile(&self) -> crate::CompileResult {
+        let files: Vec<ast::File> = self.files.iter().map(|f| f.parsed.file.clone()).collect();
+        crate::compile_set(&files)
+    }
+}
+
+/// Compute a file's logical import-matching name: relative to whichever
+/// include directory contains it (`/`-separated), or its bare file name when
+/// it lives outside every include directory.
+fn logical_name(path: &Path, includes: &[PathBuf]) -> String {
+    if let Ok(canon) = std::fs::canonicalize(path) {
+        for inc in includes {
+            let Ok(canon_inc) = std::fs::canonicalize(inc) else {
+                continue;
+            };
+            if let Ok(rel) = canon.strip_prefix(&canon_inc) {
+                return rel.to_string_lossy().replace('\\', "/");
+            }
+        }
+    }
+    path.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "input.proto".to_string())
+}
+
+/// Locate an imported file on the include search path.
+fn find_imported(import: &str, includes: &[PathBuf]) -> std::io::Result<PathBuf> {
+    for inc in includes {
+        let candidate = inc.join(import);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!(
+            "import \"{import}\" not found in any include directory (tried: {})",
+            if includes.is_empty() {
+                "(none; pass -I/--include)".to_string()
+            } else {
+                includes
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        ),
+    ))
+}
+
+/// Resolve `entry` plus its transitive imports and parse each file.
+///
+/// Imports are resolved against `includes` in order: each `import` statement's
+/// quoted path is looked up as a `/`-separated path relative to some include
+/// root. Diamond imports resolve once; import cycles terminate here (the
+/// semantic layer in [`compile_set`] still reports them as diagnostics).
+///
+/// I/O failures (unreadable entry, missing import) surface as
+/// `std::io::Error`; per-file *parse* problems are reported through
+/// [`ResolvedSet::parse_diagnostics`] instead.
+pub fn resolve_and_parse(entry: &Path, includes: &[PathBuf]) -> std::io::Result<ResolvedSet> {
+    struct Ctx<'a> {
+        includes: &'a [PathBuf],
+        seen: HashSet<String>,
+        out: Vec<ResolvedFile>,
+    }
+
+    fn visit(path: &Path, ctx: &mut Ctx) -> std::io::Result<()> {
+        let name = logical_name(path, ctx.includes);
+        // Mark before recursing so diamond imports resolve once and cycles
+        // terminate; the pipeline layer reports them semantically.
+        if !ctx.seen.insert(name.clone()) {
+            return Ok(());
+        }
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| std::io::Error::new(e.kind(), format!("reading {}: {e}", path.display())))?;
+        let mut parsed = tpt_proto_language::parse_file(&name, &src);
+        // Depth-first over imports so dependencies precede importers.
+        let imports: Vec<String> = parsed.file.imports.iter().map(|i| i.path.clone()).collect();
+        for import in imports {
+            let dep = find_imported(&import, ctx.includes)?;
+            visit(&dep, ctx)?;
+        }
+        ctx.out.push(ResolvedFile {
+            name,
+            source_path: path.to_path_buf(),
+            parsed,
+        });
+        Ok(())
+    }
+
+    let mut ctx = Ctx {
+        includes,
+        seen: HashSet::new(),
+        out: Vec::new(),
+    };
+    visit(entry, &mut ctx)?;
+    Ok(ResolvedSet { files: ctx.out })
+}
+
 fn check_duplicates(file: &ast::File, diags: &mut Diagnostics) {
     use std::collections::HashSet;
     let mut top = HashSet::new();
@@ -587,5 +743,111 @@ service S {
         let parsed = parse_file("m.proto", src);
         let (_fd, diags) = compile(&parsed.file);
         assert!(diags.has_errors());
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    /// Multi-root fixture:
+    ///
+    /// ```text
+    /// <tmp>/include/common/base.proto   message Base
+    /// <tmp>/include2/mid/mid.proto      imports "common/base.proto"
+    /// <tmp>/entry/app.proto             imports "mid/mid.proto"  (outside both roots)
+    /// ```
+    fn fixture() -> (PathBuf, PathBuf, Vec<PathBuf>) {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpt_resolve_{}_{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t").replace(':', "_")
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let include1 = tmp.join("include");
+        let include2 = tmp.join("include2");
+        std::fs::create_dir_all(include1.join("common")).unwrap();
+        std::fs::create_dir_all(include2.join("mid")).unwrap();
+        std::fs::create_dir_all(tmp.join("entry")).unwrap();
+
+        std::fs::write(
+            include1.join("common/base.proto"),
+            "syntax = \"proto3\";\npackage common;\nmessage Base { int64 id = 1; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            include2.join("mid/mid.proto"),
+            "syntax = \"proto3\";\nimport \"common/base.proto\";\npackage mid;\nmessage Mid { common.Base base = 1; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join("entry/app.proto"),
+            "syntax = \"proto3\";\nimport \"mid/mid.proto\";\npackage app;\nmessage App { mid.Mid mid = 1; }\n",
+        )
+        .unwrap();
+
+        let entry = tmp.join("entry/app.proto");
+        (tmp, entry, vec![include1, include2])
+    }
+
+    #[test]
+    fn resolves_transitive_imports_deps_first() {
+        let (tmp, entry, includes) = fixture();
+        let set = resolve_and_parse(&entry, &includes).expect("resolution succeeds");
+
+        assert_eq!(set.files.len(), 3);
+        assert_eq!(set.files[0].name, "common/base.proto");
+        assert_eq!(set.files[1].name, "mid/mid.proto");
+        assert_eq!(set.entry().name, "app.proto");
+        assert!(set.parse_diagnostics().is_empty());
+
+        // The pipeline must type-check the cross-file field references.
+        let result = set.compile();
+        assert!(
+            !result.diagnostics.has_errors(),
+            "unexpected errors: {:?}",
+            result.diagnostics.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(result.set.file.len(), 3);
+
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    fn missing_import_reports_searched_paths() {
+        let (tmp, _entry, _includes) = fixture();
+        let orphan = tmp.join("entry/orphan.proto");
+        std::fs::write(
+            &orphan,
+            "syntax = \"proto3\";\nimport \"nope/gone.proto\";\nmessage O {}\n",
+        )
+        .unwrap();
+        let err = resolve_and_parse(&orphan, &[tmp.join("include")]).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+        assert!(err.to_string().contains("nope/gone.proto"));
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    fn cycles_terminate_and_parse_each_file_once() {
+        let tmp = std::env::temp_dir().join(format!("tpt_cycle_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("a.proto"),
+            "syntax = \"proto3\";\nimport \"b.proto\";\npackage c;\nmessage A {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join("b.proto"),
+            "syntax = \"proto3\";\nimport \"a.proto\";\npackage c;\nmessage B {}\n",
+        )
+        .unwrap();
+
+        let set = resolve_and_parse(&tmp.join("a.proto"), &[tmp.clone()])
+            .expect("cycles must not hang or error at the resolver level");
+        assert_eq!(set.files.len(), 2);
+
+        let _ = std::fs::remove_dir_all(tmp);
     }
 }

@@ -15,6 +15,7 @@ members = [
     "crates/tpt-proto-build",
     "crates/tpt-proto-lint",
     "crates/tpt-proto-grpc",
+    "crates/tpt-proto-fmt",
     "crates/tpt-proto-bench",
     "examples/grpc-echo",
 ]
@@ -43,6 +44,7 @@ tpt-proto-cli = { path = "crates/tpt-proto-cli", version = "0.1.0" }
 tpt-proto-build = { path = "crates/tpt-proto-build", version = "0.1.0" }
 tpt-proto-lint = { path = "crates/tpt-proto-lint", version = "0.1.0" }
 tpt-proto-grpc = { path = "crates/tpt-proto-grpc", version = "0.1.0" }
+tpt-proto-fmt = { path = "crates/tpt-proto-fmt", version = "0.1.0" }
 
 thiserror = "1.0"
 anyhow = "1.0"

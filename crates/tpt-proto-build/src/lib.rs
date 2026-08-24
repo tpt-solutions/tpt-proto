@@ -44,9 +44,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use tpt_proto_codegen_rust::{generate, GenerateOptions};
-use tpt_proto_compiler::compile;
-use tpt_proto_descriptor::FileDescriptorSet;
-use tpt_proto_language::{parse_file, Diagnostic};
+use tpt_proto_compiler::resolve_and_parse;
+use tpt_proto_language::Diagnostic;
 
 /// Configuration for [`compile_protos`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -222,52 +221,35 @@ pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path, 
 }
 
 /// Compile a single `.proto` file into generated Rust source.
+///
+/// Imports are resolved through `tpt-proto-compiler`'s shared
+/// [`resolve_and_parse`] resolver (the same implementation the CLI uses), and
+/// the entry file plus its transitive dependencies are compiled together
+/// through the full multi-file pipeline — so cross-file type references work
+/// with real import semantics, without merging unrelated files that merely
+/// happen to live in an include directory.
 fn compile_one(path: &Path, includes: &[PathBuf], config: &BuildConfig) -> Result<String> {
-    let src = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("input.proto")
-        .to_string();
-
-    // Provide include-path contents as additional parsed files so imports
-    // resolve during compilation.
-    let mut parsed = parse_file(&name, &src);
-    let mut diags: Vec<Diagnostic> = parsed.diagnostics.iter().cloned().collect();
-    // The input file itself often lives inside one of the include directories;
-    // merging it again would duplicate every symbol, so skip it by canonical
-    // path.
-    let canon_input = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    for inc in includes {
-        for dep in collect_protos(inc)? {
-            let canon_dep = std::fs::canonicalize(&dep).unwrap_or_else(|_| dep.clone());
-            if canon_dep == canon_input || dep == path {
-                continue;
-            }
-            let dsrc = std::fs::read_to_string(&dep).with_context(|| format!("reading {}", dep.display()))?;
-            let dname = dep.file_name().and_then(|s| s.to_str()).unwrap_or("dep.proto").to_string();
-            let dparsed = parse_file(&dname, &dsrc);
-            diags.extend(dparsed.diagnostics.iter().cloned());
-            // Merge dependency messages into the same parsed file root so the
-            // compiler can see them.
-            parsed.file.messages.extend(dparsed.file.messages);
-            parsed.file.enums.extend(dparsed.file.enums);
-        }
-    }
-    if diags.iter().any(|d| d.severity == tpt_proto_language::Severity::Error) {
+    let resolved = resolve_and_parse(path, includes)
+        .with_context(|| format!("resolving imports of {}", path.display()))?;
+    let mut diags = resolved.parse_diagnostics();
+    let compiled = resolved.compile();
+    diags.extend(compiled.diagnostics.iter().cloned());
+    if diags
+        .iter()
+        .any(|d| d.severity == tpt_proto_language::Severity::Error)
+    {
         for d in &diags {
             eprintln!("{}: {}", severity_str(d), d.message);
         }
         bail!("compilation of {} failed", path.display());
     }
-    let (fd, _cdiags) = compile(&parsed.file);
-    let set = FileDescriptorSet { file: vec![fd] };
     let opts = GenerateOptions {
         grpc: config.grpc,
         module_per_package: config.module_per_package,
         ..GenerateOptions::default()
     };
-    generate(&set, &opts).map_err(|e| anyhow::anyhow!("codegen error in {}: {e}", path.display()))
+    generate(&compiled.set, &opts)
+        .map_err(|e| anyhow::anyhow!("codegen error in {}: {e}", path.display()))
 }
 
 fn severity_str(d: &Diagnostic) -> &'static str {
@@ -336,5 +318,51 @@ mod tests {
         std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; }").unwrap();
         let err = compile_protos_simple(&[src], &[]).unwrap_err();
         assert!(err.to_string().contains("OUT_DIR"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn imports_resolve_through_shared_includes_without_spurious_merges() {
+        // The entry imports a dependency from an include dir; a second,
+        // completely unrelated proto also lives in that include dir. Only the
+        // entry + its real dependency may contribute types to the generated
+        // module (the old flat-merge hack pulled in the unrelated file too).
+        let root = std::env::temp_dir().join(format!("tpt_import_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("include")).unwrap();
+        std::fs::create_dir_all(root.join("out")).unwrap();
+
+        std::fs::write(
+            root.join("include/dep.proto"),
+            "syntax = \"proto3\";\npackage d;\nmessage Dep { int32 x = 1; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("include/unrelated.proto"),
+            "syntax = \"proto3\";\npackage u;\nmessage Unrelated { string s = 1; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("main.proto"),
+            "syntax = \"proto3\";\nimport \"dep.proto\";\npackage m;\nmessage Main { d.Dep dep = 1; }\n",
+        )
+        .unwrap();
+
+        compile_protos(
+            &[root.join("main.proto")],
+            &[root.join("include")],
+            &root.join("out"),
+            &BuildConfig::default(),
+        )
+        .unwrap();
+
+        let code = std::fs::read_to_string(root.join("out/main.rs")).unwrap();
+        assert!(code.contains("Dep"), "dependency type must be generated");
+        assert!(code.contains("Main"));
+        assert!(
+            !code.contains("Unrelated"),
+            "unrelated include-dir file must not leak into the output"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

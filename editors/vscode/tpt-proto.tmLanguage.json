@@ -1,0 +1,134 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "tpt-proto",
+  "scopeName": "source.tpt-proto",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#scalar-types" },
+    { "include": "#booleans" },
+    { "include": "#type-names" },
+    { "include": "#field-numbers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.tpt-proto",
+          "begin": "/\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.double-slash.tpt-proto",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.tpt-proto",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "include": "#string-escapes"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.tpt-proto",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "include": "#string-escapes"
+            }
+          ]
+        }
+      ]
+    },
+    "string-escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.tpt-proto",
+          "match": "\\\\(?:[ntr0abfv\\\\'\"\\?]|x[0-9a-fA-F]{1,8}|u\\{[0-9a-fA-F]{1,6}\\}|U\\{[0-9a-fA-F]{1,8}\\})"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.tpt-proto",
+          "match": "\\b[0-9][0-9_]*(?:\\.[0-9_]+)?(?:[eE][+-]?[0-9][0-9_]*)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.other.declaration.tpt-proto",
+          "match": "\\b(?:syntax|edition|package|import|option|message|enum|service|extend)\\b"
+        },
+        {
+          "name": "keyword.other.import.tpt-proto",
+          "match": "\\b(?:public|weak)\\b"
+        },
+        {
+          "name": "keyword.other.body.tpt-proto",
+          "match": "\\b(?:oneof|map|reserved|extensions|group)\\b"
+        },
+        {
+          "name": "keyword.other.label.tpt-proto",
+          "match": "\\b(?:optional|required|repeated)\\b"
+        },
+        {
+          "name": "keyword.other.rpc.tpt-proto",
+          "match": "\\b(?:rpc|returns|stream)\\b"
+        },
+        {
+          "name": "keyword.operator.range.tpt-proto",
+          "match": "\\b(?:to|max)\\b"
+        }
+      ]
+    },
+    "scalar-types": {
+      "name": "support.type.scalar.tpt-proto",
+      "match": "\\b(?:double|float|int32|int64|uint32|uint64|sint32|sint64|fixed32|fixed64|sfixed32|sfixed64|bool|string|bytes)\\b"
+    },
+    "booleans": {
+      "name": "constant.language.boolean.tpt-proto",
+      "match": "\\b(?:true|false)\\b"
+    },
+    "type-names": {
+      "patterns": [
+        {
+          "name": "entity.name.type.message.tpt-proto",
+          "match": "(?<=\\bmessage\\s+)[A-Za-z_][A-Za-z0-9_.]*"
+        },
+        {
+          "name": "entity.name.type.enum.tpt-proto",
+          "match": "(?<=\\benum\\s+)[A-Za-z_][A-Za-z0-9_.]*"
+        },
+        {
+          "name": "entity.name.type.service.tpt-proto",
+          "match": "(?<=\\bservice\\s+)[A-Za-z_][A-Za-z0-9_.]*"
+        },
+        {
+          "name": "entity.name.function.rpc.tpt-proto",
+          "match": "(?<=\\brpc\\s+)[A-Za-z_][A-Za-z0-9_.]*"
+        },
+        {
+          "name": "entity.name.tag.package.tpt-proto",
+          "match": "(?<=\\bpackage\\s+)[A-Za-z_][A-Za-z0-9_.]*"
+        }
+      ]
+    },
+    "field-numbers": {
+      "name": "constant.numeric.field-tag.tpt-proto",
+      "match": "(?<=\\=\\s*)[0-9][0-9_]*\\b"
+    }
+  }
+}

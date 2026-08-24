@@ -5,14 +5,24 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tpt_proto_cli::{
-    binary_to_json, binary_to_text, compile_path, decode_hex, describe, descriptor_set_bytes,
-    diff_descriptors, emit_descriptor_bin, generate_code, json_to_binary, lint_files,
-    lookup_message, print_message, read_bytes, text_to_binary,
+    binary_to_json, binary_to_text, compile_set_with_includes, decode_hex, describe,
+    descriptor_set_bytes, diff_descriptors, emit_descriptor_bin, generate_code, json_to_binary,
+    lint_files, load_pool, lookup_message, print_message, read_bytes, text_to_binary,
 };
 
 #[derive(Parser)]
 #[command(name = "tpt-proto", about = "tpt-proto Protocol Buffers toolchain")]
 struct Cli {
+    /// Import search directory (repeatable). `import` statements resolve
+    /// relative to these paths, in order.
+    #[arg(
+        short = 'I',
+        long = "include",
+        value_name = "DIR",
+        global = true
+    )]
+    include: Vec<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -129,6 +139,14 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Format `.proto` files in place (or verify with `--check`).
+    Fmt {
+        /// Files to format.
+        files: Vec<PathBuf>,
+        /// Do not write; exit non-zero if any file would change (CI mode).
+        #[arg(long)]
+        check: bool,
+    },
     /// Create a new tpt-proto starter project (`cargo new`-style scaffold).
     Init {
         /// Name of the new crate and directory.
@@ -141,44 +159,60 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Project config supplies defaults; explicit flags win.
+    let project = tpt_proto_cli::config::load_discovered()
+        .map_err(|e| anyhow::anyhow!("invalid project config: {e}"))?;
+    let mut include_dirs: Vec<PathBuf> = Vec::new();
+    if let Some(p) = &project {
+        include_dirs.extend(p.include_paths());
+    }
+    include_dirs.extend(cli.include.iter().cloned());
+    let includes: Vec<PathBuf> = include_dirs;
+    let empty_overrides = std::collections::HashMap::new();
+    let lint_overrides = project
+        .as_ref()
+        .map(|p| &p.lint.severity)
+        .unwrap_or(&empty_overrides);
+
     match cli.command {
         Command::Compile { proto, descriptor_out } => {
-            let (fd, diags) = compile_path(&proto)?;
-            for d in &diags {
-                eprintln!("{}: {}", severity(&d.severity), d.message);
-            }
+            let set = compile_set_with_includes(&proto, &includes)?;
+            let fd = set.file.last().expect("non-empty resolved set");
             if let Some(out) = descriptor_out {
-                emit_descriptor_bin(&fd, &out)?;
+                emit_descriptor_bin(fd, &out)?;
                 println!("wrote descriptor to {}", out.display());
             } else {
-                describe(&fd);
+                describe(fd);
             }
         }
         Command::Generate { proto, out, grpc } => {
-            let code = generate_code(&proto, grpc)?;
-            if let Some(out) = out {
-                std::fs::write(&out, &code)?;
-                println!("wrote {}", out.display());
-            } else {
-                print!("{code}");
+            let out =
+                out.or_else(|| project.as_ref().and_then(|p| p.codegen_out()));
+            let code = generate_code(&proto, &includes, grpc || project.as_ref().is_some_and(|p| p.codegen.grpc))?;
+            match out {
+                Some(out) => {
+                    std::fs::write(&out, &code)?;
+                    println!("wrote {}", out.display());
+                }
+                None => print!("{code}"),
             }
         }
         Command::Descriptors { proto, out } => {
-            let bytes = descriptor_set_bytes(&proto)?;
+            let bytes = descriptor_set_bytes(&proto, &includes)?;
             std::fs::write(&out, bytes)?;
             println!("wrote {}", out.display());
         }
         Command::Describe { proto } => {
-            let (fd, _diags) = compile_path(&proto)?;
+            let (_pool, fd) = load_pool(&proto, &includes)?;
             describe(&fd);
         }
         Command::Decode { proto, message, hex } => {
-            let dm = decode_hex(&proto, &message, &hex)?;
+            let dm = decode_hex(&proto, includes, &message, &hex)?;
             print_message(&dm, 0);
         }
         Command::Encode { proto, message, input, from, out } => {
-            let (fd, _diags) = compile_path(&proto)?;
-            let pool = tpt_proto_reflect::DescriptorPool::from_file(&fd);
+            let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let raw = read_bytes(&input)?;
             let bytes = match from.as_str() {
@@ -191,8 +225,7 @@ fn main() -> Result<()> {
             println!("wrote {}", out.display());
         }
         Command::Json { proto, message, input, out } => {
-            let (fd, _diags) = compile_path(&proto)?;
-            let pool = tpt_proto_reflect::DescriptorPool::from_file(&fd);
+            let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let bytes = read_bytes(&input)?;
             let json = binary_to_json(&pool, &desc, &bytes)?;
@@ -203,8 +236,7 @@ fn main() -> Result<()> {
             }
         }
         Command::Text { proto, message, input, out } => {
-            let (fd, _diags) = compile_path(&proto)?;
-            let pool = tpt_proto_reflect::DescriptorPool::from_file(&fd);
+            let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let bytes = read_bytes(&input)?;
             let text = binary_to_text(&pool, &desc, &bytes)?;
@@ -215,8 +247,7 @@ fn main() -> Result<()> {
             }
         }
         Command::ToBinary { from, proto, message, input, out } => {
-            let (fd, _diags) = compile_path(&proto)?;
-            let pool = tpt_proto_reflect::DescriptorPool::from_file(&fd);
+            let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let raw = read_bytes(&input)?;
             let text = String::from_utf8_lossy(&raw);
@@ -235,8 +266,32 @@ fn main() -> Result<()> {
             print!("{diff}");
         }
         Command::Lint { old, new, json } => {
-            let report = lint_files(&old, &new, json)?;
+            let report = lint_files(&old, &new, json, &includes, lint_overrides)?;
             print!("{report}");
+        }
+        Command::Fmt { files, check } => {
+            if files.is_empty() {
+                anyhow::bail!("fmt requires at least one `.proto` file");
+            }
+            let mut changed = 0usize;
+            for f in &files {
+                let src = std::fs::read_to_string(f)
+                    .map_err(|e| anyhow::anyhow!("reading {}: {e}", f.display()))?;
+                let formatted = tpt_proto_fmt::format_source(&src)
+                    .map_err(|e| anyhow::anyhow!("{}: {e}", f.display()))?;
+                if formatted != src {
+                    changed += 1;
+                    if check {
+                        println!("would reformat {}", f.display());
+                    } else {
+                        std::fs::write(f, formatted)?;
+                        println!("formatted {}", f.display());
+                    }
+                }
+            }
+            if check && changed > 0 {
+                anyhow::bail!("{changed} file(s) need formatting");
+            }
         }
         Command::Init { name, force } => {
             let path = tpt_proto_cli::init_project(&name, force)?;
@@ -247,11 +302,4 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn severity(s: &tpt_proto_language::Severity) -> &'static str {
-    match s {
-        tpt_proto_language::Severity::Error => "error",
-        tpt_proto_language::Severity::Warning => "warning",
-    }
 }

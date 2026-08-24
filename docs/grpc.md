@@ -166,6 +166,41 @@ validation, token/metadata authentication, authorization hooks, peer-identity
 inspection, request/metadata limits, and a safe cleartext opt-in for local
 development. Documentation encourages secure defaults.
 
+### Configuring server TLS
+
+Server-side TLS/mTLS is feature-gated (`tls` feature) and configured through
+the server builder. Material is validated eagerly — malformed cert/key/CA
+fails at serve time, never at first connection:
+
+```rust,ignore
+use tpt_proto_grpc::{Server, TlsConfig};
+
+let tls = TlsConfig::from_pem(cert_chain_pem, private_key_pem); // PEM bytes
+let tls = tls.with_client_ca(client_ca_pem);                    // enables mTLS
+
+let server = Server::builder()
+    .with_tls(tls)          // requires the `tls` feature
+    .with_security(policy)  // optional auth/authz on top
+    .build();
+server.serve(addr).await?;
+```
+
+Behavior notes:
+
+* ALPN must include `h2`; it is offered to clients automatically.
+* With mTLS enabled (`with_client_ca`), a verified client certificate's
+  Subject CN — falling back to its first SAN DNS entry — becomes the default
+  peer principal (see `identity_from_peer`). The full certificate
+  (CN / SAN list / DER) is exposed to handlers via
+  `RpcContext.peer.peer_certificate`.
+* TLS handshake failures are logged through the configured observability
+  logger (status `tls_handshake_failed`) instead of being silently dropped.
+* Without the `tls` feature (or without `with_tls`) the server runs cleartext
+  HTTP/2 ("h2c"), intended for local development behind a TLS-terminating
+  proxy.
+* Integration coverage: `crates/tpt-proto-grpc/tests/tls_integration.rs`,
+  run with `cargo test -p tpt-proto-grpc --features tls`.
+
 ## Debugging tools
 
 A `tpt-grpc` CLI supports health checks, reflection, service listing, unary
