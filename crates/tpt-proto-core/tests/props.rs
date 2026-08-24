@@ -3,8 +3,8 @@
 
 use proptest::prelude::*;
 use tpt_proto_core::{
-    decode_zigzag32, decode_zigzag64, encode_varint, encode_zigzag32, encode_zigzag64,
-    packed, scalar, Reader, Writer,
+    decode_zigzag32, decode_zigzag64, encode_zigzag32, encode_zigzag64, packed, scalar, Reader,
+    Writer,
 };
 
 proptest! {

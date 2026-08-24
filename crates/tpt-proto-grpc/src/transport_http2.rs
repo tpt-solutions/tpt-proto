@@ -321,6 +321,10 @@ impl Transport for H2Transport {
 }
 
 /// Convert response HTTP headers and trailers into gRPC [`Metadata`].
+///
+/// Reserved keys received from the peer (`grpc-status`, `grpc-message`, …) are
+/// preserved here so callers can inspect the terminal status via metadata;
+/// they remain impossible to *set* on outgoing metadata.
 fn merge_metadata(headers: &HeaderMap, trailers: Option<&HeaderMap>) -> Metadata {
     let mut md = Metadata::new();
     let mut add = |h: &HeaderMap| {
@@ -330,7 +334,7 @@ fn merge_metadata(headers: &HeaderMap, trailers: Option<&HeaderMap>) -> Metadata
                 continue;
             }
             if let Ok(v) = value.to_str() {
-                let _ = md.insert_text(name, v);
+                let _ = md.insert_text_received(name, v);
             }
         }
     };

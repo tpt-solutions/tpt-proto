@@ -7,8 +7,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Binary wire format runtime (varint, tags, scalar codecs)"
-readme = "../../README.md"
-keywords = ["protobuf", "wire-format", "varint", "serialization"]
+readme = "README.md"
+keywords = ["protobuf", "wire-format", "varint", "serialization", "encoding"]
 categories = ["encoding"]
 
 [dependencies]

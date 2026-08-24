@@ -7,8 +7,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "gRPC protocol, server, and client runtime"
-readme = "../../README.md"
-keywords = ["grpc", "http2", "rpc", "protobuf"]
+readme = "README.md"
+keywords = ["grpc", "http2", "rpc", "protobuf", "networking"]
 categories = ["network-programming"]
 
 [features]

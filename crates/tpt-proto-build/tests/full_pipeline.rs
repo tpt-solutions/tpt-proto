@@ -81,7 +81,8 @@ fn full_pipeline_proto_build_codegen_runtime_json_text_cli() {
     let out_rs = out_dir.join("user.rs");
     let before = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
     std::thread::sleep(std::time::Duration::from_millis(20));
-    compile_protos(&[proto_path], &[], &out_dir, &config)
+    let includes = [root.join("proto")];
+    compile_protos(&[proto_path], &includes, &out_dir, &config)
         .expect("second compile_protos failed");
     let after = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
     assert_eq!(before, after, "unchanged inputs must not rewrite outputs");

@@ -1,4 +1,4 @@
-//! Real-TCP gRPC interop coverage beyond `runtime_echo.rs`: deadlines
+﻿//! Real-TCP gRPC interop coverage beyond `runtime_echo.rs`: deadlines
 //! (`grpc-timeout`), gzip compression negotiation, response-trailer metadata
 //! merging, and client-side cancellation by dropping the in-flight call.
 //!
@@ -13,10 +13,10 @@ mod generated {
 
 use std::time::Duration;
 
-use generated::{Echo, EchoClient, EchoServer, ExPing, ExPong};
-use tpt_proto_core::Message;
+use generated::{Echo, EchoServer, ExPing, ExPong};
 use tpt_proto_grpc::{
     Code, Compression, H2Transport, Metadata, Request, Response, Server, ServerStream, Status,
+    Transport,
 };
 use tokio::net::TcpListener;
 
@@ -86,7 +86,7 @@ async fn deadline_exceeded_over_real_tcp() {
     let addr = spawn(Duration::from_millis(500)).await;
     let t = transport(addr).with_timeout(Duration::from_millis(50));
     let err = t
-        .unary("/ex.Echo/unary", Metadata::new(), vec![0x00; 5])
+        .unary("/ex.Echo/Unary", Metadata::new(), encode_ping("deadline"))
         .await
         .unwrap_err();
     assert_eq!(err.code, Code::DeadlineExceeded, "got: {err:?}");
@@ -98,7 +98,7 @@ async fn generous_deadline_completes_over_real_tcp() {
     let addr = spawn(Duration::ZERO).await;
     let t = transport(addr).with_timeout(Duration::from_secs(5));
     let body = encode_ping("slow-ok");
-    let (resp, _) = t.unary("/ex.Echo/unary", Metadata::new(), body).await.unwrap();
+    let (resp, _) = t.unary("/ex.Echo/Unary", Metadata::new(), body).await.unwrap();
     let pong = ExPong::decode(&resp).unwrap();
     assert_eq!(pong.msg, "echo: slow-ok");
 }
@@ -112,7 +112,7 @@ async fn gzip_compressed_unary_over_real_tcp() {
         .with_compression(Compression::Gzip)
         .with_max_message_size(1 << 20);
     let body = encode_ping("gz");
-    let (resp, _) = t.unary("/ex.Echo/unary", Metadata::new(), body).await.unwrap();
+    let (resp, _) = t.unary("/ex.Echo/Unary", Metadata::new(), body).await.unwrap();
     let pong = ExPong::decode(&resp).unwrap();
     assert_eq!(pong.msg, "echo: gz");
 }
@@ -124,7 +124,7 @@ async fn ok_status_trailers_merged_into_response_metadata() {
     let addr = spawn(Duration::ZERO).await;
     let t = transport(addr);
     let (_, meta) = t
-        .unary("/ex.Echo/unary", Metadata::new(), encode_ping("tr"))
+        .unary("/ex.Echo/Unary", Metadata::new(), encode_ping("tr"))
         .await
         .unwrap();
     assert_eq!(meta.get_text("grpc-status"), Some("0"));
@@ -138,12 +138,12 @@ async fn cancelled_call_does_not_wedge_subsequent_calls() {
     let addr = spawn(Duration::from_millis(400)).await;
 
     let t1 = transport(addr);
-    let fut = t1.unary("/ex.Echo/unary", Metadata::new(), encode_ping("cancel-me"));
+    let fut = t1.unary("/ex.Echo/Unary", Metadata::new(), encode_ping("cancel-me"));
     drop(fut); // cancel immediately
 
     let t2 = transport(addr); // fresh TCP+h2 connection
     let (resp, _) = t2
-        .unary("/ex.Echo/unary", Metadata::new(), encode_ping("after"))
+        .unary("/ex.Echo/Unary", Metadata::new(), encode_ping("after"))
         .await
         .unwrap();
     let pong = ExPong::decode(&resp).unwrap();

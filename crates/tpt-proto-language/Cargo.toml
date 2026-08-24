@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Proto language lexer and parser (proto2/proto3/editions)"
-readme = "../../README.md"
+readme = "README.md"
 keywords = ["protobuf", "proto", "parser", "lexer", "syntax"]
 categories = ["parsing"]
 

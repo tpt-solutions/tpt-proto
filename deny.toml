@@ -1,0 +1,31 @@
+# cargo-deny configuration for the root tpt-proto workspace.
+# The standalone fuzz/ workspace has its own identical deny.toml because it is
+# a separate Cargo workspace with its own lockfile.
+
+[advisories]
+# Fail on any published RUSTSEC advisory affecting the dependency graph.
+yanked = "warn"
+ignore = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CDLA-Permissive-2.0",
+]
+
+[bans]
+# Duplicated transitive versions are noisy but not fatal; surface them.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

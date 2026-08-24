@@ -7,8 +7,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "build.rs integration for .proto compilation"
-readme = "../../README.md"
-keywords = ["protobuf", "build-rs", "codegen"]
+readme = "README.md"
+keywords = ["protobuf", "build-rs", "codegen", "build-dependencies", "code-generation"]
 categories = ["development-tools::build-utils"]
 
 [dependencies]

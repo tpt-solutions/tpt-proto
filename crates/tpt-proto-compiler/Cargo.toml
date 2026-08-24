@@ -7,8 +7,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Semantic analysis, import resolution, and descriptor construction"
-readme = "../../README.md"
-keywords = ["protobuf", "compiler", "schema"]
+readme = "README.md"
+keywords = ["protobuf", "compiler", "schema", "descriptor", "validation"]
 categories = ["development-tools"]
 
 [dependencies]

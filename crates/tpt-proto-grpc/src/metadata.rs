@@ -47,12 +47,26 @@ impl Metadata {
     /// Insert a text (UTF-8) metadata value.
     pub fn insert_text(&mut self, key: &str, value: &str) -> Result<()> {
         Self::validate_key(key, false)?;
-        self.insert_binary(key, value.as_bytes())
+        self.insert_binary_inner(key, value.as_bytes())
     }
 
     /// Insert a binary metadata value. Binary keys must end with `-bin`.
     pub fn insert_binary(&mut self, key: &str, value: &[u8]) -> Result<()> {
         Self::validate_key(key, false)?;
+        self.insert_binary_inner(key, value)
+    }
+
+    /// Insert a text value received *from a peer*, permitting reserved
+    /// (`grpc-*`) keys such as `grpc-status` / `grpc-message`.
+    ///
+    /// Locally authored metadata must go through [`Metadata::insert_text`],
+    /// which rejects reserved keys so callers cannot forge terminal status.
+    pub(crate) fn insert_text_received(&mut self, key: &str, value: &str) -> Result<()> {
+        Self::validate_key(key, true)?;
+        self.insert_binary_inner(key, value.as_bytes())
+    }
+
+    fn insert_binary_inner(&mut self, key: &str, value: &[u8]) -> Result<()> {
         if !key.ends_with("-bin") && value.iter().any(|&b| !b.is_ascii()) {
             bail!("non-ASCII value for non-binary key `{key}`");
         }

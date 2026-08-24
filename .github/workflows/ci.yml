@@ -44,12 +44,27 @@ jobs:
   fuzz:
     name: Fuzz (sanity)
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-      - name: Fuzz build check
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - name: Fuzz build check (all targets compile under libFuzzer)
+        working-directory: fuzz
         run: cargo +nightly fuzz build
+
+  deny:
+    name: Supply chain (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: Check root workspace
+        run: cargo deny check
+      - name: Check fuzz workspace
+        working-directory: fuzz
+        run: cargo deny check
 
   conformance:
     name: Conformance suite

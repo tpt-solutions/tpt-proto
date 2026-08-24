@@ -72,7 +72,7 @@ proptest! {
         let json = message_to_json_string(&pool, &desc, &msg, &opts).unwrap();
         let back = json_string_to_message(&pool, &desc, &json, &opts).unwrap();
         let rebytes = back.encode().unwrap();
-        prop_assert_eq!(rebytes, bytes, "json: {json}");
+        prop_assert_eq!(rebytes, bytes);
 
         // JSON output must be canonical for equal messages.
         let json2 = message_to_json_string(&pool, &desc, &back, &opts).unwrap();

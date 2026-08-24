@@ -46,7 +46,7 @@ fn decode(hexstr: &str) -> DynamicMessage {
     let (pool, desc) = setup();
     let bytes: Vec<u8> = (0..hexstr.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&hexstr[i..i + 2], 16))
+        .map(|i| u8::from_str_radix(&hexstr[i..i + 2], 16).unwrap())
         .collect();
     let mut r = tpt_proto_core::Reader::new(&bytes);
     DynamicMessage::decode(&pool, desc, &mut r).unwrap()

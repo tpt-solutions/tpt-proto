@@ -1,0 +1,158 @@
+﻿   Compiling tpt-proto-grpc v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-grpc)
+warning: unused import: `WireType`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:3:56
+  |
+3 | use __core::{Message, Reader, Writer, UnknownFieldSet, WireType};
+  |                                                        ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `__core::packed`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:5:5
+  |
+5 | use __core::packed;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:6:5
+  |
+6 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Channel`, `ClientStream`, and `ServerStream`
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:10:14
+   |
+10 | use __grpc::{Channel, ClientStream, ServerStream};
+   |              ^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:21:15
+   |
+19 | impl ExPing {
+   | ----------- associated constant in this implementation
+20 |     /// Protobuf full name of this message.
+21 |     pub const PROTO_FULL_NAME: &'static str = "ex.Ping";
+   |               ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ExPingBuilder` is never constructed
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:50:12
+   |
+50 | pub struct ExPingBuilder {
+   |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+  --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:56:12
+   |
+54 | impl ExPingBuilder {
+   | ------------------ associated items in this implementation
+55 |     /// Create a new builder seeded with default values.
+56 |     pub fn new() -> Self {
+   |            ^^^
+...
+60 |     pub fn msg(mut self, v: String) -> Self {
+   |            ^^^
+...
+65 |     pub fn try_build(self) -> Result<ExPing, String> {
+   |            ^^^^^^^^^
+...
+69 |     pub fn build(self) -> ExPing {
+   |            ^^^^^
+
+warning: associated constant `PROTO_FULL_NAME` is never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:100:15
+    |
+ 98 | impl ExPong {
+    | ----------- associated constant in this implementation
+ 99 |     /// Protobuf full name of this message.
+100 |     pub const PROTO_FULL_NAME: &'static str = "ex.Pong";
+    |               ^^^^^^^^^^^^^^^
+
+warning: struct `ExPongBuilder` is never constructed
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:129:12
+    |
+129 | pub struct ExPongBuilder {
+    |            ^^^^^^^^^^^^^
+
+warning: associated items `new`, `msg`, `try_build`, and `build` are never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:135:12
+    |
+133 | impl ExPongBuilder {
+    | ------------------ associated items in this implementation
+134 |     /// Create a new builder seeded with default values.
+135 |     pub fn new() -> Self {
+    |            ^^^
+...
+139 |     pub fn msg(mut self, v: String) -> Self {
+    |            ^^^
+...
+144 |     pub fn try_build(self) -> Result<ExPong, String> {
+    |            ^^^^^^^^^
+...
+148 |     pub fn build(self) -> ExPong {
+    |            ^^^^^
+
+warning: struct `EchoClient` is never constructed
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:185:12
+    |
+185 | pub struct EchoClient {
+    |            ^^^^^^^^^^
+
+warning: associated items `new`, `unary`, `server_stream`, `client_stream`, and `bidi` are never used
+   --> crates\tpt-proto-grpc\tests\../examples/grpc_echo/echo_gen.rs:191:12
+    |
+189 | impl EchoClient {
+    | --------------- associated items in this implementation
+190 |     /// Create a new client stub over the given channel.
+191 |     pub fn new(channel: __grpc::Channel) -> Self {
+    |            ^^^
+...
+195 |     pub async fn unary(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<ExPong>, __grpc::Status> {
+    |                  ^^^^^
+...
+206 |     pub async fn server_stream(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStrea...
+    |                  ^^^^^^^^^^^^^
+...
+219 |     pub async fn client_stream(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Respon...
+    |                  ^^^^^^^^^^^^^
+...
+232 |     pub async fn bidi(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc...
+    |                  ^^^^
+
+warning: `tpt-proto-grpc` (test "tcp_interop") generated 12 warnings (run `cargo fix --test "tcp_interop" -p tpt-proto-grpc` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.62s
+     Running tests\tcp_interop.rs (target\debug\deps\tcp_interop-f38708e9a82a13cf.exe)
+
+running 5 tests
+test deadline_exceeded_over_real_tcp ... FAILED
+test generous_deadline_completes_over_real_tcp ... ok
+test ok_status_trailers_merged_into_response_metadata ... FAILED
+test gzip_compressed_unary_over_real_tcp ... ok
+test cancelled_call_does_not_wedge_subsequent_calls ... ok
+
+failures:
+
+---- deadline_exceeded_over_real_tcp stdout ----
+
+thread 'deadline_exceeded_over_real_tcp' (446024) panicked at crates\tpt-proto-grpc\tests\tcp_interop.rs:92:5:
+assertion `left == right` failed: got: Status { code: Internal, message: "invalid field tag: 0", details: [], metadata: Metadata { map: {} } }
+  left: Internal
+ right: DeadlineExceeded
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- ok_status_trailers_merged_into_response_metadata stdout ----
+
+thread 'ok_status_trailers_merged_into_response_metadata' (447744) panicked at crates\tpt-proto-grpc\tests\tcp_interop.rs:130:5:
+assertion `left == right` failed
+  left: None
+ right: Some("0")
+
+
+failures:
+    deadline_exceeded_over_real_tcp
+    ok_status_trailers_merged_into_response_metadata
+
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+error: test failed, to rerun pass `-p tpt-proto-grpc --test tcp_interop`

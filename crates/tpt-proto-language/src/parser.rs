@@ -41,6 +41,7 @@ pub fn parse_file(name: &str, src: &str) -> ParseResult {
         tokens,
         pos: 0,
         diagnostics: Diagnostics::new(),
+        depth: 0,
     };
     let file = p.parse_file();
     ParseResult {
@@ -54,7 +55,14 @@ struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     diagnostics: Diagnostics,
+    /// Current message/group nesting depth (recursion guard).
+    depth: u32,
 }
+
+/// Maximum `message` / `group` nesting the parser will descend into before it
+/// emits a diagnostic and skips the remainder, instead of recursing without
+/// bound on adversarial input.
+const MAX_PROTO_NESTING: u32 = 200;
 
 impl Parser {
     fn peek(&self) -> Option<&Token> {
@@ -391,6 +399,54 @@ impl Parser {
     }
 
     fn parse_message(&mut self, is_group: bool) -> Option<Message> {
+        // Recursion guard: nested `message`/`group` blocks funnel through here,
+        // so bounding this single entry point bounds the whole descent.
+        if self.depth >= MAX_PROTO_NESTING {
+            let span = self.peek().map(|t| t.span);
+            self.error(
+                ErrorCode::Other,
+                format!("`.proto` nesting exceeds maximum depth of {MAX_PROTO_NESTING}"),
+                span,
+            );
+            // Consume an optional name plus the balanced `{ ... }` body so the
+            // enclosing parse can continue from a sane token.
+            self.advance(); // identifier (if any)
+            if self.peek_kind() == Some(&TokenKind::LBrace) {
+                self.skip_balanced_block();
+            }
+            return None;
+        }
+        self.depth += 1;
+        let result = self.parse_message_inner(is_group);
+        self.depth -= 1;
+        result
+    }
+
+    /// Skip a balanced `{ ... }` region (assumes the cursor sits on `{`).
+    fn skip_balanced_block(&mut self) {
+        let mut level: i32 = 0;
+        loop {
+            match self.peek_kind() {
+                None => break,
+                Some(TokenKind::LBrace) => {
+                    level += 1;
+                    self.advance();
+                }
+                Some(TokenKind::RBrace) => {
+                    self.advance();
+                    level -= 1;
+                    if level <= 0 {
+                        break;
+                    }
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    fn parse_message_inner(&mut self, is_group: bool) -> Option<Message> {
         let span = self.peek().unwrap().span;
         self.advance(); // 'message' or 'group'
         let name = self.expect_ident()?;

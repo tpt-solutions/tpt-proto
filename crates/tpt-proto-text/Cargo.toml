@@ -7,8 +7,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Text format printer and parser"
-readme = "../../README.md"
-keywords = ["protobuf", "text-format"]
+readme = "README.md"
+keywords = ["protobuf", "text-format", "text", "serialization", "debugging"]
 categories = ["encoding"]
 
 [dependencies]

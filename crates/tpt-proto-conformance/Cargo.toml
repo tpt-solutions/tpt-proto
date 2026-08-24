@@ -7,8 +7,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Conformance test harness and testee"
-readme = "../../README.md"
-keywords = ["protobuf", "conformance", "testing"]
+readme = "README.md"
+keywords = ["protobuf", "conformance", "testing", "compatibility", "serialization"]
 categories = ["development-tools::testing"]
 
 [[bin]]
