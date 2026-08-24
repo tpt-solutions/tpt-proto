@@ -68,6 +68,11 @@ pub enum SecurityError {
     /// ALPN did not include `h2`.
     #[error("ALPN protocols must include \"h2\" for gRPC over HTTP/2")]
     MissingH2Alpn,
+    /// TLS material was syntactically valid PEM but could not be turned into
+    /// a usable TLS configuration (unparseable certificate, undecodable key,
+    /// unusable client CA, ...).
+    #[error("invalid TLS material: {0}")]
+    InvalidTlsMaterial(String),
 }
 
 /// A single parsed PEM block.
@@ -168,7 +173,26 @@ impl TlsConfig {
 
     /// Validate that the configuration is usable: PEM material present, mTLS
     /// has its CA, and `h2` is present in the ALPN list.
+    ///
+    /// With the `tls` feature enabled this goes beyond PEM structure and
+    /// actually builds a real [`rustls::ServerConfig`] from the material, so
+    /// malformed certificates / keys are rejected here rather than at first
+    /// connection.
     pub fn validate(&self) -> Result<(), SecurityError> {
+        self.validate_structure()?;
+        #[cfg(feature = "tls")]
+        {
+            // Full material check: parse certs, decode the key, wire up the
+            // client verifier, and assemble the rustls config end-to-end.
+            crate::tls::build_server_config(self)?;
+        }
+        Ok(())
+    }
+
+    /// Structural checks only: PEM blocks present, mTLS CA present, `h2`
+    /// ALPN present. Split from [`TlsConfig::validate`] so
+    /// [`crate::tls::build_server_config`] can reuse it without recursing.
+    pub(crate) fn validate_structure(&self) -> Result<(), SecurityError> {
         if parse_pem(&self.cert_chain_pem)?.is_empty() {
             return Err(SecurityError::MissingCertChain(
                 "no PEM block found".into(),
@@ -190,6 +214,12 @@ impl TlsConfig {
         }
         if !self.alpn_protocols.iter().any(|p| p == "h2") {
             return Err(SecurityError::MissingH2Alpn);
+        }
+        #[cfg(feature = "tls")]
+        {
+            // Full material check: parse certs, decode the key, wire up the
+            // client verifier, and assemble the rustls config end-to-end.
+            crate::tls::build_server_config(self)?;
         }
         Ok(())
     }
@@ -342,12 +372,30 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
-/// Derive a peer identity purely from transport-level [`PeerInfo`] (e.g. a
-/// verified client certificate subject populated by the TLS layer).
+/// Derive a peer identity purely from transport-level [`PeerInfo`].
+///
+/// When a verified peer certificate is present (mTLS terminated by this
+/// process), the certificate's Subject CN is preferred as the principal,
+/// falling back to its first SAN DNS entry; otherwise an existing
+/// transport-established `auth_principal` is used.
 ///
 /// This is the fallback identity used when no explicit authenticator is
 /// configured but peer inspection is desired.
 pub fn identity_from_peer(peer: &PeerInfo) -> Option<PeerIdentity> {
+    if let Some(cert) = &peer.peer_certificate {
+        let principal = cert
+            .subject_cn
+            .clone()
+            .or_else(|| cert.san_dns.first().cloned())
+            .or_else(|| peer.auth_principal.clone());
+        if let Some(principal) = principal {
+            let mut id = PeerIdentity::new(principal).with_attribute("auth", "peer-cert");
+            if !cert.san_dns.is_empty() {
+                id.attributes.insert("san_dns".to_string(), cert.san_dns.join(","));
+            }
+            return Some(id);
+        }
+    }
     peer.auth_principal
         .clone()
         .map(|p| PeerIdentity::new(p).with_attribute("auth", "peer"))
@@ -592,5 +640,109 @@ mod tests {
             policy.apply(&bad, "ex.Svc", "Get").unwrap_err().code,
             Code::Unauthenticated
         );
+    }
+
+    // ---- TLS material validation (`tls` feature; rcgen-generated material) ----
+
+    #[cfg(feature = "tls")]
+    mod tls_material {
+        use super::*;
+        use crate::context::PeerCertificate;
+
+        /// A real self-signed server certificate + key pair (SAN `localhost`,
+        /// CN `test-server`, both `serverAuth` and `clientAuth` EKUs so the
+        /// same helper works for either role).
+        fn gen_self_signed(cn: &str, dns: &str) -> (Vec<u8>, Vec<u8>) {
+            let mut params =
+                rcgen::CertificateParams::new(vec![dns.to_string()]).unwrap();
+            params.distinguished_name.push(rcgen::DnType::CommonName, cn);
+            params.extended_key_usages = vec![
+                rcgen::ExtendedKeyUsagePurpose::ServerAuth,
+                rcgen::ExtendedKeyUsagePurpose::ClientAuth,
+            ];
+            let key = rcgen::KeyPair::generate().unwrap();
+            let cert = params.self_signed(&key).unwrap();
+            (cert.pem().into_bytes(), key.serialize_pem().into_bytes())
+        }
+
+        #[test]
+        fn validate_accepts_real_material() {
+            let (cert, key) = gen_self_signed("test-server", "localhost");
+            let cfg = TlsConfig::from_pem(cert, key);
+            assert!(cfg.validate().is_ok());
+        }
+
+        #[test]
+        fn validate_rejects_undecodable_key_as_invalid_tls_material() {
+            let (cert, _) = gen_self_signed("test-server", "localhost");
+            // Well-formed PEM whose payload is not a decodable PKCS#8 key.
+            let bogus_key =
+                b"-----BEGIN PRIVATE KEY-----\nbm90IGEga2V5IGF0IGFsbA==\n-----END PRIVATE KEY-----";
+            let cfg = TlsConfig::from_pem(cert, bogus_key.to_vec());
+            assert!(matches!(
+                cfg.validate(),
+                Err(SecurityError::InvalidTlsMaterial(_))
+            ));
+        }
+
+        #[test]
+        fn validate_builds_mtls_verifier_from_real_ca() {
+            let (cert, key) = gen_self_signed("test-server", "localhost");
+            let (ca_pem, _) = gen_self_signed("test-ca", "not-a-san-ca");
+            let cfg = TlsConfig::from_pem(cert, key).with_client_ca(ca_pem);
+            assert!(cfg.validate().is_ok(), "expected Ok, got {:?}", cfg.validate());
+        }
+
+        #[test]
+        fn identity_from_peer_prefers_cert_cn_over_transport_principal() {
+            let peer = PeerInfo {
+                auth_principal: Some("transport-principal".into()),
+                peer_certificate: Some(PeerCertificate {
+                    subject_cn: Some("svc-a".into()),
+                    san_dns: vec!["svc-a.internal".into()],
+                    der: vec![1, 2, 3],
+                }),
+                ..Default::default()
+            };
+            let id = identity_from_peer(&peer).expect("identity from cert");
+            assert_eq!(id.principal, "svc-a");
+            assert_eq!(id.attribute("auth"), Some("peer-cert"));
+            assert_eq!(id.attribute("san_dns"), Some("svc-a.internal"));
+        }
+
+        #[test]
+        fn identity_from_peer_falls_back_to_san_then_principal() {
+            let san_only = PeerInfo {
+                peer_certificate: Some(PeerCertificate {
+                    subject_cn: None,
+                    san_dns: vec!["b.local".into()],
+                    der: Vec::new(),
+                }),
+                ..Default::default()
+            };
+            assert_eq!(identity_from_peer(&san_only).unwrap().principal, "b.local");
+
+            let cert_without_names = PeerInfo {
+                auth_principal: Some("transport-principal".into()),
+                peer_certificate: Some(PeerCertificate {
+                    subject_cn: None,
+                    san_dns: Vec::new(),
+                    der: Vec::new(),
+                }),
+                ..Default::default()
+            };
+            assert_eq!(
+                identity_from_peer(&cert_without_names).unwrap().principal,
+                "transport-principal"
+            );
+
+            let no_cert = PeerInfo {
+                auth_principal: Some("plain".into()),
+                ..Default::default()
+            };
+            let id = identity_from_peer(&no_cert).unwrap();
+            assert_eq!(id.principal, "plain");
+            assert_eq!(id.attribute("auth"), Some("peer"));
+        }
     }
 }

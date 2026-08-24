@@ -195,13 +195,13 @@ impl InMemoryMetricsRecorder {
     }
 
     fn with_sample(&self, labels: &CallLabels, f: impl FnOnce(&mut MetricSample)) {
-        let mut map = self.inner.lock().unwrap();
+        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         f(map.entry(labels.clone()).or_default());
     }
 
     /// Snapshot the aggregated counts keyed by [`CallLabels`].
     pub fn snapshot(&self) -> std::collections::HashMap<CallLabels, MetricSampleView> {
-        let map = self.inner.lock().unwrap();
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         map.iter()
             .map(|(k, v)| {
                 (
@@ -692,7 +692,7 @@ impl RequestIdLog {
 
     /// Record a request id as seen.
     pub fn push(&self, id: impl Into<String>) {
-        let mut q = self.inner.lock().unwrap();
+        let mut q = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         q.push_back(id.into());
         while q.len() > self.cap {
             q.pop_front();
@@ -701,7 +701,12 @@ impl RequestIdLog {
 
     /// Most recent ids, oldest first.
     pub fn recent(&self) -> Vec<String> {
-        self.inner.lock().unwrap().iter().cloned().collect()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 }
 

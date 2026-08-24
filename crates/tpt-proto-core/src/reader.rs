@@ -106,9 +106,18 @@ impl<'a> Reader<'a> {
     }
 
     /// Read and decode the next [`Tag`].
+    ///
+    /// Every decode loop in the workspace funnels through this method, so it
+    /// is where [`DecoderLimits::max_fields`] is enforced: each `Reader`
+    /// counts the tags *it* has decoded and fails with
+    /// `Error::LimitExceeded("max_fields")` once its budget is exhausted.
+    /// Sub-readers created through [`Reader::nested`] start with a fresh
+    /// budget, giving per-message enforcement at every nesting level.
     pub fn read_tag(&mut self) -> crate::Result<Tag> {
         let (tag, n) = Tag::decode(self.buf, self.pos)?;
         self.advance(n)?;
+        self.field_count += 1;
+        self.limits.check_field(self.field_count)?;
         Ok(tag)
     }
 
@@ -184,12 +193,6 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// Record that a field has been consumed (for `max_fields` accounting).
-    pub fn record_field(&mut self) -> crate::Result<()> {
-        self.field_count += 1;
-        self.limits.check_field(self.field_count)
-    }
-
     /// Skip a value of the given wire type, correctly descending into groups.
     pub fn skip(&mut self, wire_type: WireType) -> crate::Result<()> {
         self.skip_inner(wire_type, self.depth)
@@ -236,5 +239,93 @@ impl<'a> Reader<'a> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::writer::Writer;
+
+    fn varint_fields(n: usize) -> Vec<u8> {
+        let mut w = Writer::new();
+        for i in 0..n {
+            crate::scalar::encode_int32(&mut w, (i % 500 + 1) as u32, i as i32);
+        }
+        w.into_vec()
+    }
+
+    #[test]
+    fn read_tag_enforces_max_fields() {
+        let buf = varint_fields(16);
+        let limits = DecoderLimits {
+            max_fields: Some(3),
+            ..DecoderLimits::default()
+        };
+        let mut r = Reader::with_limits(&buf, limits);
+        let mut reads = 0usize;
+        let err = loop {
+            match r.read_tag() {
+                Ok(tag) => {
+                    reads += 1;
+                    r.skip(tag.wire_type).expect("value well-formed");
+                }
+                Err(e) => break e,
+            }
+        };
+        assert_eq!(reads, 3, "the 4th read_tag must be rejected (got {err:?})");
+        assert!(matches!(err, Error::LimitExceeded("max_fields")));
+    }
+
+    #[test]
+    fn default_max_fields_budget_is_generous() {
+        let buf = varint_fields(1_000);
+        let mut r = Reader::with_limits(&buf, DecoderLimits::default());
+        let mut reads = 0usize;
+        while let Ok(tag) = r.read_tag() {
+            reads += 1;
+            r.skip(tag.wire_type).expect("value well-formed");
+        }
+        assert_eq!(reads, 1_000, "default budget must admit 1_000 fields");
+    }
+
+    #[test]
+    fn nested_reader_gets_a_fresh_field_budget() {
+        // Four tags live in the buffer but never more than two at a single
+        // nesting level: the outer message holds one length-delimited field
+        // whose payload holds three singular fields. With `max_fields = 2`
+        // the failure must come from the *nested* reader, proving per-message
+        // enforcement rather than a whole-buffer cap.
+        let mut iw = Writer::new();
+        for i in 0..3 {
+            crate::scalar::encode_int32(&mut iw, i + 1, i as i32);
+        }
+        let inner = iw.into_vec();
+
+        let mut ow = Writer::new();
+        ow.write_tag(1, WireType::LengthDelimited);
+        ow.write_length_delimited(&inner);
+        let outer = ow.into_vec();
+
+        let limits = DecoderLimits {
+            max_fields: Some(2),
+            ..DecoderLimits::default()
+        };
+        let mut r = Reader::with_limits(&outer, limits);
+        let outer_tag = r.read_tag().expect("one outer tag is within budget");
+        assert_eq!(outer_tag.field_number, 1);
+        let body = r.read_length_delimited().expect("payload present");
+        let mut nested = r.nested(body).expect("depth within budget");
+        let t1 = nested.read_tag().expect("first inner tag within budget");
+        nested.skip(t1.wire_type).expect("value well-formed");
+        let t2 = nested.read_tag().expect("second inner tag within budget");
+        nested.skip(t2.wire_type).expect("value well-formed");
+        assert!(
+            matches!(
+                nested.read_tag(),
+                Err(Error::LimitExceeded("max_fields"))
+            ),
+            "third inner tag must exceed the per-message max_fields budget"
+        );
     }
 }

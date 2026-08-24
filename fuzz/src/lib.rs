@@ -19,9 +19,13 @@
 pub mod targets {
     use std::sync::{Arc, OnceLock};
 
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine as _;
     use tpt_proto_compiler::compile;
     use tpt_proto_core::{Message, Reader, UnknownFieldSet, Writer};
     use tpt_proto_descriptor::{DescriptorProto, FileDescriptorSet};
+    use tpt_proto_grpc::codec;
+    use tpt_proto_grpc::{Compression, Metadata, Status, MAX_METADATA_SIZE_DEFAULT};
     use tpt_proto_language::parse_file;
     use tpt_proto_reflect::{DescriptorPool, DynamicMessage};
 
@@ -172,6 +176,79 @@ message Msg {
             let _ = dm.encode();
         }
     }
+
+    /// gRPC message-frame decoding (`tpt-proto-grpc::codec`). A small fixed
+    /// `max_message_size` targets the decompression-bomb bug class directly:
+    /// a tiny gzip stream crafted to expand past the cap must be rejected
+    /// cheaply (never fully materialised), and anything that *does* decode
+    /// must re-encode under the same cap without panicking.
+    pub fn codec_decode_message(data: &[u8]) {
+        let Some((&flag, frame)) = data.split_first() else {
+            return;
+        };
+        // The first byte doubles as the `grpc-encoding` algorithm selector;
+        // the rest is exactly what an attacker would put on the wire.
+        let encoding = match flag % 3 {
+            0 => Compression::Identity,
+            1 => Compression::Gzip,
+            _ => Compression::Other("fuzz".into()),
+        };
+        const MAX_MESSAGE_SIZE: usize = 64 * 1024; // deliberately small fixed cap
+        if let Ok(msg) = codec::decode_message(frame, encoding.clone(), MAX_MESSAGE_SIZE) {
+            // Whatever decodes must re-encode under the same cap; no panic.
+            let _ = codec::encode_message(&msg, encoding, MAX_MESSAGE_SIZE);
+        }
+    }
+
+    /// gRPC metadata parsing. Arbitrary `(key, value)` pair sequences must be
+    /// validated or rejected gracefully — never panic, never allocate without
+    /// bound — in both header mode (reserved keys rejected) and trailer mode
+    /// (reserved `grpc-*` keys allowed), plus the header rendering round-trip.
+    pub fn grpc_metadata(data: &[u8]) {
+        let text = String::from_utf8_lossy(data);
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        let mut parts = text.split('\n');
+        while let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+            pairs.push((k.trim().to_string(), v.trim().to_string()));
+        }
+
+        // Oversized/invalid sets are rejected with Err; a panic is a finding.
+        let _ = Metadata::from_headers(&pairs, MAX_METADATA_SIZE_DEFAULT);
+        let _ = Metadata::from_trailers(&pairs, MAX_METADATA_SIZE_DEFAULT);
+
+        // Whatever parses must survive the render -> reparse path.
+        if let Ok(m) = Metadata::from_trailers(&pairs, usize::MAX) {
+            let rendered = m.to_headers();
+            let _ = Metadata::from_headers(&rendered, MAX_METADATA_SIZE_DEFAULT);
+        }
+    }
+
+    /// gRPC status/trailer parsing, including rich `google.rpc.Status` detail
+    /// decoding. The whole input is additionally attached as a
+    /// `grpc-status-details-bin` blob so the Any-carrying detail decoder runs
+    /// over attacker-controlled bytes on every execution.
+    pub fn grpc_status(data: &[u8]) {
+        let text = String::from_utf8_lossy(data);
+        let mut trailers: Vec<(String, String)> = Vec::new();
+        let mut parts = text.split('\n');
+        while let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+            trailers.push((k.trim().to_string(), v.trim().to_string()));
+        }
+        // Base64 keeps the `-bin` key convention happy for arbitrary bytes.
+        trailers.push(("grpc-status-details-bin".to_string(), B64.encode(data)));
+
+        // A modest cap bounds work while admitting the synthetic detail blob.
+        if let Ok(m) = Metadata::from_trailers(&trailers, 2 * MAX_METADATA_SIZE_DEFAULT) {
+            let status = Status::from_trailers(&m);
+            let _ = format!("{status}"); // Display must not panic.
+
+            // Re-serialize and re-parse; both directions must stay total.
+            let re = status.to_trailers();
+            if let Ok(m2) = Metadata::from_trailers(&re.to_headers(), usize::MAX) {
+                let _ = Status::from_trailers(&m2);
+            }
+        }
+    }
 }
 
 /// Portable harness helpers used by `src/main.rs` and `tests/smoke.rs`.
@@ -189,6 +266,9 @@ pub mod harness {
         targets::json_decoder(data);
         targets::text_parser(data);
         targets::dynamic_decoder(data);
+        targets::codec_decode_message(data);
+        targets::grpc_metadata(data);
+        targets::grpc_status(data);
     }
 
     /// Run every target, returning the names of any that panicked. This is the
@@ -203,6 +283,9 @@ pub mod harness {
             ("json_decoder", targets::json_decoder as fn(&[u8])),
             ("text_parser", targets::text_parser as fn(&[u8])),
             ("dynamic_decoder", targets::dynamic_decoder as fn(&[u8])),
+            ("codec_decode_message", targets::codec_decode_message as fn(&[u8])),
+            ("grpc_metadata", targets::grpc_metadata as fn(&[u8])),
+            ("grpc_status", targets::grpc_status as fn(&[u8])),
         ] {
             if catch_unwind(AssertUnwindSafe(|| f(data))).is_err() {
                 crashed.push(name);

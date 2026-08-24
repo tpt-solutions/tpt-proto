@@ -13,6 +13,9 @@ ecosystem (Phase 17 — Security Hardening & Fuzzing).
 | `json_decoder`        | JSON → `DynamicMessage` (shared schema)                |
 | `text_parser`         | Text format → `DynamicMessage` (shared schema)         |
 | `dynamic_decoder`     | `DynamicMessage::decode` + re-encode (shared schema)   |
+| `codec_decode_message`| gRPC frame codec with a small fixed `max_message_size` — targets the decompression-bomb bug class directly (added 2026-08-24; first `tpt-proto-grpc` coverage) |
+| `grpc_metadata`       | gRPC metadata header/trailer parsing + render round-trip (added 2026-08-24) |
+| `grpc_status`         | gRPC status trailers incl. rich `google.rpc.Status` details (added 2026-08-24) |
 
 Each target deliberately discards `Err` results for invalid input; a **panic
 inside** a decoder (not a rejected input) is what a fuzzer reports as a finding.

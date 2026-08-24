@@ -13,10 +13,11 @@ categories = ["network-programming"]
 
 [features]
 default = []
-# Enables TLS client support in the `tpt-grpc` debug CLI. Pulls in `rustls` /
-# `tokio-rustls` and is off by default so the workspace builds without those
-# optional native dependencies.
-tls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile"]
+# Enables TLS support: the `tpt-grpc` debug CLI client transport and the
+# server-side TLS/mTLS termination (`tls` module, `ServerBuilder::with_tls`,
+# `RustlsAcceptor`). Pulls in `rustls` / `tokio-rustls` / `x509-parser` and is
+# off by default so the workspace builds without those optional dependencies.
+tls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile", "dep:x509-parser"]
 
 [dependencies]
 tpt-proto-core = { workspace = true }
@@ -38,6 +39,7 @@ tokio = { workspace = true }
 clap = { version = "4.4", features = ["derive"] }
 serde_json = { workspace = true }
 hex = "0.4"
+x509-parser = { version = "0.16", optional = true }
 rustls = { version = "0.23", optional = true }
 tokio-rustls = { version = "0.26", optional = true }
 rustls-pemfile = { version = "2", optional = true }
@@ -46,3 +48,4 @@ rustls-pemfile = { version = "2", optional = true }
 tpt-proto-core = { workspace = true }
 tpt-proto-compiler = { workspace = true }
 tpt-proto-language = { workspace = true }
+rcgen = "0.13"

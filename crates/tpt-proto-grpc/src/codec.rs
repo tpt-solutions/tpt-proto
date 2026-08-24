@@ -81,7 +81,7 @@ pub fn decode_message(
     match flag {
         COMPRESSION_FLAG_UNCOMPRESSED => Ok(payload.to_vec()),
         COMPRESSION_FLAG_COMPRESSED => {
-            let data = encoding.decompress(payload)?;
+            let data = encoding.decompress(payload, max_message_size)?;
             if data.len() > max_message_size {
                 bail!(
                     "decompressed message length {} exceeds maximum {}",
@@ -144,5 +144,26 @@ mod tests {
         assert!(encode_message(msg, Compression::Identity, 3).is_err());
         let frame = encode_message(msg, Compression::Identity, 16).unwrap();
         assert!(decode_message(&frame, Compression::Identity, 3).is_err());
+    }
+
+    #[test]
+    fn rejects_decompressed_bomb_frame() {
+        // Build the wire frame directly rather than via `encode_message`,
+        // since `encode_message` itself checks the *plaintext* size before
+        // compressing — an attacker controls the frame bytes directly, not
+        // the encoder, so the decode side must defend against this on its
+        // own regardless of the declared (compressed) length being small.
+        let huge = vec![0u8; 50 * 1024 * 1024];
+        let compressed = Compression::Gzip.compress(&huge).unwrap();
+        let max_message_size = 4 * 1024 * 1024; // compressed blob is well under this
+        assert!(compressed.len() < max_message_size);
+
+        let mut frame = Vec::with_capacity(compressed.len() + 5);
+        frame.push(COMPRESSION_FLAG_COMPRESSED);
+        frame.extend_from_slice(&(compressed.len() as u32).to_be_bytes());
+        frame.extend_from_slice(&compressed);
+
+        let err = decode_message(&frame, Compression::Gzip, max_message_size).unwrap_err();
+        assert!(err.to_string().contains("exceeds maximum"));
     }
 }

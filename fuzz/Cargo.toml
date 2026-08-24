@@ -19,6 +19,8 @@ tpt-proto-compiler = { path = "../crates/tpt-proto-compiler" }
 tpt-proto-reflect = { path = "../crates/tpt-proto-reflect" }
 tpt-proto-json = { path = "../crates/tpt-proto-json" }
 tpt-proto-text = { path = "../crates/tpt-proto-text" }
+tpt-proto-grpc = { path = "../crates/tpt-proto-grpc" }
+base64 = "0.22"
 
 [features]
 # Default features deliberately do NOT pull in anything that requires a

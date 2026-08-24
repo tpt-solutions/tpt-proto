@@ -25,6 +25,12 @@ pub enum UnknownValue {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UnknownFieldSet {
     fields: BTreeMap<u32, Vec<UnknownValue>>,
+    /// Incrementally maintained encoded size (tag + value bytes summed over
+    /// every stored value). Kept current by [`insert`](Self::insert) and
+    /// [`merge_from`](Self::merge_from) so `encoded_len()` — and therefore
+    /// the per-insert `max_unknown_bytes` check — is O(1) rather than a full
+    /// map recomputation on every insert (which was quadratic overall).
+    total_len: usize,
 }
 
 impl UnknownFieldSet {
@@ -44,18 +50,18 @@ impl UnknownFieldSet {
     }
 
     /// Approximate byte size of all stored values (for limit accounting).
+    ///
+    /// O(1): the total is maintained incrementally by
+    /// [`insert`](Self::insert)/[`merge_from`](Self::merge_from) instead of
+    /// being recomputed over the whole map on every query (which made the
+    /// per-insert `max_unknown_bytes` check quadratic overall).
     pub fn encoded_len(&self) -> usize {
-        let mut n = 0usize;
-        for (field, values) in &self.fields {
-            for v in values {
-                n += tag_len(*field) + value_len(v);
-            }
-        }
-        n
+        self.total_len
     }
 
     /// Insert a value under `field_number`.
     pub fn insert(&mut self, field_number: u32, value: UnknownValue) {
+        self.total_len += tag_len(field_number) + value_len(&value);
         self.fields.entry(field_number).or_default().push(value);
     }
 
@@ -99,6 +105,7 @@ impl UnknownFieldSet {
     /// Merge another set into this one.
     pub fn merge_from(&mut self, other: &UnknownFieldSet) {
         for (f, vs) in &other.fields {
+            self.total_len += vs.iter().map(|v| tag_len(*f) + value_len(v)).sum::<usize>();
             self.fields
                 .entry(*f)
                 .or_default()
@@ -159,6 +166,7 @@ fn write_value(w: &mut Writer, field: u32, v: &UnknownValue) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::limits::DecoderLimits;
 
     #[test]
     fn store_and_reencode() {
@@ -175,5 +183,53 @@ mod tests {
         let mut out = Writer::new();
         set.encode(&mut out);
         assert_eq!(out.buf(), w.buf());
+    }
+
+    #[test]
+    fn encoded_len_tracks_inserts_and_merges_incrementally() {
+        let mut set = UnknownFieldSet::new();
+        let mut expected = 0usize;
+        let values = [
+            UnknownValue::Varint(u64::MAX),
+            UnknownValue::Fixed32(7),
+            UnknownValue::Fixed64(9),
+            UnknownValue::LengthDelimited(vec![0xAB; 300]),
+        ];
+        for (i, v) in values.iter().enumerate() {
+            let field = (i + 1) as u32;
+            set.insert(field, v.clone());
+            expected += tag_len(field) + value_len(v);
+            assert_eq!(set.encoded_len(), expected, "after insert #{i}");
+        }
+
+        let blob = vec![0u8; 70_000];
+        let mut other = UnknownFieldSet::new();
+        other.insert(u32::MAX, UnknownValue::LengthDelimited(blob.clone()));
+        set.merge_from(&other);
+        expected += tag_len(u32::MAX) + value_len(&UnknownValue::LengthDelimited(blob.clone()));
+        assert_eq!(set.encoded_len(), expected, "after merge_from");
+
+        // Cross-check against an independent full recomputation.
+        let recomputed: usize = set.iter().map(|(f, v)| tag_len(f) + value_len(v)).sum();
+        assert_eq!(set.encoded_len(), recomputed);
+    }
+
+    #[test]
+    fn store_enforces_max_unknown_bytes() {
+        let mut w = Writer::new();
+        crate::scalar::encode_string(&mut w, 3, &"y".repeat(4096));
+        let mut r = Reader::with_limits(
+            w.buf(),
+            DecoderLimits {
+                max_unknown_bytes: Some(16),
+                ..DecoderLimits::default()
+            },
+        );
+        let mut set = UnknownFieldSet::new();
+        let tag = r.read_tag().unwrap();
+        assert!(matches!(
+            set.store(tag, &mut r),
+            Err(crate::Error::LimitExceeded("max_unknown_bytes"))
+        ));
     }
 }

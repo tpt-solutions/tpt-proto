@@ -26,6 +26,8 @@ pub mod reflection;
 pub mod security;
 pub mod server;
 pub mod status;
+#[cfg(feature = "tls")]
+pub mod tls;
 pub mod timeout;
 pub mod transport;
 pub mod transport_http2;
@@ -70,8 +72,11 @@ pub use transport::{request, Channel, ClientStream, ServerStream, Transport};
 pub use framed::{deframe_stream, map_client_stream, map_server_stream, read_single_message};
 pub use service::ServiceHandler;
 pub use server::{
-    CleartextAcceptor, BoxedStream, Server, ServerBuilder, ServerConfig, StreamAcceptor,
+    AcceptedStream, CleartextAcceptor, BoxedStream, Server, ServerBuilder, ServerConfig,
+    StreamAcceptor,
 };
+#[cfg(feature = "tls")]
+pub use tls::RustlsAcceptor;
 pub use client::{
     Client, ClientStreamAcceptor, Endpoint, LoadBalancer, RetryPolicy, StaticLoadBalancer,
 };

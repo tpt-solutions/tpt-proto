@@ -825,7 +825,9 @@ mod tls_transport {
 
             let mut root_store = RootCertStore::empty();
             let mut reader = std::io::Cursor::new(&self.ca_cert);
-            for cert in certs(&mut reader).map_err(|e| anyhow!("parse CA: {e}"))? {
+            // rustls-pemfile 2.x: `certs` is a fallible iterator over PEM blocks.
+            for cert in certs(&mut reader) {
+                let cert = cert.map_err(|e| anyhow!("parse CA: {e}"))?;
                 root_store
                     .add(cert)
                     .map_err(|e| anyhow!("add CA cert: {e}"))?;
@@ -834,8 +836,9 @@ mod tls_transport {
                 .with_root_certificates(root_store)
                 .with_no_client_auth();
             let connector = TlsConnector::from(Arc::new(config));
-            let server_name = rustls::ServerName::try_from(host.as_str())
-                .map_err(|e| anyhow!("bad server name: {e}"))?;
+            let server_name =
+                rustls::pki_types::ServerName::try_from(host.to_string())
+                    .map_err(|e| anyhow!("bad server name: {e}"))?;
             let tls = connector
                 .connect(server_name, tcp)
                 .await

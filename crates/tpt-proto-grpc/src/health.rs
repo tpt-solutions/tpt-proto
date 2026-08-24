@@ -151,7 +151,7 @@ impl HealthRegistry {
     /// Set the status of a named service. Use `""` for the overall server.
     pub fn set_status(&self, service: &str, status: ServingStatus) {
         {
-            let mut map = self.inner.lock().unwrap();
+            let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             map.insert(service.to_string(), status);
         }
         self.broadcast(service, status);
@@ -162,7 +162,7 @@ impl HealthRegistry {
     /// `NOT_SERVING`; if no service is registered the overall is `UNKNOWN`;
     /// otherwise `SERVING`.
     pub fn get_status(&self, service: &str) -> ServingStatus {
-        let map = self.inner.lock().unwrap();
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if service.is_empty() {
             if map.is_empty() {
                 return ServingStatus::Unknown;
@@ -193,7 +193,7 @@ impl HealthRegistry {
         if service.is_empty() {
             return self.get_status("");
         }
-        let map = self.inner.lock().unwrap();
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         map.get(service)
             .copied()
             .unwrap_or(ServingStatus::ServiceUnknown)
@@ -203,13 +203,13 @@ impl HealthRegistry {
     /// `(service, status)` tuples on every [`set_status`](HealthRegistry::set_status)
     /// call. The server runtime converts these into `Watch` responses.
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<(String, ServingStatus)> {
-        let mut w = self.watchers.lock().unwrap();
+        let mut w = self.watchers.lock().unwrap_or_else(|e| e.into_inner());
         let tx = w.get_or_insert_with(|| tokio::sync::broadcast::channel(64).0);
         tx.subscribe()
     }
 
     fn broadcast(&self, service: &str, status: ServingStatus) {
-        if let Some(tx) = self.watchers.lock().unwrap().as_ref() {
+        if let Some(tx) = self.watchers.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             // Ignore send errors: no active subscribers.
             let _ = tx.send((service.to_string(), status));
         }

@@ -32,7 +32,7 @@ use crate::interceptor::{InterceptedHandler, Interceptor};
 use crate::metadata::Metadata;
 use crate::method::MethodKind;
 use crate::observability::{CallInstrumentor, CallLabels, Level, LogRecord, Observability, StreamingType};
-use crate::security::{identity_from_peer, SecurityPolicy};
+use crate::security::{identity_from_peer, SecurityPolicy, TlsConfig};
 use crate::service::ServiceHandler;
 use crate::status::{Code, Status};
 use crate::timeout::parse_timeout;
@@ -45,27 +45,43 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> TokioStream for T {}
 /// A boxed bidirectional byte stream (e.g. a TLS-wrapped socket).
 pub type BoxedStream = Box<dyn TokioStream>;
 
+/// The result of accepting a connection: the byte stream h2 will drive, plus
+/// any transport-derived peer identity material.
+pub struct AcceptedStream {
+    /// The byte stream h2 will use.
+    pub stream: BoxedStream,
+    /// The peer's verified TLS leaf certificate, when TLS was terminated here
+    /// and the peer presented one. `None` for cleartext or cert-less TLS.
+    pub peer_certificate: Option<crate::context::PeerCertificate>,
+}
+
 /// A future produced by a [`StreamAcceptor`].
-type AcceptFuture = BoxFuture<'static, std::io::Result<BoxedStream>>;
+type AcceptFuture = BoxFuture<'static, std::io::Result<AcceptedStream>>;
 
 /// Strategy for turning an accepted [`TcpStream`] into the byte stream the h2
-/// layer reads/writes.
+/// layer reads/writes, extracting transport-level peer identity on the way.
 ///
 /// The default [`CleartextAcceptor`] passes the socket through unchanged (h2c,
-/// for local development). TLS termination can be layered by supplying an
-/// acceptor that performs the TLS handshake (e.g. with `rustls`) before
-/// returning the decrypted stream.
+/// for local development). TLS termination is layered on by
+/// [`crate::tls::RustlsAcceptor`], which performs the rustls handshake and
+/// surfaces the verified peer certificate.
 pub trait StreamAcceptor: Send + Sync + 'static {
     /// Transform `stream` into the stream h2 will use.
     fn accept(&self, stream: TcpStream) -> AcceptFuture;
 }
 
 /// Default acceptor: cleartext HTTP/2 ("h2c").
+#[derive(Default)]
 pub struct CleartextAcceptor;
 
 impl StreamAcceptor for CleartextAcceptor {
     fn accept(&self, stream: TcpStream) -> AcceptFuture {
-        Box::pin(async move { Ok(Box::new(stream) as BoxedStream) })
+        Box::pin(async move {
+            Ok(AcceptedStream {
+                stream: Box::new(stream),
+                peer_certificate: None,
+            })
+        })
     }
 }
 
@@ -106,6 +122,11 @@ pub struct ServerConfig {
     /// `<service>/<method>`; failures abort the call with `UNAUTHENTICATED`
     /// or `PERMISSION_DENIED`.
     pub security: Option<Arc<SecurityPolicy>>,
+    /// Optional server-side TLS termination material.
+    ///
+    /// Consumed by `serve_listener` when built with the `tls` feature; see
+    /// [`ServerBuilder::with_tls`]. Always `None` in builds without TLS.
+    pub tls: Option<TlsConfig>,
 }
 
 impl Default for ServerConfig {
@@ -124,6 +145,7 @@ impl Default for ServerConfig {
             keepalive_timeout: Duration::from_secs(20),
             observability: Observability::default(),
             security: None,
+            tls: None,
         }
     }
 }
@@ -221,6 +243,19 @@ impl ServerBuilder {
         self
     }
 
+    /// Configure server-side TLS termination with the given material.
+    ///
+    /// Requires the `tls` feature. When set, [`Server::serve_listener`]
+    /// terminates TLS on every accepted socket via
+    /// [`crate::tls::RustlsAcceptor`]; malformed cert/key/CA fails fast at
+    /// serve time instead of at first connection. mTLS peers' verified
+    /// certificates flow into `RpcContext.peer.peer_certificate`.
+    #[cfg(feature = "tls")]
+    pub fn with_tls(mut self, tls: TlsConfig) -> Self {
+        self.config.tls = Some(tls);
+        self
+    }
+
     /// Build the [`Server`].
     pub fn build(self) -> Server {
         Server {
@@ -273,7 +308,7 @@ impl Server {
                 self.interceptors.clone(),
             ))
         };
-        let mut registry = self.registry.write().unwrap();
+        let mut registry = self.registry.write().unwrap_or_else(|e| e.into_inner());
         for (path, kind) in handler.methods() {
             let mut methods = HashMap::new();
             methods.insert(path.clone(), kind);
@@ -305,7 +340,21 @@ impl Server {
     }
 
     /// Serve incoming connections from an already-bound [`TcpListener`].
+    ///
+    /// Uses the configured TLS acceptor ([`ServerBuilder::with_tls`]) when TLS
+    /// is configured (requires the `tls` feature), failing fast on malformed
+    /// cert/key material rather than at first connection; otherwise cleartext
+    /// HTTP/2 ("h2c").
     pub async fn serve_listener(self, listener: TcpListener) -> std::io::Result<()> {
+        #[cfg(feature = "tls")]
+        if let Some(tls_config) = self.config.tls.clone() {
+            let acceptor = crate::tls::RustlsAcceptor::with_observability(
+                &tls_config,
+                self.config.observability.clone(),
+            )
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+            return self.serve_with_acceptor(listener, Arc::new(acceptor)).await;
+        }
         self.serve_with_acceptor(listener, Arc::new(CleartextAcceptor))
             .await
     }
@@ -337,8 +386,17 @@ impl Server {
                     let shutdown = self.shutdown.clone();
                     let rpc_sem = rpc_semaphore.clone();
                     conns.spawn(async move {
-                        let stream = acceptor.accept(stream).await?;
-                        handle_connection(stream, peer, registry, config, shutdown, rpc_sem).await
+                        let accepted = acceptor.accept(stream).await?;
+                        handle_connection(
+                            accepted.stream,
+                            accepted.peer_certificate,
+                            peer,
+                            registry,
+                            config,
+                            shutdown,
+                            rpc_sem,
+                        )
+                        .await
                     });
                 }
             }
@@ -360,6 +418,7 @@ impl Server {
 /// Drive a single h2 connection to completion.
 async fn handle_connection(
     stream: BoxedStream,
+    peer_certificate: Option<crate::context::PeerCertificate>,
     peer_addr: SocketAddr,
     registry: Arc<RwLock<HashMap<String, RegisteredService>>>,
     config: ServerConfig,
@@ -424,13 +483,23 @@ async fn handle_connection(
         match next {
             Some(Ok((request, respond))) => {
                 let peer = peer_addr.to_string();
+                let peer_certificate = peer_certificate.clone();
                 let registry = registry.clone();
                 let config = config.clone();
                 let shutdown = shutdown.clone();
                 let rpc_sem = rpc_semaphore.clone();
                 tokio::spawn(async move {
                     let _permit = rpc_sem.acquire().await.ok();
-                    handle_request(request, respond, peer, registry, config, shutdown).await;
+                    handle_request(
+                        request,
+                        respond,
+                        peer,
+                        peer_certificate,
+                        registry,
+                        config,
+                        shutdown,
+                    )
+                    .await;
                 });
             }
             Some(Err(e)) => {
@@ -448,6 +517,7 @@ async fn handle_request(
     request: http::Request<h2::RecvStream>,
     mut respond: h2::server::SendResponse<Bytes>,
     peer_addr: String,
+    peer_certificate: Option<crate::context::PeerCertificate>,
     registry: Arc<RwLock<HashMap<String, RegisteredService>>>,
     config: ServerConfig,
     shutdown: CancellationToken,
@@ -461,7 +531,7 @@ async fn handle_request(
     };
 
     let (handler, kind) = {
-        let reg = registry.read().unwrap();
+        let reg = registry.read().unwrap_or_else(|e| e.into_inner());
         match reg.get(&path) {
             Some(svc) => {
                 let kind = svc.methods.get(&path).copied().unwrap_or(MethodKind::Unary);
@@ -486,7 +556,12 @@ async fn handle_request(
             .map_err(|e| Status::new(Code::Internal, format!("send_response: {e}")))
     };
 
-    let (ctx, request_encoding) = build_context(&request, &peer_addr, config.max_metadata_size);
+    let (ctx, request_encoding) = build_context(
+        &request,
+        &peer_addr,
+        peer_certificate,
+        config.max_metadata_size,
+    );
 
     let streaming_type = StreamingType::from_flags(
         matches!(kind, MethodKind::ClientStreaming | MethodKind::BidiStreaming),
@@ -823,6 +898,7 @@ fn method_name(path: &str) -> Result<&str, Status> {
 fn build_context(
     request: &http::Request<h2::RecvStream>,
     peer_addr: &str,
+    peer_certificate: Option<crate::context::PeerCertificate>,
     max_metadata_size: usize,
 ) -> (RpcContext, Compression) {
     let headers = request.headers();
@@ -861,6 +937,7 @@ fn build_context(
             peer_addr: Some(peer_addr.to_string()),
             user_agent,
             auth_principal: None,
+            peer_certificate,
         }),
         extensions: Default::default(),
     };

@@ -19,6 +19,25 @@ pub struct PeerInfo {
     pub user_agent: Option<String>,
     /// An authenticated principal, if established by the transport.
     pub auth_principal: Option<String>,
+    /// The peer's verified TLS leaf certificate, when the connection was
+    /// terminated over TLS/mTLS by this process. `None` for cleartext
+    /// connections or when no certificate was presented.
+    pub peer_certificate: Option<PeerCertificate>,
+}
+
+/// A verified TLS certificate presented by the remote peer.
+///
+/// Populated by the TLS termination layer (`RustlsAcceptor`) after a completed
+/// handshake; carries the identity attributes extracted from the leaf
+/// certificate so authenticators can derive principals without re-parsing DER.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PeerCertificate {
+    /// Subject Common Name from the leaf certificate, if present.
+    pub subject_cn: Option<String>,
+    /// Subject Alternative Name DNS entries from the leaf certificate.
+    pub san_dns: Vec<String>,
+    /// DER encoding of the leaf certificate (for forwarding / audit logging).
+    pub der: Vec<u8>,
 }
 
 /// A small type-keyed bag for attaching arbitrary values to an RPC context.
