@@ -1,0 +1,41 @@
+﻿   Compiling tpt-proto-descriptor v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-descriptor)
+   Compiling tpt-proto-reflect v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-reflect)
+   Compiling tpt-proto-compiler v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-compiler)
+   Compiling tpt-proto-text v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-text)
+   Compiling tpt-proto-json v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-json)
+   Compiling tpt-proto-conformance v0.1.0 (C:\Programming\2 WIP\tpt-proto\crates\tpt-proto-conformance)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.81s
+     Running unittests src\lib.rs (target\debug\deps\tpt_proto_conformance-44ec1015b0070415.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (target\debug\deps\tpt_conformance-06df1ee3ae460c35.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\testee_main.rs (target\debug\deps\tpt_conformance_testee-7eeec78cd976d848.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\conformance.rs (target\debug\deps\conformance-542e33b6883d8f81.exe)
+
+running 4 tests
+test testee_loop_speaks_framed_protocol ... ok
+test harness_covers_required_areas ... ok
+test harness_all_cases_pass ... ok
+test status_classification_is_stable ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests tpt_proto_conformance
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

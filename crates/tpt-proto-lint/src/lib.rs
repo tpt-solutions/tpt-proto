@@ -143,6 +143,7 @@ fn lint_messages(
             }
             Some(om) => {
                 lint_message_fields(r, om, nm, &name);
+                check_reserved_and_extensions(r, &name, om, nm);
                 lint_messages(r, &om.nested_type, &nm.nested_type, &format!("{name}."));
                 lint_enums(r, &om.enum_type, &nm.enum_type, &name);
             }
@@ -260,6 +261,111 @@ fn check_field_compat(r: &mut Report, msg: &str, old: &FieldDescriptorProto, new
                 old.type_name, new.type_name
             ),
         });
+    }
+    // A JSON rename silently breaks JSON wire compatibility: existing producers
+    // keep emitting the old key and consumers looking up the new key see
+    // nothing. Only meaningful when at least one side declares an explicit
+    // `json_name`; otherwise it is derived from the (unchanged) field name.
+    match (&old.json_name, &new.json_name) {
+        (Some(a), Some(b)) if a != b => r.findings.push(Finding {
+            severity: Severity::Breaking,
+            code: "JSON_NAME_CHANGED",
+            message: format!(
+                "message `{msg}`: field `{name}` json_name changed from `{a}` to `{b}`"
+            ),
+        }),
+        (Some(a), None) => r.findings.push(Finding {
+            severity: Severity::Warning,
+            code: "JSON_NAME_CHANGED",
+            message: format!(
+                "message `{msg}`: field `{name}` explicit json_name `{a}` removed; JSON key now derived from the field name"
+            ),
+        }),
+        _ => {}
+    }
+    // Changing a proto2 default silently rewrites what unset fields read as.
+    if old.default_value != new.default_value {
+        let fmt = |v: &Option<String>| {
+            v.clone().unwrap_or_else(|| "(unset)".to_string())
+        };
+        r.findings.push(Finding {
+            severity: Severity::Warning,
+            code: "DEFAULT_VALUE_CHANGED",
+            message: format!(
+                "message `{msg}`: field `{name}` default changed from {} to {}",
+                fmt(&old.default_value),
+                fmt(&new.default_value)
+            ),
+        });
+    }
+}
+
+/// True when the inclusive range (`end == 0` means the single number `start`)
+/// contains `num`.
+fn range_covers(start: i32, end: i32, num: i32) -> bool {
+    if start > num {
+        return false;
+    }
+    if end == 0 {
+        start == num
+    } else {
+        num <= end
+    }
+}
+
+fn range_covers_range(start_a: i32, end_a: i32, start_b: i32, end_b: i32) -> bool {
+    // Does [a] fully contain [b]? Treat `end == 0` sentinels as single numbers.
+    if !range_covers(start_a, end_a, start_b) {
+        return false;
+    }
+    let b_end = if end_b == 0 { start_b } else { end_b };
+    range_covers(start_a, end_a, b_end)
+}
+
+/// Reserved ranges/names must never shrink (that would silently re-open a
+/// protected number/name to a future `FIELD_NUMBER_REUSED`), and dropping an
+/// extension range deserves a warning even though old binaries are unaffected.
+fn check_reserved_and_extensions(r: &mut Report, msg: &str, old: &DescriptorProto, new: &DescriptorProto) {
+    for orr in &old.reserved_range {
+        if !new.reserved_range.iter().any(|nrr| {
+            range_covers_range(nrr.start, nrr.end, orr.start, orr.end)
+        }) {
+            r.findings.push(Finding {
+                severity: Severity::Breaking,
+                code: "RESERVED_RANGE_SHRUNK",
+                message: format!(
+                    "message `{msg}`: reserved range {}..{} narrowed or removed; previously reserved numbers may now be reused",
+                    orr.start,
+                    if orr.end == 0 { orr.start } else { orr.end }
+                ),
+            });
+        }
+    }
+    for name in &old.reserved_name {
+        if !new.reserved_name.contains(name) {
+            r.findings.push(Finding {
+                severity: Severity::Breaking,
+                code: "RESERVED_NAME_REMOVED",
+                message: format!(
+                    "message `{msg}`: reserved name `{name}` removed; the name may now be reused"
+                ),
+            });
+        }
+    }
+    for oer in &old.extension_range {
+        if !new.extension_range.iter().any(|ner| {
+            range_covers_range(ner.start, ner.end, oer.start, oer.end)
+        }) {
+            r.findings.push(Finding {
+                severity: Severity::Warning,
+                code: "EXTENSION_RANGE_REMOVED",
+                message: format!(
+                    "message `{msg}`: extension range {}..{} removed or narrowed",
+                    oer.start,
+                    if oer.end == 0 { oer.start } else { oer.end }
+                ),
+            });
+        }
     }
 }
 
@@ -453,5 +559,81 @@ mod tests {
         let rep = lint(&old, &new);
         assert!(!rep.has_breaking());
         assert!(rep.findings.iter().any(|f| f.code == "FIELD_ADDED"));
+    }
+
+    #[test]
+    fn json_name_change_is_breaking() {
+        let mut of = fld("a", 1, FieldType::String);
+        of.json_name = Some("aId".into());
+        let mut nf = fld("a", 1, FieldType::String);
+        nf.json_name = Some("bId".into());
+        let old = FileDescriptorProto { message_type: vec![msg("M", vec![of])], ..Default::default() };
+        let new = FileDescriptorProto { message_type: vec![msg("M", vec![nf])], ..Default::default() };
+        let rep = lint(&old, &new);
+        assert!(rep.findings.iter().any(|f| f.code == "JSON_NAME_CHANGED" && f.severity == Severity::Breaking));
+    }
+
+    #[test]
+    fn default_value_change_is_warning() {
+        let mut of = fld("a", 1, FieldType::Int32);
+        of.default_value = Some("5".into());
+        let mut nf = fld("a", 1, FieldType::Int32);
+        nf.default_value = Some("9".into());
+        let old = FileDescriptorProto { message_type: vec![msg("M", vec![of])], ..Default::default() };
+        let new = FileDescriptorProto { message_type: vec![msg("M", vec![nf])], ..Default::default() };
+        let rep = lint(&old, &new);
+        assert!(!rep.has_breaking());
+        assert!(rep.findings.iter().any(|f| f.code == "DEFAULT_VALUE_CHANGED"));
+    }
+
+    #[test]
+    fn reserved_range_shrink_is_breaking() {
+        use tpt_proto_descriptor::{ExtensionRange, ReservedRange};
+        // Old reserves 10..=20 (start=10,end=20); new narrows to 10..=15.
+        let mut om = msg("M", vec![]);
+        om.reserved_range.push(ReservedRange { start: 10, end: 20 });
+        om.extension_range.push(ExtensionRange { start: 100, end: 0 });
+        let mut nm = msg("M", vec![]);
+        nm.reserved_range.push(ReservedRange { start: 10, end: 15 });
+        let old = FileDescriptorProto { message_type: vec![om], ..Default::default() };
+        let new = FileDescriptorProto { message_type: vec![nm], ..Default::default() };
+
+        let rep = lint(&old, &new);
+        assert!(rep.findings.iter().any(|f| f.code == "RESERVED_RANGE_SHRUNK" && f.severity == Severity::Breaking));
+        assert!(rep.findings.iter().any(|f| f.code == "EXTENSION_RANGE_REMOVED" && f.severity == Severity::Warning));
+
+        // Identical reservation must be silent.
+        let same_old = FileDescriptorProto {
+            message_type: vec![{
+                let mut m = msg("M", vec![]);
+                m.reserved_range.push(ReservedRange { start: 10, end: 20 });
+                m
+            }],
+            ..Default::default()
+        };
+        let same_new = FileDescriptorProto {
+            message_type: vec![{
+                let mut m = msg("M", vec![]);
+                m.reserved_range.push(ReservedRange { start: 10, end: 20 });
+                m
+            }],
+            ..Default::default()
+        };
+        let rep2 = lint(&same_old, &same_new);
+        assert!(!rep2.findings.iter().any(|f| f.code == "RESERVED_RANGE_SHRUNK"));
+    }
+
+    #[test]
+    fn reserved_name_removal_is_breaking() {
+        use tpt_proto_descriptor::ReservedRange;
+        let mut om = msg("M", vec![fld("gone", 7, FieldType::String)]);
+        om.reserved_name.push("gone".into());
+        om.reserved_range.push(ReservedRange { start: 7, end: 0 });
+        let old = FileDescriptorProto { message_type: vec![om.clone()], ..Default::default() };
+        let mut nm = msg("M", vec![]);
+        nm.reserved_range.push(ReservedRange { start: 7, end: 0 });
+        let new = FileDescriptorProto { message_type: vec![nm], ..Default::default() };
+        let rep = lint(&old, &new);
+        assert!(rep.findings.iter().any(|f| f.code == "RESERVED_NAME_REMOVED" && f.severity == Severity::Breaking));
     }
 }

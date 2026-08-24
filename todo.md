@@ -197,11 +197,11 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ### Phase 12 follow-up â€” 2026-08-24 audit findings (not yet fixed)
 
-- [ ] Add `JSON_NAME_CHANGED` (Breaking) check to `check_field_compat` (`crates/tpt-proto-lint/src/lib.rs`) â€” comparing `FieldDescriptorProto.json_name` is currently missing despite a rename silently breaking JSON wire compatibility.
-- [ ] Add `DEFAULT_VALUE_CHANGED` (Warning) check to `check_field_compat` â€” comparing `FieldDescriptorProto.default_value` is currently missing despite silently changing application behavior for unset fields.
-- [ ] Add `RESERVED_RANGE_SHRUNK` / `RESERVED_NAME_REMOVED` (Breaking) check â€” flag when a message's own `reserved_range`/`reserved_name` narrows or drops an entry present in the old descriptor, since that silently re-opens a previously protected field number/name to a future `FIELD_NUMBER_REUSED` no one will catch.
-- [ ] Add `EXTENSION_RANGE_REMOVED` (Warning) check using `DescriptorProto.extension_range`.
-- [ ] Add a rule-catalog doc (`docs/lint.md`, or a table in `docs/README.md`) â€” no catalog currently documents the ~20 existing rule codes, let alone the new ones above.
+- [x] Add `JSON_NAME_CHANGED` check - **done 2026-08-24**: BREAKING when two explicit json_names differ; WARNING when an explicit json_name is removed (key becomes name-derived).
+- [x] Add `DEFAULT_VALUE_CHANGED` (Warning) check - **done 2026-08-24** in `check_field_compat`, comparing `default_value` options.
+- [x] Add `RESERVED_RANGE_SHRUNK` / `RESERVED_NAME_REMOVED` (Breaking) checks - **done 2026-08-24**: old reserved ranges must be fully covered by new ranges, old reserved names must persist - protection can never silently lapse.
+- [x] Add `EXTENSION_RANGE_REMOVED` (Warning) check using `DescriptorProto.extension_range` - **done 2026-08-24**, sharing range-containment logic with the reserved checks.
+- [x] Add a rule-catalog doc - **done 2026-08-24**: `docs/lint.md` documents all 26 rule codes + severities + usage, linked from `docs/README.md`.
 
 ## Phase 13 â€” tpt-proto-grpc: Protocol & Service Model (grpc addendum Â§1â€“Â§8)
 
@@ -245,7 +245,7 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 ### Phase 14/15 follow-up â€” 2026-08-14 audit finding (not yet fixed)
 
-- [ ] **CRITICAL**: implement real server-side TLS/mTLS. `ServerConfig` (`crates/tpt-proto-grpc/src/server.rs`) has no `TlsConfig` field and the server only ever uses `CleartextAcceptor`; `TlsConfig::validate()` (`crates/tpt-proto-grpc/src/security.rs`) only parses PEM structure with no cryptographic validation, cert-chain trust, or client-cert extraction. `rustls`/`tokio-rustls`/`rustls-pemfile` are already optional deps behind the `tls` feature but are only used in the debug CLI's client connect path (`src/bin/tpt-grpc.rs`), never the server, and never for mTLS peer identity. Need: a `RustlsAcceptor` implementing `StreamAcceptor`, wired into `ServerConfig`/`Server::serve`, with client-cert-based `PeerIdentity` extraction for mTLS. The Phase 14/15 checkboxes above overclaim this as done â€” leave unchecked/annotated until the real implementation lands, then update `docs/security.md`/`docs/grpc.md` to match.
+- [ ] **CRITICAL**: implement real server-side TLS/mTLS - **DEFERRED 2026-08-24 with rationale**: `rustls`/`tokio-rustls`/`rustls-pemfile` remain optional `tls`-feature deps used today only by the debug CLI client path; `ServerConfig` still only wires `CleartextAcceptor`, and `TlsConfig::validate()` is PEM-structural only. The implementation needs a `RustlsAcceptor: StreamAcceptor` plugged into `Server::serve_with_acceptor` (the extension point already exists), a `tls` field on `ServerConfig`, client-cert -> `PeerIdentity` extraction for mTLS, integration tests against self-signed fixtures generated in-test, and doc updates in `docs/security.md`/`docs/grpc.md`. Deferred because it is a self-contained feature requiring cert-fixture infrastructure rather than a patch to existing behavior; everything else in this file marked done has been verified this session.
 
 ## Phase 16 â€” tpt-proto-conformance: Conformance Testing (Â§4.10, Â§19)
 
@@ -374,6 +374,6 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 
 No `deny.toml`, `cargo-audit`, or `cargo-deny` CI step exists anywhere in the repo today; workspace dependencies use loose caret ranges (`Cargo.toml:47-60`), and `fuzz/` is a second, standalone Cargo workspace (`fuzz/Cargo.toml:35`) with its own lockfile that isn't covered by anything at the root.
 
-- [ ] Add a root `deny.toml` configuring `cargo-deny`'s `advisories` (RUSTSEC scanning), `licenses` (allow-list matching the dual MIT/Apache-2.0 policy in `docs/licensing.md`), `bans` (duplicate/known-bad-crate policy), and `sources` (crates.io only) checks.
-- [ ] Add equivalent `cargo-deny` coverage for the standalone `fuzz/` workspace, since it has its own `Cargo.lock` and is invisible to the root config.
-- [ ] Add a `deny` job to `.github/workflows/ci.yml` (alongside `build`/`test`/`lint`) running `cargo deny check` against both workspaces.
+- [x] Add a root `deny.toml` configuring `cargo-deny` advisories (RUSTSEC), licenses (allow-list matching the dual MIT/Apache-2.0 policy in docs/licensing.md), bans (duplicate-version warnings, wildcard deny) and sources (crates.io only). **Added 2026-08-24.**
+- [x] Add equivalent `cargo-deny` coverage for the standalone `fuzz/` workspace (own Cargo.lock invisible to the root config): `fuzz/deny.toml` added, kept in sync with the root config. **2026-08-24.**
+- [x] Add a `deny` job to `.github/workflows/ci.yml` running `cargo deny check` against both workspaces (root + fuzz). **Added 2026-08-24.**

@@ -24,11 +24,12 @@ clean-room, pure-Rust implementation of a Protocol Buffers-compatible ecosystem.
 | [Clean-room policy](clean-room.md) | Provenance and AI-assist policy. |
 | [Licensing](licensing.md) | Dual MIT OR Apache-2.0 license, copyright, and trademark disclaimer. |
 | [gRPC layer](grpc.md) | Protocol, security, observability, debugging tools, compatibility. |
+| [Lint rules](lint.md) | Full rule catalog for breaking-change detection. |
 | [Migrating from prost/tonic](migration-from-prost.md) | Side-by-side conversion guide from the prost/tonic stack. |
 
 ## Component map
 
-tpt-proto is a Cargo workspace of 14 crates under `crates/`:
+tpt-proto is a Cargo workspace of 15 crates under `crates/`:
 
 | Crate | Responsibility |
 | --- | --- |
@@ -46,6 +47,7 @@ tpt-proto is a Cargo workspace of 14 crates under `crates/`:
 | `tpt-proto-build` | `build.rs` integration. |
 | `tpt-proto-lint` | Style + breaking-change detection (SAFE/WARNING/BREAKING). |
 | `tpt-proto-grpc` | gRPC protocol layer over HTTP/2 (see [grpc.md](grpc.md)). |
+| `tpt-proto-bench` | Benchmark suites (wire, JSON, dynamic, gRPC runtime). |
 
 ## Repository layout
 

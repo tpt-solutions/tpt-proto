@@ -50,6 +50,20 @@ tpt-proto's test suites and conformance harness.
   behavior from `spec.txt` and the conformance protocol, not from another
   implementation's outputs.
 
+### Hand-derived wire-format compatibility vectors (2026-08-24)
+
+- **Source:** `crates/tpt-proto-cli/tests/wire_compat_vectors.rs`.
+- **Derivation:** Every byte sequence computed by hand from the public binary
+  encoding rules only — tag math (`field_number << 3 | wire_type`), little-
+  endian fixed values, zigzag for `sint*`, 10-byte sign-extended varints for
+  negative `int32`, packed vs unpacked repeated encodings, unknown-field
+  preservation, and duplicate-scalar last-value-wins. No reference
+  implementation's serialized output was consulted or compared.
+- **Coverage:** `150`/"testing" scalars, packed `[3,270]` vs unpacked `[1,2]`,
+  negative int32 (`08 ff..01`), fixed32/64, sint32(-2)→zigzag(3),
+  sfixed64(-2) two's-complement, unknown field 99 preservation + re-encode,
+  duplicate scalar override.
+
 ## Prohibited Sources
 
 Test vectors must never be taken from the test directories or fixtures of other
