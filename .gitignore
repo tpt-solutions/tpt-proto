@@ -16,3 +16,7 @@ Thumbs.db
 # Fuzzing artifacts
 fuzz/artifacts/
 fuzz/corpus/
+
+# Test / build logs
+*.log
+fuzz/*.log

@@ -208,7 +208,7 @@ fn main() -> Result<()> {
             describe(&fd);
         }
         Command::Decode { proto, message, hex } => {
-            let dm = decode_hex(&proto, includes, &message, &hex)?;
+            let dm = decode_hex(&proto, &includes, &message, &hex)?;
             print_message(&dm, 0);
         }
         Command::Encode { proto, message, input, from, out } => {

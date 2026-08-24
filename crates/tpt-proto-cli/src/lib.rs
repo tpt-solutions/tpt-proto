@@ -315,8 +315,9 @@ pub fn apply_severity_overrides(
             .map(|(_, v)| v.as_str());
         match action {
             None => true,
-            Some("error") => {
-                f.severity = Severity::Error;
+            // The lint crate's own vocabulary: Safe / Warning / Breaking.
+            Some("error") | Some("breaking") => {
+                f.severity = Severity::Breaking;
                 true
             }
             Some("warning") => {
