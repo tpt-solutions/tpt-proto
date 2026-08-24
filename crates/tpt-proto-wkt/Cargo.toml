@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Well-known types (Timestamp, Duration, Any, Struct, etc.)"
+readme = "../../README.md"
+keywords = ["protobuf", "well-known-types", "timestamp", "duration"]
+categories = ["data-structures"]
 
 [dependencies]
 tpt-proto-core = { workspace = true }

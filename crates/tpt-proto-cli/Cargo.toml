@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Command line interface for the tpt-proto toolchain"
+readme = "../../README.md"
+keywords = ["protobuf", "cli", "proto3", "editions"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 tpt-proto-language = { workspace = true }

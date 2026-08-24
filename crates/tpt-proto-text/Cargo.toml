@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Text format printer and parser"
+readme = "../../README.md"
+keywords = ["protobuf", "text-format"]
+categories = ["encoding"]
 
 [dependencies]
 tpt-proto-descriptor = { workspace = true }
@@ -18,3 +21,4 @@ thiserror = { workspace = true }
 tpt-proto-core = { workspace = true }
 tpt-proto-language = { workspace = true }
 tpt-proto-compiler = { workspace = true }
+proptest = "1"

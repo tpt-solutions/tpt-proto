@@ -1,0 +1,61 @@
+// decoder-depth-guard.telos
+//
+// Formal model of the nesting-depth contract that tpt-proto-core's
+// `Reader::nested` (crates/tpt-proto-core/src/reader.rs:172-185) is supposed to
+// uphold everywhere a decoder crosses into a nested length-delimited message:
+// the child's depth must be exactly parent.depth + 1, and only when that does
+// not exceed the configured `max_depth` (tpt-proto-core/src/limits.rs).
+//
+// `enter` models the CORRECT behavior (what `Reader::nested` does).
+// `enter_buggy` models the actual bug found in `packed::read_packed_fixed32`
+// and `read_packed_fixed64` (crates/tpt-proto-core/src/packed.rs:63,79) and in
+// tpt-proto-reflect's packed-scalar decode branch: each constructs a fresh
+// `Reader::new(body)` instead of calling `parent.nested(body)`, so the child's
+// depth is unconditionally reset to 0 regardless of how deep the parent
+// already was — silently defeating `max_depth` and reopening the
+// stack-exhaustion DoS `DecoderLimits` exists to prevent.
+//
+// Run:
+//   telos verify decoder-depth-guard.telos
+//
+// Expected: `enter` => PASS, `enter_buggy` => FAIL with a counterexample.
+// See provenance/verification/README.md for the full run log and how this
+// maps back to the tpt-proto fix (todo.md, Phase 17 follow-up).
+
+@boundary(cpu_bound)
+module DecoderDepthGuard {
+    // Mirrors tpt-proto-core's DecoderLimits/Reader depth tracking: a
+    // decoder's nesting depth must never exceed the configured max_depth.
+    invariant Nesting {
+        depth >= 0
+        max_depth >= 0
+        depth <= max_depth
+    }
+
+    // Correct: matches Reader::nested. Entering one more nested
+    // length-delimited message is only valid when it doesn't exceed
+    // max_depth, and the child's depth is exactly parent.depth + 1.
+    func enter(n: Nesting)
+        requires n.depth + 1 <= n.max_depth
+        ensures n.depth == old(n.depth) + 1
+    {
+        mutate state {
+            n.depth += 1
+        }
+    }
+
+    // Buggy: matches packed::read_packed_fixed32/64 and
+    // tpt-proto-reflect's packed-scalar branch, which build a fresh
+    // Reader::new(body) and so unconditionally reset depth to 0 instead of
+    // propagating the parent's depth. Carries the same `ensures` as `enter`
+    // (the contract every nesting step must satisfy) so verification catches
+    // the divergence.
+    func enter_buggy(n: Nesting)
+        requires n.depth + 1 <= n.max_depth
+        ensures n.depth == old(n.depth) + 1
+    {
+        mutate state {
+            n.depth = 0
+        }
+    }
+}

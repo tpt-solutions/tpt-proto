@@ -184,29 +184,6 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// Enter a nested message (after the caller has read its length prefix).
-    /// Returns a sub-reader bounded to `len` bytes.
-    pub fn enter_message(&mut self, len: usize) -> crate::Result<Reader<'a>> {
-        self.limits.check_length(len)?;
-        if self.pos + len > self.buf.len() {
-            return Err(Error::LengthLimitExceeded { len });
-        }
-        let slice = &self.buf[self.pos..self.pos + len];
-        self.advance(len)?;
-        self.depth += 1;
-        if self.depth > self.limits.max_depth {
-            return Err(Error::DepthLimitExceeded);
-        }
-        Ok(Reader {
-            buf: slice,
-            pos: 0,
-            depth: 0,
-            field_count: 0,
-            limits: self.limits,
-            bytes_read: 0,
-        })
-    }
-
     /// Record that a field has been consumed (for `max_fields` accounting).
     pub fn record_field(&mut self) -> crate::Result<()> {
         self.field_count += 1;

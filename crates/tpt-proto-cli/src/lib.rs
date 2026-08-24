@@ -4,7 +4,7 @@
 //! and conversion commands that drive the language parser, compiler,
 //! reflection, codegen, JSON, and text layers.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
@@ -294,4 +294,109 @@ pub fn diff_descriptors(a: &[u8], b: &[u8]) -> Result<String> {
         out.push_str("(no message-name differences)\n");
     }
     Ok(out)
+}
+
+/// Scaffold a new tpt-proto starter crate at `<root>/<name>`.
+///
+/// Generates a minimal but fully working project: a `Cargo.toml` wired for
+/// `tpt-proto-core` + `tpt-proto-build`, a `build.rs` that compiles
+/// `proto/app.proto` into `$OUT_DIR`, and a `src/main.rs` demonstrating an
+/// encode/decode roundtrip. Returns the created directory path.
+///
+/// Fails unless `force` is set when the target directory already exists.
+pub fn init_project(name: &str, force: bool) -> Result<PathBuf> {
+    let valid = !name.is_empty()
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && !name.starts_with('-');
+    if !valid {
+        bail!("invalid crate name `{name}`: use ASCII letters, digits, `-`, `_`");
+    }
+
+    let root = PathBuf::from(name);
+    if root.exists() && !force {
+        bail!("directory `{}` already exists (pass --force to overwrite)", root.display());
+    }
+    std::fs::create_dir_all(root.join("src"))?;
+    std::fs::create_dir_all(root.join("proto"))?;
+
+    let cargo_toml = format!(
+        r#"[package]
+name = "{name}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tpt-proto-core = "0"
+
+[build-dependencies]
+tpt-proto-build = "0"
+"#
+    );
+    let build_rs = r#"fn main() {
+    tpt_proto_build::compile_protos_simple(
+        &["proto/app.proto".into()],
+        &["proto".into()],
+    )
+    .expect("protobuf compilation failed");
+}
+"#;
+    let app_proto = r#"syntax = "proto3";
+
+package app;
+
+message Item {
+  int64 id = 1;
+  string name = 2;
+}
+"#;
+    let main_rs = r#"//! Generated message types live in $OUT_DIR; include them here.
+include!(concat!(env!("OUT_DIR"), "/app.rs"));
+
+fn main() {
+    let item = Item { id: 1, name: "first".into(), ..Default::default() };
+    let bytes = item.encode_to_vec().expect("encode");
+    let back = Item::decode(&bytes).expect("decode");
+    assert_eq!(item.id, back.id);
+    println!("{back:?}");
+}
+"#;
+
+    std::fs::write(root.join("Cargo.toml"), cargo_toml)?;
+    std::fs::write(root.join("build.rs"), build_rs)?;
+    std::fs::write(root.join("proto").join("app.proto"), app_proto)?;
+    std::fs::write(root.join("src").join("main.rs"), main_rs)?;
+    std::fs::write(root.join(".gitignore"), "/target\n")?;
+    Ok(root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_scaffolds_working_layout() {
+        let base = std::env::temp_dir().join(format!("tpt_init_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&base).unwrap();
+
+        let path = init_project("demo", false).unwrap();
+        assert!(path.join("Cargo.toml").exists());
+        assert!(path.join("build.rs").exists());
+        assert!(path.join("proto").join("app.proto").exists());
+        assert!(path.join("src").join("main.rs").exists());
+
+        // Existing dir without --force must fail.
+        assert!(init_project("demo", false).is_err());
+        // With --force it succeeds and overwrites.
+        assert!(init_project("demo", true).is_ok());
+
+        // Invalid names are rejected.
+        assert!(init_project("", false).is_err());
+        assert!(init_project("has space", false).is_err());
+
+        std::env::set_current_dir(prev).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

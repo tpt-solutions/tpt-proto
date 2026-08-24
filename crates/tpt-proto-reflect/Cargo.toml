@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Descriptor-driven dynamic messages"
+readme = "../../README.md"
+keywords = ["protobuf", "reflection", "dynamic-message"]
+categories = ["encoding"]
 
 [dependencies]
 tpt-proto-descriptor = { workspace = true }

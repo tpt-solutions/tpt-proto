@@ -66,14 +66,38 @@ generated types integrate with `tpt-proto-json` and `tpt-proto-text`.
 
 ## `build.rs` integration
 
+The simple form — infers `$OUT_DIR` and uses default configuration:
+
 ```rust
 // build.rs
 fn main() {
-    tpt_proto_build::compile_protos(&["proto/user.proto"], &["proto"])
-        .expect("compile protos");
+    tpt_proto_build::compile_protos_simple(
+        &["proto/user.proto".into()],  // .proto inputs (files or directories)
+        &["proto".into()],             // import search paths
+    )
+    .expect("compile protos");
 }
 ```
 
-Includes path, output directory, codegen options, and incremental rebuild
-detection are configurable, and compile errors surface clearly to `cargo build`
-output. See the `tpt-proto-build` crate.
+The full form exposes every knob (gRPC stubs, incremental regeneration,
+package modules):
+
+```rust
+// build.rs
+fn main() {
+    tpt_proto_build::compile_protos(
+        &["proto/user.proto".into()],
+        &["proto".into()],
+        &std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()),
+        &tpt_proto_build::BuildConfig { grpc: true, ..Default::default() },
+    )
+    .expect("compile protos");
+}
+```
+
+Include paths, output directory, codegen options, and incremental rebuild
+detection are configurable, compile errors surface clearly to `cargo build`
+output, and `cargo:rerun-if-changed` is emitted automatically for each input
+`.proto`, imported dependency, and include directory so schema edits trigger
+rebuilds without extra wiring. See the `tpt-proto-build` crate docs for all
+[`BuildConfig`](../crates/tpt-proto-build/src/lib.rs) fields.

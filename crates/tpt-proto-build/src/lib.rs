@@ -8,8 +8,22 @@
 //! Typical usage in `build.rs`:
 //!
 //! ```no_run
+//! // Simplest form: infers $OUT_DIR and uses default configuration.
 //! fn main() -> std::io::Result<()> {
-//!     let config = tpt_proto_build::BuildConfig::default();
+//!     tpt_proto_build::compile_protos_simple(
+//!         &["proto/service.proto".into()],
+//!         &["proto".into()],
+//!     ).expect("protobuf compilation failed");
+//!     Ok(())
+//! }
+//! ```
+//!
+//! For gRPC code generation or incremental rebuilds, use [`compile_protos`]
+//! with an explicit [`BuildConfig`]:
+//!
+//! ```no_run
+//! fn main() -> std::io::Result<()> {
+//!     let config = tpt_proto_build::BuildConfig::grpc();
 //!     tpt_proto_build::compile_protos(
 //!         &["proto/service.proto".into()],
 //!         &["proto".into()],
@@ -19,6 +33,10 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! Both entry points emit `cargo:rerun-if-changed` directives for every input
+//! `.proto`, every included dependency, and every include directory, so Cargo
+//! automatically re-runs the build script whenever any schema input changes.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -88,6 +106,68 @@ fn collect_protos(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Compile the given `.proto` files (with `includes` as import search paths)
+/// and emit generated Rust modules into `$OUT_DIR` using default configuration.
+///
+/// This is the low-boilerplate equivalent of:
+///
+/// ```no_run
+/// # fn main() -> anyhow::Result<()> {
+/// let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR")?);
+/// tpt_proto_build::compile_protos(
+///     &[],
+///     &[],
+///     &out_dir,
+///     &tpt_proto_build::BuildConfig::default(),
+/// )?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Must be called from a `build.rs` (it reads the `OUT_DIR` environment
+/// variable set by Cargo). To enable gRPC stubs, incremental regeneration, or
+/// package-module wrapping, call [`compile_protos`] with a custom
+/// [`BuildConfig`] instead.
+pub fn compile_protos_simple(protos: &[PathBuf], includes: &[PathBuf]) -> Result<()> {
+    let out_dir = std::env::var_os("OUT_DIR").map(PathBuf::from).ok_or_else(|| {
+        anyhow::anyhow!("`OUT_DIR` is not set: compile_protos_simple must be called from build.rs")
+    })?;
+    compile_protos(protos, includes, &out_dir, &BuildConfig::default())
+}
+
+/// Tell Cargo when the build script must re-run: whenever any input `.proto`
+/// (as passed *or* as expanded from a directory), any imported dependency, or
+/// any include directory changes. Pointing at the include directories also
+/// covers files added to them later.
+///
+/// Emitted paths are relative-friendly: build scripts run with the crate
+/// manifest directory as CWD, so the raw paths Cargo receives resolve correctly.
+fn emit_rerun_if_changed(protos: &[PathBuf], includes: &[PathBuf], files: &[PathBuf]) {
+    // Only meaningful inside a build script; skipped elsewhere so plain library
+    // calls (and unit tests) don't print spurious cargo directives.
+    if std::env::var_os("OUT_DIR").is_none() {
+        return;
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut emit = |p: &Path| {
+        if seen.insert(p.to_path_buf()) {
+            println!("cargo:rerun-if-changed={}", p.display());
+        }
+    };
+    for p in protos {
+        emit(p);
+    }
+    for inc in includes {
+        emit(inc);
+        for dep in collect_protos(inc).unwrap_or_default() {
+            emit(&dep);
+        }
+    }
+    for f in files {
+        emit(f);
+    }
+}
+
+/// Compile the given `.proto` files (with `includes` as import search paths)
 /// and emit generated Rust modules into `out_dir`.
 ///
 /// Emits `<module>.rs` for each `.proto`, plus a generated `mod.rs` listing
@@ -104,6 +184,8 @@ pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path, 
     for p in protos {
         files.extend(collect_protos(p)?);
     }
+
+    emit_rerun_if_changed(protos, includes, &files);
 
     for path in &files {
         let stem = path
@@ -152,8 +234,16 @@ fn compile_one(path: &Path, includes: &[PathBuf], config: &BuildConfig) -> Resul
     // resolve during compilation.
     let mut parsed = parse_file(&name, &src);
     let mut diags: Vec<Diagnostic> = parsed.diagnostics.iter().cloned().collect();
+    // The input file itself often lives inside one of the include directories;
+    // merging it again would duplicate every symbol, so skip it by canonical
+    // path.
+    let canon_input = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     for inc in includes {
         for dep in collect_protos(inc)? {
+            let canon_dep = std::fs::canonicalize(&dep).unwrap_or_else(|_| dep.clone());
+            if canon_dep == canon_input || dep == path {
+                continue;
+            }
             let dsrc = std::fs::read_to_string(&dep).with_context(|| format!("reading {}", dep.display()))?;
             let dname = dep.file_name().and_then(|s| s.to_str()).unwrap_or("dep.proto").to_string();
             let dparsed = parse_file(&dname, &dsrc);
@@ -230,5 +320,21 @@ mod tests {
         compile_protos(&[src.clone()], &[], &out, &config).unwrap();
         let third_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
         assert_ne!(second_mtime, third_mtime, "output was not regenerated after source change");
+    }
+
+    #[test]
+    fn simple_wrapper_requires_out_dir() {
+        // Outside a build script there is no OUT_DIR, so the convenience
+        // wrapper must fail with a clear error rather than panic.
+        if std::env::var_os("OUT_DIR").is_some() {
+            return; // running in an environment that sets OUT_DIR; skip.
+        }
+        let root = std::env::temp_dir().join("tpt_simple_test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let src = root.join("m.proto");
+        std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; }").unwrap();
+        let err = compile_protos_simple(&[src], &[]).unwrap_err();
+        assert!(err.to_string().contains("OUT_DIR"), "unexpected error: {err}");
     }
 }

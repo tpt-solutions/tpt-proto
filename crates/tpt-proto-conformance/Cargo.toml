@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Conformance test harness and testee"
+readme = "../../README.md"
+keywords = ["protobuf", "conformance", "testing"]
+categories = ["development-tools::testing"]
 
 [[bin]]
 name = "tpt-conformance"

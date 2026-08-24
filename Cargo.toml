@@ -16,6 +16,7 @@ members = [
     "crates/tpt-proto-lint",
     "crates/tpt-proto-grpc",
     "crates/tpt-proto-bench",
+    "examples/grpc-echo",
 ]
 
 [workspace.package]

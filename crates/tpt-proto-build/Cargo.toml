@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "build.rs integration for .proto compilation"
+readme = "../../README.md"
+keywords = ["protobuf", "build-rs", "codegen"]
+categories = ["development-tools::build-utils"]
 
 [dependencies]
 tpt-proto-compiler = { workspace = true }
@@ -18,3 +21,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tpt-proto-core = { workspace = true }
+tpt-proto-reflect = { workspace = true }
+tpt-proto-json = { workspace = true }
+tpt-proto-text = { workspace = true }
+tpt-proto-cli = { workspace = true }

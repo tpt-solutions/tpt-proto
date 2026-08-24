@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Descriptor model and binary (de)serialization"
+readme = "../../README.md"
+keywords = ["protobuf", "descriptor", "reflection"]
+categories = ["encoding", "parsing"]
 
 [dependencies]
 tpt-proto-language = { workspace = true }

@@ -8,19 +8,22 @@ possible. It assumes a Cargo project.
 
 ## 1. Add dependencies
 
+You only need **one runtime crate** and **one build-time crate**:
+
 ```toml
 # Cargo.toml
 [dependencies]
-tpt-proto-core = "0"      # binary wire-format runtime
-tpt-proto-codegen-rust = "0"
-```
+tpt-proto-core = "0"      # binary wire-format runtime (encode/decode)
 
-For build-time code generation you also need:
-
-```toml
 [build-dependencies]
-tpt-proto-build = "0"
+tpt-proto-build = "0"     # compiles .proto -> Rust from build.rs
 ```
+
+> Do **not** add `tpt-proto-codegen-rust` to `[dependencies]` or
+> `[build-dependencies]` yourself: it is the code generator that
+> `tpt-proto-build` invokes internally at build time, and the generated code
+> only depends on `tpt-proto-core`. Depending on it directly is unnecessary and
+> will not make generated code appear.
 
 `build.rs` integration is documented in [Code generation](codegen.md) and the
 `build` crate.
@@ -60,8 +63,11 @@ pub mod user { include!("generated/user.rs"); }
 ```rust
 // build.rs
 fn main() {
-    tpt_proto_build::compile_protos(&["proto/user.proto"], &["proto"])
-        .expect("compile protos");
+    tpt_proto_build::compile_protos_simple(
+        &["proto/user.proto".into()],  // .proto inputs
+        &["proto".into()],             // import search paths
+    )
+    .expect("compile protos");
 }
 ```
 

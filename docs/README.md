@@ -24,6 +24,7 @@ clean-room, pure-Rust implementation of a Protocol Buffers-compatible ecosystem.
 | [Clean-room policy](clean-room.md) | Provenance and AI-assist policy. |
 | [Licensing](licensing.md) | Dual MIT OR Apache-2.0 license, copyright, and trademark disclaimer. |
 | [gRPC layer](grpc.md) | Protocol, security, observability, debugging tools, compatibility. |
+| [Migrating from prost/tonic](migration-from-prost.md) | Side-by-side conversion guide from the prost/tonic stack. |
 
 ## Component map
 

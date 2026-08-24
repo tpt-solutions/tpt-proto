@@ -195,6 +195,14 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] RPC input/output type change detection
 - [x] Machine-readable lint output format
 
+### Phase 12 follow-up — 2026-08-24 audit findings (not yet fixed)
+
+- [ ] Add `JSON_NAME_CHANGED` (Breaking) check to `check_field_compat` (`crates/tpt-proto-lint/src/lib.rs`) — comparing `FieldDescriptorProto.json_name` is currently missing despite a rename silently breaking JSON wire compatibility.
+- [ ] Add `DEFAULT_VALUE_CHANGED` (Warning) check to `check_field_compat` — comparing `FieldDescriptorProto.default_value` is currently missing despite silently changing application behavior for unset fields.
+- [ ] Add `RESERVED_RANGE_SHRUNK` / `RESERVED_NAME_REMOVED` (Breaking) check — flag when a message's own `reserved_range`/`reserved_name` narrows or drops an entry present in the old descriptor, since that silently re-opens a previously protected field number/name to a future `FIELD_NUMBER_REUSED` no one will catch.
+- [ ] Add `EXTENSION_RANGE_REMOVED` (Warning) check using `DescriptorProto.extension_range`.
+- [ ] Add a rule-catalog doc (`docs/lint.md`, or a table in `docs/README.md`) — no catalog currently documents the ~20 existing rule codes, let alone the new ones above.
+
 ## Phase 13 — tpt-proto-grpc: Protocol & Service Model (grpc addendum §1–§8)
 
 - [x] HTTP/2 POST + `/package.Service/Method` path routing
@@ -265,16 +273,21 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [x] Fuzz target: descriptor decoder
 - [x] Fuzz target: dynamic message decoder
 
-### Phase 17 follow-up — 2026-08-14 audit findings (not yet fixed)
+### Phase 17 follow-up — 2026-08-14 audit findings
 
-- [ ] **CRITICAL**: fix `max_depth`/`DecoderLimits` bypass in codegen-rust generated nested-message decode — `crates/tpt-proto-codegen-rust/src/lib.rs` builds sub-readers via `Reader::new(body)` instead of `parent.nested(body)`/`enter_message`, resetting depth to 0 and reverting to `DecoderLimits::default()` at every nested field (stack-overflow DoS via self-referential schemas; caller-supplied limits silently discarded). `tpt-proto-reflect`'s `DynamicMessage` decoder already does this correctly (`lib.rs:690-693`) — port the same fix to codegen.
-- [ ] **CRITICAL**: same bypass in `crates/tpt-proto-core/src/packed.rs` (`read_packed_varint`/`read_packed_fixed32`/`read_packed_fixed64`, `decode_map_entry`) — these also construct fresh `Reader::new` instead of propagating parent depth/limits; `decode_map_entry` doesn't even accept a parent reader.
-- [ ] Add regression tests exercising `max_depth` enforcement through the **generated-struct** decode path (not just reflection), plus a test that a custom/tightened `DecoderLimits` passed to a generated message is actually honored for nested fields.
-- [ ] Fix unbounded recursion depth in `Reader::skip()`'s `StartGroup` handling (`crates/tpt-proto-core/src/reader.rs:233-245`) — no depth accounting when skipping nested legacy groups.
+- [x] ~~**CRITICAL**: fix `max_depth`/`DecoderLimits` bypass in codegen-rust generated nested-message decode~~ — **stale, corrected 2026-08-24**: re-investigated directly against current code and `crates/tpt-proto-codegen-rust/src/lib.rs`'s generated `merge_from` (singular/optional/repeated message fields, oneof message variants, map key/value message entries) already calls `.nested()` correctly everywhere. No bug found here; the only `Reader::new(...)` call sites left in codegen-rust are legitimate top-level decode entry points (correctly starting depth at 0).
+- [x] **CRITICAL, fixed 2026-08-24**: the real remaining `max_depth`/`DecoderLimits` bypass was narrower than originally described — confined to `crates/tpt-proto-core/src/packed.rs`'s `read_packed_fixed32`/`read_packed_fixed64` (both built a fresh `Reader::new(body)`, discarding both depth *and* the caller's `DecoderLimits`) and the packed-scalar branch of `tpt-proto-reflect/src/lib.rs`'s `decode_one` (same bug, a few lines below the already-correct message-field branch). `read_packed_varint` and `decode_map_entry`/`decode_map_entry_frames` were already correct (contrary to the original note below) and already accept a parent reader. Fixed by routing both through the existing `Reader::nested`; regression tests added (`packed::tests::packed_fixed32_rejects_exceeding_depth`, `packed_fixed64_rejects_exceeding_depth`, `tpt-proto-reflect`'s `packed_scalar_field_rejects_exceeding_depth`) — each confirmed to fail against the pre-fix code. Also removed the dead, unreferenced `Reader::enter_message` (`reader.rs`), which had the same depth-reset bug and was a latent trap. See `provenance/verification/` for a formal model of the contract this fix restores, produced with `tpt-telos` as a verification spike.
+- [ ] Add regression tests exercising `max_depth` enforcement through the **generated-struct** decode path end-to-end (not just `tpt-proto-core`/`tpt-proto-reflect` directly), plus a test that a custom/tightened `DecoderLimits` passed to a generated message is actually honored for nested fields.
+- [x] ~~Fix unbounded recursion depth in `Reader::skip()`'s `StartGroup` handling~~ — **stale, corrected 2026-08-24**: `skip_inner` (`crates/tpt-proto-core/src/reader.rs`) already threads nesting depth via a function parameter (not a fresh `Reader`) and checks it against `max_depth` before descending into a group. Not actually vulnerable; no fix needed.
 - [ ] Add recursion-depth guard to `crates/tpt-proto-text/src/lib.rs` (`parse_message_body`) — currently zero depth limiting; deeply nested `{ }` text-format input stack-overflows.
 - [ ] Add recursion-depth guard to `crates/tpt-proto-json/src/lib.rs`'s message/Struct/Value/ListValue conversion recursion (the underlying `serde_json::Value` parse itself remains unbounded unless the parser is swapped — document that residual limitation explicitly rather than overclaiming).
 - [ ] Use constant-time comparison for secrets in `BearerTokenAuthenticator`/`MetadataAuthenticator` (`crates/tpt-proto-grpc/src/security.rs:278,318`) — currently ordinary `HashSet::contains`/`!=`, a timing side channel.
 - [ ] Update `docs/security.md` to accurately reflect the above once fixed (it currently overclaims full recursion/depth control across all decoders).
+
+### Phase 17 follow-up — 2026-08-24 audit findings (not yet fixed)
+
+- [ ] Enable the disabled CI fuzz job — `.github/workflows/ci.yml`'s `fuzz` job (line 47) has `if: false`, so **no fuzzing has ever actually run in CI** despite the fuzz targets existing. Split into a fast per-PR build-only sanity check (already what the job does) plus a separate scheduled (nightly) job that runs each of the 6 `fuzz/fuzz_targets/*` for a bounded duration (e.g. `-max_total_time=120`) against the existing `fuzz/corpus/` seeds.
+- [ ] Add a recursion-depth guard to the `.proto` **language parser** itself (`crates/tpt-proto-language/src/parser.rs`, recursive-descent through `parse_message`/`parse_message_body`/`parse_oneof`/`parse_extend`) — distinct from the wire-format depth bypasses above; `fuzz/README.md` already flags this as "tracked" but it isn't yet an item in this todo. Mirror the `max_depth` pattern from `DecoderLimits`: thread a depth counter through the recursive entry points and emit a parse diagnostic instead of recursing unbounded. Add a regression test/corpus entry with a pathologically deep `.proto` source.
 
 ## Phase 18 — Performance & Benchmarking (§21 — cross-cutting)
 
@@ -356,3 +369,11 @@ Phases are ordered by build dependency (each phase generally assumes prior phase
 - [ ] Add a fully runnable, end-to-end example crate under `examples/` (real `Cargo.toml` + `proto/*.proto` + `build.rs` + `src/main.rs`, `cargo run`-able) covering a plain message roundtrip and a real (non-mocked) TCP-based gRPC client/server pair — the current `examples/` directory only has proto/binary fixtures with no buildable crate, and `crates/tpt-proto-grpc/examples/grpc_echo` uses a checked-in pre-generated file over a mock in-process transport, not a real build.rs→network flow.
 - [ ] Add a `tpt-proto-cli init <name>` (or `tpt-proto new`) scaffold command generating a starter `Cargo.toml` + `build.rs` + `proto/` + `src/main.rs`, mirroring `cargo new` ergonomics — no such scaffolding command exists today.
 - [ ] Write `docs/migration-from-prost.md`: a side-by-side prost/tonic → tpt-proto migration guide (derive vs generated struct API, `prost_build`/`tonic_build` vs `tpt_proto_build`, `tonic::Server`/`Channel` vs `tpt_proto_grpc` equivalents, Cargo.toml dependency swap) — no such guide exists; the project's stated goal is to be a prost/tonic alternative but has zero conversion documentation today.
+
+## Phase 24 — Supply Chain & Dependency Security (2026-08-24 audit findings)
+
+No `deny.toml`, `cargo-audit`, or `cargo-deny` CI step exists anywhere in the repo today; workspace dependencies use loose caret ranges (`Cargo.toml:47-60`), and `fuzz/` is a second, standalone Cargo workspace (`fuzz/Cargo.toml:35`) with its own lockfile that isn't covered by anything at the root.
+
+- [ ] Add a root `deny.toml` configuring `cargo-deny`'s `advisories` (RUSTSEC scanning), `licenses` (allow-list matching the dual MIT/Apache-2.0 policy in `docs/licensing.md`), `bans` (duplicate/known-bad-crate policy), and `sources` (crates.io only) checks.
+- [ ] Add equivalent `cargo-deny` coverage for the standalone `fuzz/` workspace, since it has its own `Cargo.lock` and is invisible to the root config.
+- [ ] Add a `deny` job to `.github/workflows/ci.yml` (alongside `build`/`test`/`lint`) running `cargo deny check` against both workspaces.

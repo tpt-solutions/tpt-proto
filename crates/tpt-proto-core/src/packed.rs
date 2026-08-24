@@ -60,7 +60,7 @@ pub fn read_packed_fixed32(r: &mut Reader) -> crate::Result<Vec<u32>> {
         ));
     }
     let mut out = Vec::with_capacity(body.len() / 4);
-    let mut sub = Reader::new(body);
+    let mut sub = r.nested(body)?;
     while !sub.is_empty() {
         out.push(sub.read_fixed32()?);
     }
@@ -76,7 +76,7 @@ pub fn read_packed_fixed64(r: &mut Reader) -> crate::Result<Vec<u64>> {
         ));
     }
     let mut out = Vec::with_capacity(body.len() / 8);
-    let mut sub = Reader::new(body);
+    let mut sub = r.nested(body)?;
     while !sub.is_empty() {
         out.push(sub.read_fixed64()?);
     }
@@ -222,6 +222,54 @@ mod tests {
         // with the ordinary `Reader` helpers (mirrors generated decode paths).
         assert_eq!(Reader::new(&mk).read_string_owned().unwrap(), "a");
         assert_eq!(Reader::new(&mv).read_varint().unwrap(), 7);
+    }
+
+    #[test]
+    fn packed_fixed32_propagates_limits() {
+        use crate::limits::DecoderLimits;
+        let mut w = Writer::new();
+        encode_packed_fixed32(&mut w, 2, [10u32, 20, 30]);
+        let mut limits = DecoderLimits::default();
+        limits.max_depth = 1;
+        let mut r = Reader::with_limits(w.buf(), limits);
+        let _ = r.read_tag().unwrap();
+        // One nesting level deep must succeed (depth counted, not reset to
+        // zero by the packed-field decode).
+        assert!(read_packed_fixed32(&mut r).is_ok());
+    }
+
+    #[test]
+    fn packed_fixed32_rejects_exceeding_depth() {
+        use crate::limits::DecoderLimits;
+        let mut inner = Writer::new();
+        encode_packed_fixed32(&mut inner, 1, [1u32]);
+        let mut limits = DecoderLimits::default();
+        limits.max_depth = 1;
+        // Simulate the parent reader already being one level deep (as it
+        // would be after decoding into a nested message), then attempt a
+        // further packed decode: this must be depth 2, exceeding
+        // max_depth = 1. Before the fix this always succeeded because
+        // `read_packed_fixed32` built a fresh `Reader::new`, silently
+        // resetting depth to 0 regardless of the parent.
+        let root = Reader::with_limits(&[][..], limits);
+        let mut at_depth_1 = root.nested(inner.buf()).unwrap();
+        let _ = at_depth_1.read_tag().unwrap();
+        let res = read_packed_fixed32(&mut at_depth_1);
+        assert!(matches!(res, Err(crate::Error::DepthLimitExceeded)));
+    }
+
+    #[test]
+    fn packed_fixed64_rejects_exceeding_depth() {
+        use crate::limits::DecoderLimits;
+        let mut inner = Writer::new();
+        encode_packed_fixed64(&mut inner, 1, [1u64]);
+        let mut limits = DecoderLimits::default();
+        limits.max_depth = 1;
+        let root = Reader::with_limits(&[][..], limits);
+        let mut at_depth_1 = root.nested(inner.buf()).unwrap();
+        let _ = at_depth_1.read_tag().unwrap();
+        let res = read_packed_fixed64(&mut at_depth_1);
+        assert!(matches!(res, Err(crate::Error::DepthLimitExceeded)));
     }
 
     #[test]

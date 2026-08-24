@@ -129,6 +129,14 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Create a new tpt-proto starter project (`cargo new`-style scaffold).
+    Init {
+        /// Name of the new crate and directory.
+        name: String,
+        /// Overwrite files if the directory already exists.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -229,6 +237,13 @@ fn main() -> Result<()> {
         Command::Lint { old, new, json } => {
             let report = lint_files(&old, &new, json)?;
             print!("{report}");
+        }
+        Command::Init { name, force } => {
+            let path = tpt_proto_cli::init_project(&name, force)?;
+            println!("created new tpt-proto project at {}", path.display());
+            println!("next steps:");
+            println!("  cd {name}");
+            println!("  cargo run");
         }
     }
     Ok(())

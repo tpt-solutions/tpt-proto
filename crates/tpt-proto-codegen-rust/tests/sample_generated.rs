@@ -193,12 +193,12 @@ match tag.field_number {
 15 => {
             self.by = r.read_length_delimited()?.to_vec();
 }
-            16 => {
-                let __body = r.read_length_delimited()?;
-                let mut __sub = r.nested(__body)?;
-                self.nested = SampleNested::default();
-                self.nested.merge_from(&mut __sub)?;
-            }
+16 => {
+            let __body = r.read_length_delimited()?;
+            let mut __sub = r.nested(__body)?;
+            self.nested = SampleNested::default();
+            self.nested.merge_from(&mut __sub)?;
+}
                 _ => {
 self.unknown_fields.store(tag, r)?;
 }
@@ -556,37 +556,41 @@ match tag.field_number {
 2 => {
             self.strs.push(r.read_string_owned()?);
 }
-            3 => {
-                let __body = r.read_length_delimited()?;
-                let mut __sub = r.nested(__body)?;
-                let mut mv = SampleNested::default();
-                mv.merge_from(&mut __sub)?;
-                self.items.push(mv);
-            }
-            4 => {
-                let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;
-                let k = {
-                    let mut __kr = r.nested(__k_raw)?;
-                    __kr.read_string_owned()?
-                };
-                let v = {
-                    let mut __vr = r.nested(__v_raw)?;
-                    scalar::read_int32(__vr)?
-                };
-                self.labels.insert(k, v);
-            }
-            5 => {
-                let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;
-                let k = {
-                    let mut __kr = r.nested(__k_raw)?;
-                    scalar::read_int32(__kr)?
-                };
-                let v = {
-                    let mut __vr = r.nested(__v_raw)?;
-                    { let __body = __vr.read_length_delimited()?; let mut __sub = __vr.nested(__body)?; let mut __mv = SampleNested::default(); __mv.merge_from(&mut __sub)?; __mv }
-                };
-                self.by_id.insert(k, v);
-            }
+3 => {
+            let __body = r.read_length_delimited()?;
+            let mut __sub = r.nested(__body)?;
+            let mut mv = SampleNested::default();
+            mv.merge_from(&mut __sub)?;
+            self.items.push(mv);
+}
+4 => {
+            let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;
+            let k = {
+                let mut __kr_tmp = r.nested(__k_raw)?;
+                let __kr = &mut __kr_tmp;
+                __kr.read_string_owned()?
+            };
+            let v = {
+                let mut __vr_tmp = r.nested(__v_raw)?;
+                let __vr = &mut __vr_tmp;
+                scalar::read_int32(__vr)?
+            };
+            self.labels.insert(k, v);
+}
+5 => {
+            let (__k_raw, __v_raw) = packed::decode_map_entry_frames(r)?;
+            let k = {
+                let mut __kr_tmp = r.nested(__k_raw)?;
+                let __kr = &mut __kr_tmp;
+                scalar::read_int32(__kr)?
+            };
+            let v = {
+                let mut __vr_tmp = r.nested(__v_raw)?;
+                let __vr = &mut __vr_tmp;
+                { let __body = __vr.read_length_delimited()?; let mut __sub = __vr.nested(__body)?; let mut __mv = SampleNested::default(); __mv.merge_from(&mut __sub)?; __mv }
+            };
+            self.by_id.insert(k, v);
+}
 6 => {
             self.color = SampleColor::from_i32(scalar::read_int32(r)?);
 }
@@ -772,7 +776,7 @@ match tag.field_number {
                     self.choice = Some(SampleWithOneof_Choice::N(x));
                 }
                 3 => {
-                     let x = { let __body = r.read_length_delimited()?; let mut __sub = r.nested(__body)?; let mut __m = SampleNested::default(); __m.merge_from(&mut __sub)?; __m };
+                    let x = { let __body = r.read_length_delimited()?; let mut __sub = r.nested(__body)?; let mut __m = SampleNested::default(); __m.merge_from(&mut __sub)?; __m };
                     self.choice = Some(SampleWithOneof_Choice::Obj(x));
                 }
                 _ => {

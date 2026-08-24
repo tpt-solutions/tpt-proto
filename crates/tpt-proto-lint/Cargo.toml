@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Linting and breaking-change detection"
+readme = "../../README.md"
+keywords = ["protobuf", "lint", "breaking-changes"]
+categories = ["development-tools"]
 
 [dependencies]
 tpt-proto-descriptor = { workspace = true }

@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Binary wire format runtime (varint, tags, scalar codecs)"
+readme = "../../README.md"
+keywords = ["protobuf", "wire-format", "varint", "serialization"]
+categories = ["encoding"]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -16,4 +19,7 @@ bytes = { workspace = true, optional = true }
 default = []
 # Re-export `bytes::Bytes` for shared/sliced buffer support.
 bytes = ["dep:bytes"]
+
+[dev-dependencies]
+proptest = "1"
 

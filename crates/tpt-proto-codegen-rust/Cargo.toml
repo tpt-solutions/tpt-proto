@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Rust code generator for protobuf schemas"
+readme = "../../README.md"
+keywords = ["protobuf", "codegen", "rust"]
+categories = ["development-tools"]
 
 [dependencies]
 tpt-proto-compiler = { workspace = true }

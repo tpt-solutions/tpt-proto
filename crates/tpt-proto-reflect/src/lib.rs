@@ -698,7 +698,10 @@ fn decode_one(
             // packed?
             if wire == WireType::LengthDelimited && packed_allowed(t) && field.label == Some(Label::Repeated) {
                 let body = reader.read_length_delimited()?;
-                let mut sub = Reader::new(body);
+                // Propagate depth/limits so `max_depth` is enforced across the
+                // whole nesting chain (a fresh `Reader::new` would reset depth
+                // to 0 and revert to `DecoderLimits::default()`).
+                let mut sub = reader.nested(body)?;
                 let mut out = Vec::new();
                 while !sub.is_empty() {
                     out.push(decode_scalar(t, &mut sub)?);
@@ -912,6 +915,42 @@ message Person {
         let pool = DescriptorPool::from_file(&fd);
         let m = pool.lookup_message(msg).unwrap();
         (pool, m)
+    }
+
+    #[test]
+    fn packed_scalar_field_rejects_exceeding_depth() {
+        use tpt_proto_core::DecoderLimits;
+        let (pool, m) = pool_and(
+            r#"
+syntax = "proto3";
+package t;
+message M { repeated int32 nums = 1; }
+"#,
+            "t.M",
+        );
+        // Hand-build a message body: field 1 (LengthDelimited), 3 packed
+        // single-byte varints.
+        let mut body = Vec::new();
+        body.push(0x0A);
+        let inner = [1u8, 2, 3];
+        body.push(inner.len() as u8);
+        body.extend_from_slice(&inner);
+
+        let mut limits = DecoderLimits::default();
+        limits.max_depth = 1;
+        // Simulate already being one nesting level deep (as if `M` were
+        // itself a nested message), so the packed-scalar decode inside would
+        // need depth 2, exceeding max_depth = 1. Before the fix this always
+        // succeeded because the packed-scalar branch built a fresh
+        // `Reader::new`, silently resetting depth to 0 regardless of the
+        // parent.
+        let root = Reader::with_limits(&[][..], limits);
+        let mut at_depth_1 = root.nested(&body).unwrap();
+        let res = DynamicMessage::decode(&pool, m, &mut at_depth_1);
+        assert!(matches!(
+            res,
+            Err(ReflectError::Wire(tpt_proto_core::Error::DepthLimitExceeded))
+        ));
     }
 
     #[test]
