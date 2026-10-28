@@ -22,6 +22,69 @@ tpt-proto-text = { path = "../crates/tpt-proto-text" }
 tpt-proto-grpc = { path = "../crates/tpt-proto-grpc" }
 base64 = "0.22"
 
+[[bin]]
+name = "binary_decoder"
+path = "fuzz_targets/binary_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_decoder"
+path = "fuzz_targets/json_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_parser"
+path = "fuzz_targets/text_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "language_parser"
+path = "fuzz_targets/language_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "descriptor_decoder"
+path = "fuzz_targets/descriptor_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dynamic_decoder"
+path = "fuzz_targets/dynamic_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codec_decode_message"
+path = "fuzz_targets/codec_decode_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "grpc_metadata"
+path = "fuzz_targets/grpc_metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "grpc_status"
+path = "fuzz_targets/grpc_status.rs"
+test = false
+doc = false
+bench = false
+
 [features]
 # Default features deliberately do NOT pull in anything that requires a
 # C/LLVM toolchain, so the crate also builds and runs as a portable corpus
