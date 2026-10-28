@@ -26,7 +26,7 @@ use futures::stream;
 use futures::StreamExt;
 
 use tpt_proto_core::{Message, Reader};
-use tpt_proto_descriptor::{FileDescriptorSet, FileDescriptorProto};
+use tpt_proto_descriptor::{FileDescriptorProto, FileDescriptorSet};
 use tpt_proto_grpc::compression::Compression;
 use tpt_proto_grpc::health::{HealthCheckRequest, HealthCheckResponse, ServingStatus};
 use tpt_proto_grpc::metadata::Metadata;
@@ -218,7 +218,19 @@ async fn main() -> Result<()> {
             compression,
             tls,
             cacert,
-        } => cmd_health(&target, &service, &metadata, &metadata_bin, deadline, &compression, tls, cacert).await,
+        } => {
+            cmd_health(
+                &target,
+                &service,
+                &metadata,
+                &metadata_bin,
+                deadline,
+                &compression,
+                tls,
+                cacert,
+            )
+            .await
+        }
         Command::ListServices {
             target,
             metadata,
@@ -227,7 +239,18 @@ async fn main() -> Result<()> {
             compression,
             tls,
             cacert,
-        } => cmd_list_services(&target, &metadata, &metadata_bin, deadline, &compression, tls, cacert).await,
+        } => {
+            cmd_list_services(
+                &target,
+                &metadata,
+                &metadata_bin,
+                deadline,
+                &compression,
+                tls,
+                cacert,
+            )
+            .await
+        }
         Command::Reflect {
             target,
             symbol,
@@ -239,7 +262,21 @@ async fn main() -> Result<()> {
             compression,
             tls,
             cacert,
-        } => cmd_reflect(&target, symbol, file, list, &metadata, &metadata_bin, deadline, &compression, tls, cacert).await,
+        } => {
+            cmd_reflect(
+                &target,
+                symbol,
+                file,
+                list,
+                &metadata,
+                &metadata_bin,
+                deadline,
+                &compression,
+                tls,
+                cacert,
+            )
+            .await
+        }
         Command::Call {
             target,
             method,
@@ -357,7 +394,16 @@ async fn cmd_list_services(
     tls: bool,
     cacert: Option<PathBuf>,
 ) -> Result<()> {
-    let (names, _trailers) = reflection_list_services(target, metadata, metadata_bin, deadline, compression, tls, cacert).await?;
+    let (names, _trailers) = reflection_list_services(
+        target,
+        metadata,
+        metadata_bin,
+        deadline,
+        compression,
+        tls,
+        cacert,
+    )
+    .await?;
     for n in names {
         println!("{n}");
     }
@@ -382,7 +428,11 @@ async fn reflection_list_services(
     let req_bytes = req.encode_to_vec().map_err(|e| anyhow!("encode: {e}"))?;
     let stream: ClientStream<Vec<u8>> = Box::pin(stream::iter(vec![Ok(req_bytes)]));
     let (mut resp_stream, trailers) = transport
-        .bidi_streaming("/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo", md, stream)
+        .bidi_streaming(
+            "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+            md,
+            stream,
+        )
         .await
         .map_err(|s| anyhow!("rpc failed: {s}"))?;
     let first = resp_stream
@@ -428,7 +478,11 @@ async fn cmd_reflect(
     let req_bytes = req.encode_to_vec().map_err(|e| anyhow!("encode: {e}"))?;
     let stream: ClientStream<Vec<u8>> = Box::pin(stream::iter(vec![Ok(req_bytes)]));
     let (mut resp_stream, _trailers) = transport
-        .bidi_streaming("/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo", md, stream)
+        .bidi_streaming(
+            "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+            md,
+            stream,
+        )
         .await
         .map_err(|s| anyhow!("rpc failed: {s}"))?;
     let first = resp_stream
@@ -454,7 +508,10 @@ fn print_reflection_response(resp: &ServerReflectionResponse) {
         return;
     }
     if let Some(fd) = &resp.file_descriptor_response {
-        println!("file_descriptor_proto ({} file(s)):", fd.file_descriptor_proto.len());
+        println!(
+            "file_descriptor_proto ({} file(s)):",
+            fd.file_descriptor_proto.len()
+        );
         for bytes in &fd.file_descriptor_proto {
             match FileDescriptorProto::decode(bytes) {
                 Ok(f) => {
@@ -607,8 +664,16 @@ fn parse_compression(s: &str) -> Result<Compression> {
 fn parse_duration(s: &str) -> Result<Duration> {
     let s = s.trim();
     let (num, unit) = match s.find(|c: char| !c.is_ascii_digit() && c != '.') {
-        Some(i) => (s[..i].parse::<f64>().map_err(|e| anyhow!("bad duration: {e}"))?, &s[i..]),
-        None => (s.parse::<f64>().map_err(|e| anyhow!("bad duration: {e}"))?, "s"),
+        Some(i) => (
+            s[..i]
+                .parse::<f64>()
+                .map_err(|e| anyhow!("bad duration: {e}"))?,
+            &s[i..],
+        ),
+        None => (
+            s.parse::<f64>().map_err(|e| anyhow!("bad duration: {e}"))?,
+            "s",
+        ),
     };
     let secs = match unit {
         "ns" => num / 1e9,
@@ -653,7 +718,11 @@ fn prepare_descriptors(
     descriptor_set: Option<PathBuf>,
     message_type: &Option<String>,
     response_type: &Option<String>,
-) -> Result<(DescriptorPool, Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>, Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>)> {
+) -> Result<(
+    DescriptorPool,
+    Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>,
+    Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>,
+)> {
     let (pool, set) = match &descriptor_set {
         Some(p) => {
             let set = load_descriptor_set(p)?;
@@ -677,7 +746,10 @@ fn prepare_descriptors(
     Ok((pool, req_desc, resp_desc))
 }
 
-fn lookup_message(pool: &DescriptorPool, name: &str) -> Result<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>> {
+fn lookup_message(
+    pool: &DescriptorPool,
+    name: &str,
+) -> Result<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>> {
     pool.lookup_message(name)
         .ok_or_else(|| anyhow!("message type '{name}' not found in descriptor set"))
 }
@@ -692,8 +764,9 @@ fn encode_request(
 ) -> Result<Vec<u8>> {
     let raw_text = match (data, data_file) {
         (Some(d), _) => d,
-        (None, Some(f)) => std::fs::read_to_string(&f)
-            .with_context(|| format!("reading {}", f.display()))?,
+        (None, Some(f)) => {
+            std::fs::read_to_string(&f).with_context(|| format!("reading {}", f.display()))?
+        }
         (None, None) => String::new(),
     };
     if encoding.is_json() {
@@ -705,7 +778,8 @@ fn encode_request(
         } else {
             serde_json::from_str(&raw_text).map_err(|e| anyhow!("parse JSON: {e}"))?
         };
-        let dm = json_to_message(pool, desc, &value, opts).map_err(|e| anyhow!("json->message: {e}"))?;
+        let dm =
+            json_to_message(pool, desc, &value, opts).map_err(|e| anyhow!("json->message: {e}"))?;
         dm.encode().map_err(|e| anyhow!("encode: {e}"))
     } else {
         decode_bytes(&raw_text)
@@ -725,7 +799,8 @@ fn decode_response(
         })?;
         let dm = DynamicMessage::decode(pool, desc.clone(), &mut Reader::new(bytes))
             .map_err(|e| anyhow!("decode response: {e}"))?;
-        let value = message_to_json(pool, desc, &dm, opts).map_err(|e| anyhow!("message->json: {e}"))?;
+        let value =
+            message_to_json(pool, desc, &dm, opts).map_err(|e| anyhow!("message->json: {e}"))?;
         Ok(serde_json::to_string_pretty(&value).map_err(|e| anyhow!("json render: {e}"))?)
     } else {
         Ok(hex::encode(bytes))
@@ -811,12 +886,19 @@ mod tls_transport {
                 .strip_prefix("http://")
                 .or_else(|| s.strip_prefix("https://"))
                 .unwrap_or(s);
-            let (host, port) = s.rsplit_once(':').ok_or_else(|| anyhow!("invalid endpoint"))?;
+            let (host, port) = s
+                .rsplit_once(':')
+                .ok_or_else(|| anyhow!("invalid endpoint"))?;
             let port = port.parse::<u16>().map_err(|_| anyhow!("invalid port"))?;
             Ok((host.to_string(), port))
         }
 
-        async fn connect(&self) -> Result<(h2::client::SendRequest<Bytes>, h2::client::Connection<tokio_rustls::client::TlsStream<TcpStream>>)> {
+        async fn connect(
+            &self,
+        ) -> Result<(
+            h2::client::SendRequest<Bytes>,
+            h2::client::Connection<tokio_rustls::client::TlsStream<TcpStream>>,
+        )> {
             let (host, port) = self.host_and_port()?;
             let tcp = TcpStream::connect((host.as_str(), port))
                 .await
@@ -836,9 +918,8 @@ mod tls_transport {
                 .with_root_certificates(root_store)
                 .with_no_client_auth();
             let connector = TlsConnector::from(Arc::new(config));
-            let server_name =
-                rustls::pki_types::ServerName::try_from(host.to_string())
-                    .map_err(|e| anyhow!("bad server name: {e}"))?;
+            let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+                .map_err(|e| anyhow!("bad server name: {e}"))?;
             let tls = connector
                 .connect(server_name, tcp)
                 .await
@@ -872,16 +953,18 @@ mod tls_transport {
                 .await
                 .map_err(|e| Status::new(Code::Unavailable, format!("response: {e}")))?;
             if let Some(bytes) = request_body {
-                let framed = encode_message(&bytes, self.compression.clone(), self.max_message_size)
-                    .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+                let framed =
+                    encode_message(&bytes, self.compression.clone(), self.max_message_size)
+                        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
                 body_send
                     .send_data(Bytes::from(framed), true)
                     .map_err(|e| Status::new(Code::Internal, format!("send data: {e}")))?;
             } else if let Some(mut cs) = client_stream.take() {
                 while let Some(msg) = cs.next().await {
                     let msg = msg.map_err(|s| Status::new(Code::Internal, s.to_string()))?;
-                    let framed = encode_message(&msg, self.compression.clone(), self.max_message_size)
-                        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+                    let framed =
+                        encode_message(&msg, self.compression.clone(), self.max_message_size)
+                            .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
                     body_send
                         .send_data(Bytes::from(framed), false)
                         .map_err(|e| Status::new(Code::Internal, format!("send data: {e}")))?;
@@ -896,11 +979,18 @@ mod tls_transport {
             }
             let (parts, mut recv) = resp.into_parts();
             let body = collect_body(&mut recv, self.max_message_size).await?;
-            let trailers = recv.trailers().await.map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+            let trailers = recv
+                .trailers()
+                .await
+                .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
             Ok((body, parts.headers, trailers))
         }
 
-        fn build_request(&self, path: &str, metadata: &Metadata) -> Result<HttpRequest<()>, Status> {
+        fn build_request(
+            &self,
+            path: &str,
+            metadata: &Metadata,
+        ) -> Result<HttpRequest<()>, Status> {
             let (host, port) = self
                 .host_and_port()
                 .map_err(|e| Status::new(Code::InvalidArgument, e.to_string()))?;
@@ -922,16 +1012,16 @@ mod tls_transport {
                 builder = builder.header("grpc-encoding", self.compression.as_header());
             }
             if let Some(t) = self.timeout {
-                builder = builder.header("grpc-timeout", tpt_proto_grpc::timeout::format_timeout(t));
+                builder =
+                    builder.header("grpc-timeout", tpt_proto_grpc::timeout::format_timeout(t));
             }
-            builder.body(()).map_err(|e| Status::new(Code::Internal, e.to_string()))
+            builder
+                .body(())
+                .map_err(|e| Status::new(Code::Internal, e.to_string()))
         }
     }
 
-    async fn collect_body(
-        recv: &mut h2::RecvStream,
-        max: usize,
-    ) -> Result<Vec<u8>, Status> {
+    async fn collect_body(recv: &mut h2::RecvStream, max: usize) -> Result<Vec<u8>, Status> {
         let mut buf = Vec::new();
         while let Some(chunk) = recv.data().await {
             let chunk = chunk.map_err(|e| Status::new(Code::Internal, e.to_string()))?;
@@ -963,48 +1053,86 @@ mod tls_transport {
 
     #[async_trait::async_trait]
     impl Transport for TlsTransport {
-        async fn unary(&self, path: &str, metadata: Metadata, message: Vec<u8>) -> Result<(Vec<u8>, Metadata), Status> {
+        async fn unary(
+            &self,
+            path: &str,
+            metadata: Metadata,
+            message: Vec<u8>,
+        ) -> Result<(Vec<u8>, Metadata), Status> {
             let framed = encode_message(&message, self.compression.clone(), self.max_message_size)
                 .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
-            let (body, headers, trailers) = self.exchange(path, metadata, Some(framed), None).await?;
+            let (body, headers, trailers) =
+                self.exchange(path, metadata, Some(framed), None).await?;
             let frames = split_grpc_frames(&body)?;
-            let raw = frames.into_iter().next().ok_or_else(|| Status::new(Code::Internal, "empty response"))?;
+            let raw = frames
+                .into_iter()
+                .next()
+                .ok_or_else(|| Status::new(Code::Internal, "empty response"))?;
             let payload = decode_message(&raw, self.compression.clone(), self.max_message_size)
                 .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
             Ok((payload, merge_metadata(&headers, trailers.as_ref())))
         }
 
-        async fn server_streaming(&self, path: &str, metadata: Metadata, message: Vec<u8>) -> Result<(ServerStream<Vec<u8>>, Metadata), Status> {
+        async fn server_streaming(
+            &self,
+            path: &str,
+            metadata: Metadata,
+            message: Vec<u8>,
+        ) -> Result<(ServerStream<Vec<u8>>, Metadata), Status> {
             let framed = encode_message(&message, self.compression.clone(), self.max_message_size)
                 .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
-            let (body, headers, trailers) = self.exchange(path, metadata, Some(framed), None).await?;
+            let (body, headers, trailers) =
+                self.exchange(path, metadata, Some(framed), None).await?;
             let compression = self.compression.clone();
             let max = self.max_message_size;
             let frames = split_grpc_frames(&body)?;
             let stream = stream::iter(frames.into_iter().map(move |raw| {
-                decode_message(&raw, compression.clone(), max).map_err(|e| Status::new(Code::Internal, e.to_string()))
+                decode_message(&raw, compression.clone(), max)
+                    .map_err(|e| Status::new(Code::Internal, e.to_string()))
             }));
-            Ok((Box::pin(stream), merge_metadata(&headers, trailers.as_ref())))
+            Ok((
+                Box::pin(stream),
+                merge_metadata(&headers, trailers.as_ref()),
+            ))
         }
 
-        async fn client_streaming(&self, path: &str, metadata: Metadata, stream: ClientStream<Vec<u8>>) -> Result<(Vec<u8>, Metadata), Status> {
-            let (body, headers, trailers) = self.exchange(path, metadata, None, Some(stream)).await?;
+        async fn client_streaming(
+            &self,
+            path: &str,
+            metadata: Metadata,
+            stream: ClientStream<Vec<u8>>,
+        ) -> Result<(Vec<u8>, Metadata), Status> {
+            let (body, headers, trailers) =
+                self.exchange(path, metadata, None, Some(stream)).await?;
             let frames = split_grpc_frames(&body)?;
-            let raw = frames.into_iter().next().ok_or_else(|| Status::new(Code::Internal, "empty response"))?;
+            let raw = frames
+                .into_iter()
+                .next()
+                .ok_or_else(|| Status::new(Code::Internal, "empty response"))?;
             let payload = decode_message(&raw, self.compression.clone(), self.max_message_size)
                 .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
             Ok((payload, merge_metadata(&headers, trailers.as_ref())))
         }
 
-        async fn bidi_streaming(&self, path: &str, metadata: Metadata, stream: ClientStream<Vec<u8>>) -> Result<(ServerStream<Vec<u8>>, Metadata), Status> {
-            let (body, headers, trailers) = self.exchange(path, metadata, None, Some(stream)).await?;
+        async fn bidi_streaming(
+            &self,
+            path: &str,
+            metadata: Metadata,
+            stream: ClientStream<Vec<u8>>,
+        ) -> Result<(ServerStream<Vec<u8>>, Metadata), Status> {
+            let (body, headers, trailers) =
+                self.exchange(path, metadata, None, Some(stream)).await?;
             let compression = self.compression.clone();
             let max = self.max_message_size;
             let frames = split_grpc_frames(&body)?;
             let stream = stream::iter(frames.into_iter().map(move |raw| {
-                decode_message(&raw, compression.clone(), max).map_err(|e| Status::new(Code::Internal, e.to_string()))
+                decode_message(&raw, compression.clone(), max)
+                    .map_err(|e| Status::new(Code::Internal, e.to_string()))
             }));
-            Ok((Box::pin(stream), merge_metadata(&headers, trailers.as_ref())))
+            Ok((
+                Box::pin(stream),
+                merge_metadata(&headers, trailers.as_ref()),
+            ))
         }
     }
 

@@ -5,9 +5,9 @@
 //! value.
 
 use anyhow::{bail, Result};
+use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression as GzLevel;
-use flate2::read::GzDecoder;
 use std::io::{Read, Write};
 
 /// A gRPC compression algorithm, identified by its `grpc-encoding` header value.
@@ -81,10 +81,7 @@ impl Compression {
                 let mut out = Vec::new();
                 limited.read_to_end(&mut out)?;
                 if out.len() as u64 > max_size as u64 {
-                    bail!(
-                        "decompressed message length exceeds maximum {}",
-                        max_size
-                    );
+                    bail!("decompressed message length exceeds maximum {}", max_size);
                 }
                 Ok(out)
             }

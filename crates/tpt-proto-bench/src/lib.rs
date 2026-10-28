@@ -130,7 +130,10 @@ pub fn compile_msg(src: &str, msg: &str) -> (DescriptorPool, Arc<DescriptorProto
 
 pub fn build_person(pool: &DescriptorPool, desc: &Arc<DescriptorProto>) -> DynamicMessage {
     let mut dm = DynamicMessage::new(desc.clone(), pool.clone());
-    dm.set_field(1, Value::Scalar(ScalarValue::String("Alice Example".into())));
+    dm.set_field(
+        1,
+        Value::Scalar(ScalarValue::String("Alice Example".into())),
+    );
     dm.set_field(2, Value::Scalar(ScalarValue::I64(7)));
     dm.set_field(
         3,
@@ -142,8 +145,14 @@ pub fn build_person(pool: &DescriptorPool, desc: &Arc<DescriptorProto>) -> Dynam
     dm.set_field(
         4,
         Value::Map(vec![
-            (Value::Scalar(ScalarValue::String("home".into())), Value::Scalar(ScalarValue::I64(1))),
-            (Value::Scalar(ScalarValue::String("work".into())), Value::Scalar(ScalarValue::I64(2))),
+            (
+                Value::Scalar(ScalarValue::String("home".into())),
+                Value::Scalar(ScalarValue::I64(1)),
+            ),
+            (
+                Value::Scalar(ScalarValue::String("work".into())),
+                Value::Scalar(ScalarValue::I64(2)),
+            ),
         ]),
     );
     let mut sub = DynamicMessage::new(pool.lookup_message("bench.Sub").unwrap(), pool.clone());
@@ -155,7 +164,9 @@ pub fn build_person(pool: &DescriptorPool, desc: &Arc<DescriptorProto>) -> Dynam
 
 pub fn build_big(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, n: usize) -> DynamicMessage {
     let mut dm = DynamicMessage::new(desc.clone(), pool.clone());
-    let nums: Vec<Value> = (0..n as i64).map(|i| Value::Scalar(ScalarValue::I64(i))).collect();
+    let nums: Vec<Value> = (0..n as i64)
+        .map(|i| Value::Scalar(ScalarValue::I64(i)))
+        .collect();
     let strs: Vec<Value> = (0..n)
         .map(|i| Value::Scalar(ScalarValue::String(format!("str-{i}"))))
         .collect();
@@ -168,7 +179,11 @@ pub fn build_big(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, n: usize) -
     dm
 }
 
-pub fn build_nested(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, depth: usize) -> DynamicMessage {
+pub fn build_nested(
+    pool: &DescriptorPool,
+    desc: &Arc<DescriptorProto>,
+    depth: usize,
+) -> DynamicMessage {
     let mut leaf = DynamicMessage::new(desc.clone(), pool.clone());
     leaf.set_field(1, Value::Scalar(ScalarValue::I64(depth as i64)));
     for _ in 0..depth {
@@ -180,11 +195,21 @@ pub fn build_nested(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, depth: u
     leaf
 }
 
-pub fn build_packed(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, n: usize) -> DynamicMessage {
+pub fn build_packed(
+    pool: &DescriptorPool,
+    desc: &Arc<DescriptorProto>,
+    n: usize,
+) -> DynamicMessage {
     let mut dm = DynamicMessage::new(desc.clone(), pool.clone());
-    let a: Vec<Value> = (0..n as i32).map(|i| Value::Scalar(ScalarValue::I64(i as i64))).collect();
-    let b: Vec<Value> = (0..n as i64).map(|i| Value::Scalar(ScalarValue::I64(i))).collect();
-    let c: Vec<Value> = (0..n).map(|i| Value::Scalar(ScalarValue::F64((i as f64) * 0.5))).collect();
+    let a: Vec<Value> = (0..n as i32)
+        .map(|i| Value::Scalar(ScalarValue::I64(i as i64)))
+        .collect();
+    let b: Vec<Value> = (0..n as i64)
+        .map(|i| Value::Scalar(ScalarValue::I64(i)))
+        .collect();
+    let c: Vec<Value> = (0..n)
+        .map(|i| Value::Scalar(ScalarValue::F64((i as f64) * 0.5)))
+        .collect();
     dm.set_field(1, Value::List(a));
     dm.set_field(2, Value::List(b));
     dm.set_field(3, Value::List(c));

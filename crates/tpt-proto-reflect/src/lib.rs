@@ -7,10 +7,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use tpt_proto_core::{
-    scalar, Reader, WireType, Writer,
-};
 use tpt_proto_core::UnknownFieldSet;
+use tpt_proto_core::{scalar, Reader, WireType, Writer};
 use tpt_proto_descriptor::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FieldType, FileDescriptorProto,
     FileDescriptorSet, Label,
@@ -296,7 +294,11 @@ fn default_value_for(pool: &DescriptorPool, f: &FieldDescriptorProto) -> Value {
                 .and_then(|t| pool.lookup_message(t))
                 .map(|d| is_map_entry(&d))
                 .unwrap_or(false);
-        return if is_map { Value::Map(Vec::new()) } else { Value::List(Vec::new()) };
+        return if is_map {
+            Value::Map(Vec::new())
+        } else {
+            Value::List(Vec::new())
+        };
     }
     if let Some(FieldType::Message) | Some(FieldType::Group) = f.r#type {
         if let Some(d) = f.type_name.as_deref().and_then(|t| pool.lookup_message(t)) {
@@ -372,7 +374,11 @@ fn parse_bytes_default(s: &str) -> Vec<u8> {
                 b'0'..=b'7' => {
                     let mut v = 0u32;
                     let mut count = 0;
-                    while count < 3 && i < bytes.len() && bytes[i].is_ascii_digit() && (bytes[i] - b'0') < 8 {
+                    while count < 3
+                        && i < bytes.len()
+                        && bytes[i].is_ascii_digit()
+                        && (bytes[i] - b'0') < 8
+                    {
                         v = v * 8 + (bytes[i] - b'0') as u32;
                         i += 1;
                         count += 1;
@@ -454,7 +460,11 @@ impl DynamicMessage {
     }
 
     /// Decode a message from a reader using its descriptor.
-    pub fn decode(pool: &DescriptorPool, descriptor: Arc<DescriptorProto>, reader: &mut Reader) -> Result<DynamicMessage, ReflectError> {
+    pub fn decode(
+        pool: &DescriptorPool,
+        descriptor: Arc<DescriptorProto>,
+        reader: &mut Reader,
+    ) -> Result<DynamicMessage, ReflectError> {
         let mut msg = DynamicMessage::new(descriptor.clone(), pool.clone());
         while !reader.is_empty() {
             let tag = reader.read_tag()?;
@@ -560,7 +570,10 @@ impl DynamicMessage {
         self.descriptor
             .field
             .iter()
-            .find(|f| f.oneof_index == Some(oneof_index) && self.fields.contains_key(&f.number.unwrap_or(0)))
+            .find(|f| {
+                f.oneof_index == Some(oneof_index)
+                    && self.fields.contains_key(&f.number.unwrap_or(0))
+            })
             .and_then(|f| f.number)
     }
 
@@ -595,7 +608,9 @@ impl DynamicMessage {
                 Some(Value::Map(m)) => !m.is_empty(),
                 _ => false,
             },
-            Some(f) if f.oneof_index.is_some() => self.which_oneof(f.oneof_index.unwrap()).map_or(false, |active| active == number),
+            Some(f) if f.oneof_index.is_some() => self
+                .which_oneof(f.oneof_index.unwrap())
+                .map_or(false, |active| active == number),
             _ => self.fields.contains_key(&number),
         }
     }
@@ -635,8 +650,14 @@ fn insert_field(msg: &mut DynamicMessage, field: &FieldDescriptorProto, val: Val
         if is_map {
             let (k, v) = match &val {
                 Value::Message(dm) => (
-                    dm.fields.get(&1).cloned().unwrap_or(Value::Scalar(ScalarValue::I64(0))),
-                    dm.fields.get(&2).cloned().unwrap_or(Value::Scalar(ScalarValue::I64(0))),
+                    dm.fields
+                        .get(&1)
+                        .cloned()
+                        .unwrap_or(Value::Scalar(ScalarValue::I64(0))),
+                    dm.fields
+                        .get(&2)
+                        .cloned()
+                        .unwrap_or(Value::Scalar(ScalarValue::I64(0))),
                 ),
                 _ => (
                     Value::Scalar(ScalarValue::I64(0)),
@@ -650,7 +671,10 @@ fn insert_field(msg: &mut DynamicMessage, field: &FieldDescriptorProto, val: Val
                 .push((k, v));
             return;
         }
-        let entry = msg.fields.entry(number).or_insert_with(|| Value::List(Vec::new()));
+        let entry = msg
+            .fields
+            .entry(number)
+            .or_insert_with(|| Value::List(Vec::new()));
         match entry {
             Value::List(l) => match val {
                 Value::List(mut inner) => l.append(&mut inner),
@@ -696,7 +720,10 @@ fn decode_one(
         FieldType::Enum => Ok(Value::Enum(scalar::read_int32(reader)?)),
         _ => {
             // packed?
-            if wire == WireType::LengthDelimited && packed_allowed(t) && field.label == Some(Label::Repeated) {
+            if wire == WireType::LengthDelimited
+                && packed_allowed(t)
+                && field.label == Some(Label::Repeated)
+            {
                 let body = reader.read_length_delimited()?;
                 // Propagate depth/limits so `max_depth` is enforced across the
                 // whole nesting chain (a fresh `Reader::new` would reset depth
@@ -738,7 +765,12 @@ fn decode_scalar(t: FieldType, reader: &mut Reader) -> Result<Value, ReflectErro
     Ok(Value::Scalar(v))
 }
 
-fn encode_field(pool: &DescriptorPool, field: &FieldDescriptorProto, value: &Value, w: &mut Writer) -> Result<(), ReflectError> {
+fn encode_field(
+    pool: &DescriptorPool,
+    field: &FieldDescriptorProto,
+    value: &Value,
+    w: &mut Writer,
+) -> Result<(), ReflectError> {
     let number = field.number.unwrap_or(0) as u32;
     let t = field.r#type.unwrap_or(FieldType::String);
     match value {
@@ -796,16 +828,24 @@ fn write_scalar_value(w: &mut Writer, t: FieldType, value: &Value) -> Result<(),
         (FieldType::Int64, Value::Scalar(ScalarValue::I64(x))) => w.write_varint(*x as u64),
         (FieldType::Uint32, Value::Scalar(ScalarValue::U64(x))) => w.write_varint(*x),
         (FieldType::Uint64, Value::Scalar(ScalarValue::U64(x))) => w.write_varint(*x),
-        (FieldType::Sint32, Value::Scalar(ScalarValue::I64(x))) => w.write_varint(encode_zigzag32(*x as i32) as u64),
-        (FieldType::Sint64, Value::Scalar(ScalarValue::I64(x))) => w.write_varint(encode_zigzag64(*x)),
+        (FieldType::Sint32, Value::Scalar(ScalarValue::I64(x))) => {
+            w.write_varint(encode_zigzag32(*x as i32) as u64)
+        }
+        (FieldType::Sint64, Value::Scalar(ScalarValue::I64(x))) => {
+            w.write_varint(encode_zigzag64(*x))
+        }
         (FieldType::Fixed32, Value::Scalar(ScalarValue::U64(x))) => w.write_fixed32(*x as u32),
         (FieldType::Sfixed32, Value::Scalar(ScalarValue::I64(x))) => w.write_fixed32(*x as u32),
         (FieldType::Fixed64, Value::Scalar(ScalarValue::U64(x))) => w.write_fixed64(*x),
         (FieldType::Sfixed64, Value::Scalar(ScalarValue::I64(x))) => w.write_fixed64(*x as u64),
-        (FieldType::Float, Value::Scalar(ScalarValue::F64(x))) => w.write_fixed32((*x as f32).to_bits()),
+        (FieldType::Float, Value::Scalar(ScalarValue::F64(x))) => {
+            w.write_fixed32((*x as f32).to_bits())
+        }
         (FieldType::Double, Value::Scalar(ScalarValue::F64(x))) => w.write_fixed64(x.to_bits()),
         (FieldType::Bool, Value::Scalar(ScalarValue::Bool(b))) => w.write_varint(*b as u64),
-        (FieldType::String, Value::Scalar(ScalarValue::String(s))) => w.write_length_delimited(s.as_bytes()),
+        (FieldType::String, Value::Scalar(ScalarValue::String(s))) => {
+            w.write_length_delimited(s.as_bytes())
+        }
         (FieldType::Bytes, Value::Scalar(ScalarValue::Bytes(b))) => w.write_length_delimited(b),
         (FieldType::Enum, Value::Enum(e)) => w.write_varint(*e as u64),
         _ => return Err(ReflectError::TypeMismatch("scalar encode")),
@@ -840,7 +880,11 @@ message Person {
         let parsed = parse_file("ex.proto", SRC);
         assert!(!parsed.diagnostics.has_errors());
         let (fd, diags) = compile(&parsed.file);
-        assert!(!diags.has_errors(), "diags: {:?}", diags.iter().collect::<Vec<_>>());
+        assert!(
+            !diags.has_errors(),
+            "diags: {:?}",
+            diags.iter().collect::<Vec<_>>()
+        );
         let pool = DescriptorPool::from_file(&fd);
         let m = pool.lookup_message("ex.Person").unwrap();
         (pool, m)
@@ -876,7 +920,10 @@ message Person {
             decoded.get_field(1),
             Some(&Value::Scalar(ScalarValue::String("Alice".into())))
         );
-        assert_eq!(decoded.get_field(2), Some(&Value::Scalar(ScalarValue::I64(7))));
+        assert_eq!(
+            decoded.get_field(2),
+            Some(&Value::Scalar(ScalarValue::I64(7)))
+        );
         match decoded.get_field(3) {
             Some(Value::List(items)) => assert_eq!(items.len(), 2),
             other => panic!("expected list, got {other:?}"),
@@ -889,7 +936,10 @@ message Person {
             }
             other => panic!("expected map, got {other:?}"),
         }
-        assert_eq!(decoded.get_field(5), Some(&Value::Scalar(ScalarValue::String("e@z".into()))));
+        assert_eq!(
+            decoded.get_field(5),
+            Some(&Value::Scalar(ScalarValue::String("e@z".into())))
+        );
         assert!(decoded.get_field(6).is_none());
     }
 
@@ -909,9 +959,17 @@ message Person {
     fn pool_and(src: &str, msg: &str) -> (DescriptorPool, Arc<DescriptorProto>) {
         use tpt_proto_language::parse_file;
         let parsed = parse_file("t.proto", src);
-        assert!(!parsed.diagnostics.has_errors(), "parse: {:?}", parsed.diagnostics.iter().collect::<Vec<_>>());
+        assert!(
+            !parsed.diagnostics.has_errors(),
+            "parse: {:?}",
+            parsed.diagnostics.iter().collect::<Vec<_>>()
+        );
         let (fd, diags) = compile(&parsed.file);
-        assert!(!diags.has_errors(), "compile: {:?}", diags.iter().collect::<Vec<_>>());
+        assert!(
+            !diags.has_errors(),
+            "compile: {:?}",
+            diags.iter().collect::<Vec<_>>()
+        );
         let pool = DescriptorPool::from_file(&fd);
         let m = pool.lookup_message(msg).unwrap();
         (pool, m)
@@ -949,7 +1007,9 @@ message M { repeated int32 nums = 1; }
         let res = DynamicMessage::decode(&pool, m, &mut at_depth_1);
         assert!(matches!(
             res,
-            Err(ReflectError::Wire(tpt_proto_core::Error::DepthLimitExceeded))
+            Err(ReflectError::Wire(
+                tpt_proto_core::Error::DepthLimitExceeded
+            ))
         ));
     }
 
@@ -989,20 +1049,33 @@ message Foo {
         assert!(dm.field_has_presence(1));
         assert!(dm.field_has_presence(3));
         assert!(!dm.has_field(1));
-        assert_eq!(dm.default_field_value(1), Some(Value::Scalar(ScalarValue::I64(42))));
-        assert_eq!(dm.default_field_value(2), Some(Value::Scalar(ScalarValue::String(String::new()))));
-        assert_eq!(dm.default_field_value(3), Some(Value::Scalar(ScalarValue::Bool(false))));
+        assert_eq!(
+            dm.default_field_value(1),
+            Some(Value::Scalar(ScalarValue::I64(42)))
+        );
+        assert_eq!(
+            dm.default_field_value(2),
+            Some(Value::Scalar(ScalarValue::String(String::new())))
+        );
+        assert_eq!(
+            dm.default_field_value(3),
+            Some(Value::Scalar(ScalarValue::Bool(false)))
+        );
     }
 
     #[test]
     fn extension_roundtrip() {
         use tpt_proto_core::Reader;
         use tpt_proto_descriptor::{
-            DescriptorProto, ExtensionRange, FieldDescriptorProto, FieldType, FileDescriptorProto, Label,
+            DescriptorProto, ExtensionRange, FieldDescriptorProto, FieldType, FileDescriptorProto,
+            Label,
         };
         let mut msg = DescriptorProto::default();
         msg.name = Some("M".into());
-        msg.extension_range.push(ExtensionRange { start: 100, end: 200 });
+        msg.extension_range.push(ExtensionRange {
+            start: 100,
+            end: 200,
+        });
 
         let mut ext = FieldDescriptorProto::default();
         ext.name = Some("ext_i".into());
@@ -1027,6 +1100,9 @@ message Foo {
 
         let mut r = Reader::new(&bytes);
         let decoded = DynamicMessage::decode(&pool, m, &mut r).unwrap();
-        assert_eq!(decoded.get_extension(100), Some(&Value::Scalar(ScalarValue::I64(7))));
+        assert_eq!(
+            decoded.get_extension(100),
+            Some(&Value::Scalar(ScalarValue::I64(7)))
+        );
     }
 }

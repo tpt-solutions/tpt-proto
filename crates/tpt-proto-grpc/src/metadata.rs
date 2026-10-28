@@ -36,7 +36,11 @@ impl Metadata {
             bail!("reserved metadata key `{key}`");
         }
         for b in key.bytes() {
-            if !(b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_' || b == b'.')
+            if !(b.is_ascii_lowercase()
+                || b.is_ascii_digit()
+                || b == b'-'
+                || b == b'_'
+                || b == b'.')
             {
                 bail!("invalid metadata key `{key}`: keys must be lowercase ASCII");
             }
@@ -131,7 +135,11 @@ impl Metadata {
         Self::parse(headers, max_size, true)
     }
 
-    fn parse(headers: &[(String, String)], max_size: usize, allow_reserved: bool) -> Result<Metadata> {
+    fn parse(
+        headers: &[(String, String)],
+        max_size: usize,
+        allow_reserved: bool,
+    ) -> Result<Metadata> {
         let mut m = Metadata::new();
         for (k, v) in headers {
             Self::validate_key(k, allow_reserved)?;

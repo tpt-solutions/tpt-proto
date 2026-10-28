@@ -74,8 +74,8 @@ impl Echo for MyEcho {
                         let mut out = ExPong::default();
                         out.msg = format!("echo: {}", p.msg);
                         if tx.start_send(Ok(out)).is_err() {
-                             break;
-                         }
+                            break;
+                        }
                     }
                     Err(e) => {
                         let _ = tx.start_send(Err(e));
@@ -130,11 +130,7 @@ async fn server_streaming_over_tcp() {
     let mut ping = ExPing::default();
     ping.msg = "s".into();
     let resp = client.server_stream(Request::new(ping)).await.unwrap();
-    let msgs: Vec<String> = resp
-        .message
-        .map(|r| r.unwrap().msg)
-        .collect()
-        .await;
+    let msgs: Vec<String> = resp.message.map(|r| r.unwrap().msg).collect().await;
     assert_eq!(msgs, vec!["s-0", "s-1", "s-2"]);
 
     shutdown.cancel();
@@ -153,7 +149,10 @@ async fn client_streaming_over_tcp() {
         })
         .collect();
     let req_stream: ClientStream<ExPing> = Box::pin(futures::stream::iter(items));
-    let resp = client.client_stream(Request::new(req_stream)).await.unwrap();
+    let resp = client
+        .client_stream(Request::new(req_stream))
+        .await
+        .unwrap();
     assert_eq!(resp.message.msg, "count=4");
 
     shutdown.cancel();
@@ -173,11 +172,7 @@ async fn bidi_streaming_over_tcp() {
         .collect();
     let req_stream: ClientStream<ExPing> = Box::pin(futures::stream::iter(items));
     let resp = client.bidi(Request::new(req_stream)).await.unwrap();
-    let msgs: Vec<String> = resp
-        .message
-        .map(|r| r.unwrap().msg)
-        .collect()
-        .await;
+    let msgs: Vec<String> = resp.message.map(|r| r.unwrap().msg).collect().await;
     assert_eq!(msgs, vec!["echo: b0", "echo: b1", "echo: b2"]);
 
     shutdown.cancel();
@@ -203,7 +198,10 @@ async fn unary_error_status_surfaces() {
         )
         .await;
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().code, tpt_proto_grpc::Code::Unimplemented);
+    assert_eq!(
+        result.unwrap_err().code,
+        tpt_proto_grpc::Code::Unimplemented
+    );
 
     shutdown.cancel();
 }

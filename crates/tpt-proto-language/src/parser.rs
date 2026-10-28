@@ -28,8 +28,15 @@ pub fn parse_file(name: &str, src: &str) -> ParseResult {
         Err(e) => {
             let mut d = Diagnostics::new();
             d.push(
-                Diagnostic::error(ErrorCode::UnexpectedToken, e.message, Some(Span { start: e.pos, end: e.pos }))
-                    .with_suggestion("check the highlighted token"),
+                Diagnostic::error(
+                    ErrorCode::UnexpectedToken,
+                    e.message,
+                    Some(Span {
+                        start: e.pos,
+                        end: e.pos,
+                    }),
+                )
+                .with_suggestion("check the highlighted token"),
             );
             return ParseResult {
                 file: File {
@@ -127,9 +134,16 @@ impl Parser {
     fn expect_ident(&mut self) -> Option<Ident> {
         let tok = self.advance()?;
         match &tok.kind {
-            TokenKind::Ident(name) => Some(Ident { name: name.clone(), span: tok.span }),
+            TokenKind::Ident(name) => Some(Ident {
+                name: name.clone(),
+                span: tok.span,
+            }),
             _ => {
-                self.error(ErrorCode::UnexpectedToken, "expected identifier", Some(tok.span));
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    "expected identifier",
+                    Some(tok.span),
+                );
                 None
             }
         }
@@ -212,7 +226,11 @@ impl Parser {
             } else {
                 let span = self.peek().map(|t| t.span);
                 let kw = self.ident_text().unwrap_or_default();
-                self.error(ErrorCode::UnexpectedToken, format!("unexpected top-level token '{kw}'"), span);
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    format!("unexpected top-level token '{kw}'"),
+                    span,
+                );
                 self.advance();
             }
         }
@@ -230,13 +248,27 @@ impl Parser {
                 v
             }
             _ => {
-                self.error(ErrorCode::InvalidSyntax, "syntax value must be a string literal", self.peek().map(|t| t.span));
+                self.error(
+                    ErrorCode::InvalidSyntax,
+                    "syntax value must be a string literal",
+                    self.peek().map(|t| t.span),
+                );
                 return None;
             }
         };
         self.expect(&TokenKind::Semicolon);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(start);
-        Some(Syntax { span: Span { start: start.start, end: end.end }, value })
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(start);
+        Some(Syntax {
+            span: Span {
+                start: start.start,
+                end: end.end,
+            },
+            value,
+        })
     }
 
     fn parse_import(&mut self) -> Option<Import> {
@@ -257,13 +289,28 @@ impl Parser {
                 p
             }
             _ => {
-                self.error(ErrorCode::UnexpectedToken, "import path must be a string literal", self.peek().map(|t| t.span));
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    "import path must be a string literal",
+                    self.peek().map(|t| t.span),
+                );
                 return None;
             }
         };
         self.expect(&TokenKind::Semicolon);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        Some(Import { span: Span { start: span.start, end: end.end }, path, kind })
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        Some(Import {
+            span: Span {
+                start: span.start,
+                end: end.end,
+            },
+            path,
+            kind,
+        })
     }
 
     fn parse_option_name(&mut self) -> Option<String> {
@@ -361,7 +408,11 @@ impl Parser {
                 Some(Constant::List(items))
             }
             _ => {
-                self.error(ErrorCode::InvalidOption, "expected a constant value", Some(tok.span));
+                self.error(
+                    ErrorCode::InvalidOption,
+                    "expected a constant value",
+                    Some(tok.span),
+                );
                 None
             }
         }
@@ -374,8 +425,19 @@ impl Parser {
         self.expect(&TokenKind::Equals);
         let value = self.parse_constant()?;
         self.expect(&TokenKind::Semicolon);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        Some(ProtoOption { span: Span { start: span.start, end: end.end }, name, value })
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        Some(ProtoOption {
+            span: Span {
+                start: span.start,
+                end: end.end,
+            },
+            name,
+            value,
+        })
     }
 
     fn parse_type_ref(&mut self) -> Option<TypeRef> {
@@ -400,7 +462,14 @@ impl Parser {
             let i = self.expect_ident()?;
             name.push_str(&i.name);
         }
-        let span = Span { start: tok.span.start, end: self.tokens.get(self.pos).map(|t| t.span.end).unwrap_or(tok.span.end) };
+        let span = Span {
+            start: tok.span.start,
+            end: self
+                .tokens
+                .get(self.pos)
+                .map(|t| t.span.end)
+                .unwrap_or(tok.span.end),
+        };
         Some(TypeRef::Named(Ident { name, span }))
     }
 
@@ -465,7 +534,11 @@ impl Parser {
                     n
                 }
                 _ => {
-                    self.error(ErrorCode::UnexpectedToken, "group requires a field number", self.peek().map(|t| t.span));
+                    self.error(
+                        ErrorCode::UnexpectedToken,
+                        "group requires a field number",
+                        self.peek().map(|t| t.span),
+                    );
                     0
                 }
             }
@@ -551,7 +624,10 @@ impl Parser {
                 } else {
                     self.recover();
                 }
-            } else if self.is_scalar_keyword() || self.peek_kind() == Some(&TokenKind::Dot) || matches!(self.peek_kind(), Some(TokenKind::Ident(_))) {
+            } else if self.is_scalar_keyword()
+                || self.peek_kind() == Some(&TokenKind::Dot)
+                || matches!(self.peek_kind(), Some(TokenKind::Ident(_)))
+            {
                 if let Some(f) = self.parse_field() {
                     msg.fields.push(f);
                 } else {
@@ -560,7 +636,11 @@ impl Parser {
             } else {
                 let span = self.peek().map(|t| t.span);
                 let kw = self.ident_text().unwrap_or_default();
-                self.error(ErrorCode::UnexpectedToken, format!("unexpected token in message body: '{kw}'"), span);
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    format!("unexpected token in message body: '{kw}'"),
+                    span,
+                );
                 self.advance();
             }
         }
@@ -595,7 +675,11 @@ impl Parser {
                 n
             }
             _ => {
-                self.error(ErrorCode::UnexpectedToken, "expected field number", self.peek().map(|t| t.span));
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    "expected field number",
+                    self.peek().map(|t| t.span),
+                );
                 return None;
             }
         };
@@ -615,9 +699,16 @@ impl Parser {
             self.expect(&TokenKind::RBracket);
         }
         self.expect(&TokenKind::Semicolon);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
         Some(Field {
-            span: Span { start: span.start, end: end.end },
+            span: Span {
+                start: span.start,
+                end: end.end,
+            },
             name,
             number,
             ty,
@@ -628,7 +719,11 @@ impl Parser {
         })
     }
 
-    fn parse_field_option(&mut self, json_name: &mut Option<String>, default: &mut Option<Constant>) -> Option<ProtoOption> {
+    fn parse_field_option(
+        &mut self,
+        json_name: &mut Option<String>,
+        default: &mut Option<Constant>,
+    ) -> Option<ProtoOption> {
         let name = self.parse_option_name()?;
         if name == "json_name" {
             self.expect(&TokenKind::Equals);
@@ -676,7 +771,11 @@ impl Parser {
                     n
                 }
                 _ => {
-                    self.error(ErrorCode::UnexpectedToken, "expected field number", self.peek().map(|t| t.span));
+                    self.error(
+                        ErrorCode::UnexpectedToken,
+                        "expected field number",
+                        self.peek().map(|t| t.span),
+                    );
                     return None;
                 }
             };
@@ -694,9 +793,16 @@ impl Parser {
                 self.expect(&TokenKind::RBracket);
             }
             self.expect(&TokenKind::Semicolon);
-            let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
+            let end = self
+                .tokens
+                .get(self.pos.saturating_sub(1))
+                .map(|t| t.span)
+                .unwrap_or(span);
             fields.push(Field {
-                span: Span { start: span.start, end: end.end },
+                span: Span {
+                    start: span.start,
+                    end: end.end,
+                },
                 name: fname,
                 number,
                 ty,
@@ -707,8 +813,20 @@ impl Parser {
             });
         }
         self.expect(&TokenKind::RBrace);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        Some(Oneof { span: Span { start: span.start, end: end.end }, name, fields, options })
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        Some(Oneof {
+            span: Span {
+                start: span.start,
+                end: end.end,
+            },
+            name,
+            fields,
+            options,
+        })
     }
 
     fn parse_map(&mut self) -> Option<MapField> {
@@ -728,7 +846,11 @@ impl Parser {
                 n
             }
             _ => {
-                self.error(ErrorCode::UnexpectedToken, "expected field number", self.peek().map(|t| t.span));
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    "expected field number",
+                    self.peek().map(|t| t.span),
+                );
                 return None;
             }
         };
@@ -746,8 +868,22 @@ impl Parser {
             self.expect(&TokenKind::RBracket);
         }
         self.expect(&TokenKind::Semicolon);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        Some(MapField { span: Span { start: span.start, end: end.end }, name, number, key, value, options })
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        Some(MapField {
+            span: Span {
+                start: span.start,
+                end: end.end,
+            },
+            name,
+            number,
+            key,
+            value,
+            options,
+        })
     }
 
     fn parse_ranges(&mut self) -> Vec<IntRange> {
@@ -760,7 +896,11 @@ impl Parser {
                     n
                 }
                 _ => {
-                    self.error(ErrorCode::UnexpectedToken, "expected integer range bound", self.peek().map(|t| t.span));
+                    self.error(
+                        ErrorCode::UnexpectedToken,
+                        "expected integer range bound",
+                        self.peek().map(|t| t.span),
+                    );
                     break;
                 }
             };
@@ -788,11 +928,14 @@ impl Parser {
 
     fn parse_reserved(&mut self, msg: &mut Message) {
         self.advance(); // 'reserved'
-        // Could be names (strings) or number ranges.
+                        // Could be names (strings) or number ranges.
         if let Some(TokenKind::Str(_)) = self.peek_kind() {
             while let Some(TokenKind::Str(s)) = self.peek_kind().cloned() {
                 self.advance();
-                msg.reserved_names.push(Ident { name: s, span: self.peek().map(|t| t.span).unwrap_or_default() });
+                msg.reserved_names.push(Ident {
+                    name: s,
+                    span: self.peek().map(|t| t.span).unwrap_or_default(),
+                });
                 if self.peek_kind() == Some(&TokenKind::Comma) {
                     self.advance();
                 } else {
@@ -840,7 +983,10 @@ impl Parser {
                 if let Some(TokenKind::Str(_)) = self.peek_kind() {
                     while let Some(TokenKind::Str(s)) = self.peek_kind().cloned() {
                         self.advance();
-                        en.reserved_names.push(Ident { name: s, span: Span::default() });
+                        en.reserved_names.push(Ident {
+                            name: s,
+                            span: Span::default(),
+                        });
                         if self.peek_kind() == Some(&TokenKind::Comma) {
                             self.advance();
                         } else {
@@ -862,7 +1008,11 @@ impl Parser {
                         n
                     }
                     _ => {
-                        self.error(ErrorCode::UnexpectedToken, "expected enum value number", self.peek().map(|t| t.span));
+                        self.error(
+                            ErrorCode::UnexpectedToken,
+                            "expected enum value number",
+                            self.peek().map(|t| t.span),
+                        );
                         return None;
                     }
                 };
@@ -880,17 +1030,33 @@ impl Parser {
                     self.expect(&TokenKind::RBracket);
                 }
                 self.expect(&TokenKind::Semicolon);
-                en.values.push(EnumValue { span, name: vname, number, options });
+                en.values.push(EnumValue {
+                    span,
+                    name: vname,
+                    number,
+                    options,
+                });
             } else {
                 let span = self.peek().map(|t| t.span);
                 let kw = self.ident_text().unwrap_or_default();
-                self.error(ErrorCode::UnexpectedToken, format!("unexpected token in enum body: '{kw}'"), span);
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    format!("unexpected token in enum body: '{kw}'"),
+                    span,
+                );
                 self.advance();
             }
         }
         self.expect(&TokenKind::RBrace);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        en.span = Span { start: span.start, end: end.end };
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        en.span = Span {
+            start: span.start,
+            end: end.end,
+        };
         Some(en)
     }
 
@@ -919,13 +1085,24 @@ impl Parser {
             } else {
                 let span = self.peek().map(|t| t.span);
                 let kw = self.ident_text().unwrap_or_default();
-                self.error(ErrorCode::UnexpectedToken, format!("unexpected token in service body: '{kw}'"), span);
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    format!("unexpected token in service body: '{kw}'"),
+                    span,
+                );
                 self.advance();
             }
         }
         self.expect(&TokenKind::RBrace);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        service.span = Span { start: span.start, end: end.end };
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        service.span = Span {
+            start: span.start,
+            end: end.end,
+        };
         Some(service)
     }
 
@@ -941,7 +1118,11 @@ impl Parser {
         let input = self.parse_type_ref()?;
         self.expect(&TokenKind::RParen);
         if !self.at_keyword("returns") {
-            self.error(ErrorCode::UnexpectedToken, "expected 'returns'", self.peek().map(|t| t.span));
+            self.error(
+                ErrorCode::UnexpectedToken,
+                "expected 'returns'",
+                self.peek().map(|t| t.span),
+            );
             return None;
         }
         self.advance(); // 'returns'
@@ -966,9 +1147,16 @@ impl Parser {
         } else {
             self.expect(&TokenKind::Semicolon);
         }
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
         Some(Method {
-            span: Span { start: span.start, end: end.end },
+            span: Span {
+                start: span.start,
+                end: end.end,
+            },
             name,
             input,
             output,
@@ -1001,8 +1189,15 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RBrace);
-        let end = self.tokens.get(self.pos.saturating_sub(1)).map(|t| t.span).unwrap_or(span);
-        ext.span = Span { start: span.start, end: end.end };
+        let end = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.span)
+            .unwrap_or(span);
+        ext.span = Span {
+            start: span.start,
+            end: end.end,
+        };
         Some(ext)
     }
 }

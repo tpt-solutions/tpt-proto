@@ -5,9 +5,7 @@
 
 use std::sync::Arc;
 
-use tpt_proto_descriptor::{
-    DescriptorProto, FieldDescriptorProto, FieldType, Label,
-};
+use tpt_proto_descriptor::{DescriptorProto, FieldDescriptorProto, FieldType, Label};
 use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue as RScalar, Value};
 
 /// Errors raised while parsing text format.
@@ -172,7 +170,11 @@ fn print_map_value(
     out: &mut String,
 ) {
     if let Value::Message(m) = v {
-        if let Some(entry) = field.type_name.as_deref().and_then(|t| pool.lookup_message(t)) {
+        if let Some(entry) = field
+            .type_name
+            .as_deref()
+            .and_then(|t| pool.lookup_message(t))
+        {
             if let Some(vf) = entry.field.iter().find(|f| f.number == Some(2)) {
                 if let Some(sub) = vf.type_name.as_deref().and_then(|t| pool.lookup_message(t)) {
                     print_message(pool, &sub, m, opts, indent, out);
@@ -229,7 +231,9 @@ fn map_key_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
         (Value::Scalar(Bool(x)), Value::Scalar(Bool(y))) => x.cmp(y),
         (Value::Scalar(I64(x)), Value::Scalar(I64(y))) => x.cmp(y),
         (Value::Scalar(U64(x)), Value::Scalar(U64(y))) => x.cmp(y),
-        (Value::Scalar(F64(x)), Value::Scalar(F64(y))) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
+        (Value::Scalar(F64(x)), Value::Scalar(F64(y))) => {
+            x.partial_cmp(y).unwrap_or(Ordering::Equal)
+        }
         _ => Ordering::Equal,
     }
 }
@@ -274,7 +278,11 @@ pub fn text_to_message(
     opts: &TextOptions,
 ) -> Result<DynamicMessage, TextError> {
     let tokens = tokenize(input)?;
-    let mut p = Parser { toks: tokens, pos: 0, opts };
+    let mut p = Parser {
+        toks: tokens,
+        pos: 0,
+        opts,
+    };
     let mut msg = DynamicMessage::new(Arc::new(descriptor.clone()), pool.clone());
     // Skip the optional top-level message delimiter (`{`/`}` or `<`/`>`).
     if matches!(p.peek(), Some(Tok::LBrace) | Some(Tok::LAngle)) {
@@ -374,7 +382,10 @@ fn tokenize(input: &str) -> Result<Vec<Tok>, TextError> {
                 i = ni;
             }
             _ => {
-                return Err(TextError::Lex(i as u32, format!("unexpected byte {:?}", c as char)));
+                return Err(TextError::Lex(
+                    i as u32,
+                    format!("unexpected byte {:?}", c as char),
+                ));
             }
         }
     }
@@ -445,7 +456,24 @@ fn parse_number(input: &str, start: usize) -> Result<(Tok, usize), TextError> {
     let mut i = start;
     while i < n {
         let c = bytes[i];
-        if c.is_ascii_digit() || c == b'.' || c == b'-' || c == b'+' || c == b'e' || c == b'E' || c == b'x' || c == b'a' || c == b'b' || c == b'c' || c == b'd' || c == b'f' || c == b'A' || c == b'B' || c == b'C' || c == b'D' || c == b'F' {
+        if c.is_ascii_digit()
+            || c == b'.'
+            || c == b'-'
+            || c == b'+'
+            || c == b'e'
+            || c == b'E'
+            || c == b'x'
+            || c == b'a'
+            || c == b'b'
+            || c == b'c'
+            || c == b'd'
+            || c == b'f'
+            || c == b'A'
+            || c == b'B'
+            || c == b'C'
+            || c == b'D'
+            || c == b'F'
+        {
             i += 1;
         } else {
             break;
@@ -492,7 +520,10 @@ impl Parser<'_> {
     fn expect(&mut self, t: &Tok) -> Result<(), TextError> {
         match self.next() {
             Some(ref x) if x == t => Ok(()),
-            other => Err(TextError::Syntax(format!("expected {:?}, got {:?}", t, other))),
+            other => Err(TextError::Syntax(format!(
+                "expected {:?}, got {:?}",
+                t, other
+            ))),
         }
     }
 
@@ -524,7 +555,9 @@ impl Parser<'_> {
                     self.expect(&Tok::RBracket)?;
                     // Determine target: either an extension or Any-like; we look up the message
                     // and nest its body into a field named by the type if present.
-                    let sub = pool.lookup_message(&type_name).ok_or_else(|| TextError::Unknown(type_name.clone()))?;
+                    let sub = pool
+                        .lookup_message(&type_name)
+                        .ok_or_else(|| TextError::Unknown(type_name.clone()))?;
                     let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
                     match self.peek() {
                         Some(Tok::LBrace) | Some(Tok::LAngle) => {
@@ -534,7 +567,10 @@ impl Parser<'_> {
                         }
                         _ => {}
                     }
-                    if let Some(f) = descriptor.field.iter().find(|f| f.type_name.as_deref() == Some(&format!(".{type_name}")) || f.type_name.as_deref() == Some(type_name.as_str())) {
+                    if let Some(f) = descriptor.field.iter().find(|f| {
+                        f.type_name.as_deref() == Some(&format!(".{type_name}"))
+                            || f.type_name.as_deref() == Some(type_name.as_str())
+                    }) {
                         msg.set_field(f.number.unwrap_or(0), Value::Message(inner));
                     }
                 }
@@ -547,7 +583,9 @@ impl Parser<'_> {
                     self.parse_field(pool, descriptor, msg, &name, depth)?;
                 }
                 Some(other) => {
-                    return Err(TextError::Syntax(format!("unexpected token in message body: {other:?}")));
+                    return Err(TextError::Syntax(format!(
+                        "unexpected token in message body: {other:?}"
+                    )));
                 }
             }
         }
@@ -556,7 +594,9 @@ impl Parser<'_> {
     fn close_delim(&mut self) -> Result<(), TextError> {
         match self.next() {
             Some(Tok::RBrace) | Some(Tok::RAngle) => Ok(()),
-            other => Err(TextError::Syntax(format!("expected closing delimiter, got {other:?}"))),
+            other => Err(TextError::Syntax(format!(
+                "expected closing delimiter, got {other:?}"
+            ))),
         }
     }
 
@@ -584,7 +624,7 @@ impl Parser<'_> {
                     .lookup_message(field.type_name.as_deref().unwrap_or(""))
                     .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
                 let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                        self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
+                self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
                 self.close_delim()?;
                 Value::Message(inner)
             }
@@ -593,7 +633,9 @@ impl Parser<'_> {
                 self.parse_value(pool, &field, depth + 1)?
             }
             other => {
-                return Err(TextError::Syntax(format!("expected ':' or '{{' after field {name}, got {other:?}")));
+                return Err(TextError::Syntax(format!(
+                    "expected ':' or '{{' after field {name}, got {other:?}"
+                )));
             }
         };
 
@@ -601,21 +643,24 @@ impl Parser<'_> {
         if is_map_field(pool, &field) {
             if let Value::Map(mut entries) = map_entry_to_value(value) {
                 if let Some((k, v)) = entries.pop() {
-                    msg.fields.entry(num).or_insert_with(|| Value::Map(Vec::new()));
+                    msg.fields
+                        .entry(num)
+                        .or_insert_with(|| Value::Map(Vec::new()));
                     if let Some(Value::Map(m)) = msg.fields.get_mut(&num) {
                         m.push((k, v));
                     }
                 }
             }
         } else if field.label == Some(Label::Repeated) {
-            let entry = msg.fields.entry(num).or_insert_with(|| Value::List(Vec::new()));
+            let entry = msg
+                .fields
+                .entry(num)
+                .or_insert_with(|| Value::List(Vec::new()));
             match entry {
-                Value::List(l) => {
-                    match value {
-                        Value::List(mut inner) => l.append(&mut inner),
-                        other => l.push(other),
-                    }
-                }
+                Value::List(l) => match value {
+                    Value::List(mut inner) => l.append(&mut inner),
+                    other => l.push(other),
+                },
                 _ => *entry = value,
             }
         } else {
@@ -628,7 +673,12 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn parse_value(&mut self, pool: &DescriptorPool, field: &FieldDescriptorProto, depth: u32) -> Result<Value, TextError> {
+    fn parse_value(
+        &mut self,
+        pool: &DescriptorPool,
+        field: &FieldDescriptorProto,
+        depth: u32,
+    ) -> Result<Value, TextError> {
         let t = field.r#type.unwrap_or(FieldType::String);
         match t {
             FieldType::Message | FieldType::Group => {
@@ -640,7 +690,7 @@ impl Parser<'_> {
                             .lookup_message(field.type_name.as_deref().unwrap_or(""))
                             .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
                         let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
+                        self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
                         self.close_delim()?;
                         Ok(Value::Message(inner))
                     }
@@ -648,32 +698,55 @@ impl Parser<'_> {
                 }
             }
             FieldType::Enum => {
-                let tok = self.next().ok_or_else(|| TextError::Syntax("expected enum value".into()))?;
+                let tok = self
+                    .next()
+                    .ok_or_else(|| TextError::Syntax("expected enum value".into()))?;
                 let name = match tok {
                     Tok::Ident(s) | Tok::Raw(s) => s,
                     Tok::Int(n) => return Ok(Value::Enum(n as i32)),
                     Tok::Uint(n) => return Ok(Value::Enum(n as i32)),
-                    _ => return Err(TextError::Value(field.name.clone().unwrap_or_default(), "expected enum".into())),
+                    _ => {
+                        return Err(TextError::Value(
+                            field.name.clone().unwrap_or_default(),
+                            "expected enum".into(),
+                        ))
+                    }
                 };
                 let edesc = pool
                     .lookup_enum(field.type_name.as_deref().unwrap_or(""))
-                    .ok_or_else(|| TextError::Unknown(field.type_name.clone().unwrap_or_default()))?;
-                if let Some(v) = edesc.value.iter().find(|v| v.name.as_deref() == Some(&name)) {
+                    .ok_or_else(|| {
+                        TextError::Unknown(field.type_name.clone().unwrap_or_default())
+                    })?;
+                if let Some(v) = edesc
+                    .value
+                    .iter()
+                    .find(|v| v.name.as_deref() == Some(&name))
+                {
                     Ok(Value::Enum(v.number.unwrap_or(0)))
                 } else if let Ok(n) = name.parse::<i32>() {
                     Ok(Value::Enum(n))
                 } else {
-                    Err(TextError::Value(field.name.clone().unwrap_or_default(), format!("unknown enum value {name}")))
+                    Err(TextError::Value(
+                        field.name.clone().unwrap_or_default(),
+                        format!("unknown enum value {name}"),
+                    ))
                 }
             }
             // Scalars.
             _ => {
-                let tok = self.next().ok_or_else(|| TextError::Syntax("expected value".into()))?;
+                let tok = self
+                    .next()
+                    .ok_or_else(|| TextError::Syntax("expected value".into()))?;
                 let sv = match tok {
                     Tok::Str(s) => match t {
                         FieldType::String => RScalar::String(s),
                         FieldType::Bytes => RScalar::Bytes(parse_hex(&s)),
-                        _ => return Err(TextError::Value(field.name.clone().unwrap_or_default(), "unexpected string".into())),
+                        _ => {
+                            return Err(TextError::Value(
+                                field.name.clone().unwrap_or_default(),
+                                "unexpected string".into(),
+                            ))
+                        }
                     },
                     Tok::Int(n) => int_to_scalar(t, n, field)?,
                     Tok::Uint(n) => uint_to_scalar(t, n, field)?,
@@ -684,9 +757,19 @@ impl Parser<'_> {
                         "inf" => RScalar::F64(f64::INFINITY),
                         "-inf" => RScalar::F64(f64::NEG_INFINITY),
                         "nan" => RScalar::F64(f64::NAN),
-                        _ => return Err(TextError::Value(field.name.clone().unwrap_or_default(), format!("bad literal {s}"))),
+                        _ => {
+                            return Err(TextError::Value(
+                                field.name.clone().unwrap_or_default(),
+                                format!("bad literal {s}"),
+                            ))
+                        }
                     },
-                    _ => return Err(TextError::Value(field.name.clone().unwrap_or_default(), "unexpected token".into())),
+                    _ => {
+                        return Err(TextError::Value(
+                            field.name.clone().unwrap_or_default(),
+                            "unexpected token".into(),
+                        ))
+                    }
                 };
                 Ok(Value::Scalar(sv))
             }
@@ -703,11 +786,20 @@ fn int_to_scalar(t: FieldType, n: i64, field: &FieldDescriptorProto) -> Result<R
         FieldType::Uint64 | FieldType::Fixed64 => U64(n as u64),
         FieldType::Bool => Bool(n != 0),
         FieldType::Double | FieldType::Float => F64(n as f64),
-        _ => return Err(TextError::Value(field.name.clone().unwrap_or_default(), "int not allowed".into())),
+        _ => {
+            return Err(TextError::Value(
+                field.name.clone().unwrap_or_default(),
+                "int not allowed".into(),
+            ))
+        }
     })
 }
 
-fn uint_to_scalar(t: FieldType, n: u64, field: &FieldDescriptorProto) -> Result<RScalar, TextError> {
+fn uint_to_scalar(
+    t: FieldType,
+    n: u64,
+    field: &FieldDescriptorProto,
+) -> Result<RScalar, TextError> {
     use RScalar::*;
     Ok(match t {
         FieldType::Int32 | FieldType::Sint32 | FieldType::Sfixed32 => I64(n as i32 as i64),
@@ -716,14 +808,26 @@ fn uint_to_scalar(t: FieldType, n: u64, field: &FieldDescriptorProto) -> Result<
         FieldType::Uint64 | FieldType::Fixed64 => U64(n),
         FieldType::Bool => Bool(n != 0),
         FieldType::Double | FieldType::Float => F64(n as f64),
-        _ => return Err(TextError::Value(field.name.clone().unwrap_or_default(), "uint not allowed".into())),
+        _ => {
+            return Err(TextError::Value(
+                field.name.clone().unwrap_or_default(),
+                "uint not allowed".into(),
+            ))
+        }
     })
 }
 
 fn parse_hex(s: &str) -> Vec<u8> {
     let s = s.trim_start_matches("0x").trim_start_matches("0X");
-    let s = if s.len() % 2 == 0 { s.to_string() } else { format!("0{s}") };
-    (0..s.len()).step_by(2).filter_map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok()).collect()
+    let s = if s.len() % 2 == 0 {
+        s.to_string()
+    } else {
+        format!("0{s}")
+    };
+    (0..s.len())
+        .step_by(2)
+        .filter_map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
 }
 
 fn is_map_field(pool: &DescriptorPool, field: &FieldDescriptorProto) -> bool {
@@ -747,8 +851,16 @@ fn is_map_entry(desc: &DescriptorProto) -> bool {
 fn map_entry_to_value(v: Value) -> Value {
     // A parsed map entry has been decoded as a message with fields 1 (key) and 2 (value).
     if let Value::Message(dm) = &v {
-        let k = dm.fields.get(&1).cloned().unwrap_or(Value::Scalar(RScalar::I64(0)));
-        let val = dm.fields.get(&2).cloned().unwrap_or(Value::Scalar(RScalar::I64(0)));
+        let k = dm
+            .fields
+            .get(&1)
+            .cloned()
+            .unwrap_or(Value::Scalar(RScalar::I64(0)));
+        let val = dm
+            .fields
+            .get(&2)
+            .cloned()
+            .unwrap_or(Value::Scalar(RScalar::I64(0)));
         return Value::Map(vec![(k, val)]);
     }
     v
@@ -781,9 +893,18 @@ message Person {
 
     fn pool_person() -> (DescriptorPool, Arc<DescriptorProto>) {
         let parsed = parse_file("ex.proto", SRC);
-        assert!(!parsed.diagnostics.iter().any(|d| d.severity == tpt_proto_language::Severity::Error));
+        assert!(!parsed
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == tpt_proto_language::Severity::Error));
         let (fd, diags) = compile(&parsed.file);
-        assert!(!diags.iter().any(|d| d.severity == tpt_proto_language::Severity::Error), "diags: {:?}", diags);
+        assert!(
+            !diags
+                .iter()
+                .any(|d| d.severity == tpt_proto_language::Severity::Error),
+            "diags: {:?}",
+            diags
+        );
         let pool = DescriptorPool::from_file(&fd);
         let m = pool.lookup_message("ex.Person").unwrap();
         (pool, m)
@@ -795,14 +916,20 @@ message Person {
         let mut dm = DynamicMessage::new(m.clone(), pool.clone());
         dm.set_field(1, Value::Scalar(RScalar::String("Alice".into())));
         dm.set_field(2, Value::Scalar(RScalar::I64(7)));
-        dm.set_field(3, Value::List(vec![
-            Value::Scalar(RScalar::String("a@x".into())),
-            Value::Scalar(RScalar::String("b@y".into())),
-        ]));
-        dm.set_field(4, Value::Map(vec![(
-            Value::Scalar(RScalar::String("home".into())),
-            Value::Scalar(RScalar::I64(1)),
-        )]));
+        dm.set_field(
+            3,
+            Value::List(vec![
+                Value::Scalar(RScalar::String("a@x".into())),
+                Value::Scalar(RScalar::String("b@y".into())),
+            ]),
+        );
+        dm.set_field(
+            4,
+            Value::Map(vec![(
+                Value::Scalar(RScalar::String("home".into())),
+                Value::Scalar(RScalar::I64(1)),
+            )]),
+        );
         dm.set_field(5, Value::Enum(2));
         let mut sub = DynamicMessage::new(pool.lookup_message("ex.Sub").unwrap(), pool.clone());
         sub.set_field(1, Value::Scalar(RScalar::I64(9)));
@@ -814,7 +941,10 @@ message Person {
         eprintln!("TEXT:\n{text}");
 
         let parsed = text_to_message(&pool, &m, &text, &opts).unwrap();
-        assert_eq!(parsed.get_field(1), Some(&Value::Scalar(RScalar::String("Alice".into()))));
+        assert_eq!(
+            parsed.get_field(1),
+            Some(&Value::Scalar(RScalar::String("Alice".into())))
+        );
         assert_eq!(parsed.get_field(2), Some(&Value::Scalar(RScalar::I64(7))));
         assert_eq!(parsed.get_field(5), Some(&Value::Enum(2)));
         let bytes1 = dm.encode().unwrap();
@@ -841,7 +971,10 @@ sub {
 "#;
         let opts = TextOptions::default();
         let dm = text_to_message(&pool, &m, text, &opts).unwrap();
-        assert_eq!(dm.get_field(1), Some(&Value::Scalar(RScalar::String("Bob".into()))));
+        assert_eq!(
+            dm.get_field(1),
+            Some(&Value::Scalar(RScalar::String("Bob".into())))
+        );
         assert_eq!(dm.get_field(5), Some(&Value::Enum(1)));
         match dm.get_field(4) {
             Some(Value::Map(entries)) => assert_eq!(entries.len(), 1),
@@ -862,9 +995,18 @@ message Messy {
 }
 "#;
         let parsed = parse_file("dt.proto", src);
-        assert!(!parsed.diagnostics.iter().any(|d| d.severity == tpt_proto_language::Severity::Error));
+        assert!(!parsed
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == tpt_proto_language::Severity::Error));
         let (fd, diags) = compile(&parsed.file);
-        assert!(!diags.iter().any(|d| d.severity == tpt_proto_language::Severity::Error), "diags: {:?}", diags);
+        assert!(
+            !diags
+                .iter()
+                .any(|d| d.severity == tpt_proto_language::Severity::Error),
+            "diags: {:?}",
+            diags
+        );
         let pool = DescriptorPool::from_file(&fd);
         let m = pool.lookup_message("dt.Messy").unwrap();
 
@@ -872,14 +1014,31 @@ message Messy {
         dm.set_field(3, Value::Scalar(RScalar::String("three".into())));
         dm.set_field(1, Value::Scalar(RScalar::String("one".into())));
         dm.set_field(2, Value::Scalar(RScalar::String("two".into())));
-        dm.set_field(4, Value::Map(vec![
-            (Value::Scalar(RScalar::String("z".into())), Value::Scalar(RScalar::I64(1))),
-            (Value::Scalar(RScalar::String("a".into())), Value::Scalar(RScalar::I64(2))),
-        ]));
+        dm.set_field(
+            4,
+            Value::Map(vec![
+                (
+                    Value::Scalar(RScalar::String("z".into())),
+                    Value::Scalar(RScalar::I64(1)),
+                ),
+                (
+                    Value::Scalar(RScalar::String("a".into())),
+                    Value::Scalar(RScalar::I64(2)),
+                ),
+            ]),
+        );
 
         // Non-deterministic: declaration order (c, a, b).
         let nondet = message_to_text(&pool, &m, &dm, &TextOptions::default());
-        let first_nondet = nondet.lines().nth(1).unwrap().trim().split(':').next().unwrap().trim();
+        let first_nondet = nondet
+            .lines()
+            .nth(1)
+            .unwrap()
+            .trim()
+            .split(':')
+            .next()
+            .unwrap()
+            .trim();
         assert_eq!(first_nondet, "c");
 
         // Deterministic: ascending field-number order (a, b, c, labels).
@@ -887,9 +1046,20 @@ message Messy {
             &pool,
             &m,
             &dm,
-            &TextOptions { deterministic: true, ..Default::default() },
+            &TextOptions {
+                deterministic: true,
+                ..Default::default()
+            },
         );
-        let first_det = det.lines().nth(1).unwrap().trim().split(':').next().unwrap().trim();
+        let first_det = det
+            .lines()
+            .nth(1)
+            .unwrap()
+            .trim()
+            .split(':')
+            .next()
+            .unwrap()
+            .trim();
         assert_eq!(first_det, "a");
         // Map keys should be emitted in sorted order: "a" before "z".
         let a_idx = det.find("key: \"a\"").unwrap();

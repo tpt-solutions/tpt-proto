@@ -67,17 +67,26 @@ pub struct Report {
 impl Report {
     /// Number of passing cases.
     pub fn passed(&self) -> usize {
-        self.results.iter().filter(|r| r.status == Status::Pass).count()
+        self.results
+            .iter()
+            .filter(|r| r.status == Status::Pass)
+            .count()
     }
 
     /// Number of failing cases (excludes intentional skips).
     pub fn failures(&self) -> usize {
-        self.results.iter().filter(|r| r.status == Status::Fail).count()
+        self.results
+            .iter()
+            .filter(|r| r.status == Status::Fail)
+            .count()
     }
 
     /// Number of skipped cases.
     pub fn skipped(&self) -> usize {
-        self.results.iter().filter(|r| r.status == Status::Skip).count()
+        self.results
+            .iter()
+            .filter(|r| r.status == Status::Skip)
+            .count()
     }
 
     /// Total number of cases.
@@ -216,8 +225,14 @@ fn build_sample(registry: &Registry, desc: &Arc<DescriptorProto>) -> DynamicMess
     msg.set_field(
         56,
         Value::Map(vec![
-            (Value::Scalar(ScalarValue::I64(1)), Value::Scalar(ScalarValue::I64(10))),
-            (Value::Scalar(ScalarValue::I64(2)), Value::Scalar(ScalarValue::I64(20))),
+            (
+                Value::Scalar(ScalarValue::I64(1)),
+                Value::Scalar(ScalarValue::I64(10)),
+            ),
+            (
+                Value::Scalar(ScalarValue::I64(2)),
+                Value::Scalar(ScalarValue::I64(20)),
+            ),
         ]),
     );
     msg.set_field(
@@ -392,7 +407,9 @@ fn behavior_cases(registry: &Registry) -> Vec<Case> {
     });
 
     // Well-known type behavior: Timestamp emits RFC3339 in JSON.
-    let ts_desc = registry.lookup("google.protobuf.Timestamp").expect("Timestamp");
+    let ts_desc = registry
+        .lookup("google.protobuf.Timestamp")
+        .expect("Timestamp");
     let mut ts = DynamicMessage::new(ts_desc.clone(), registry.pool.clone());
     ts.set_field(1, Value::Scalar(ScalarValue::I64(61)));
     ts.set_field(2, Value::Scalar(ScalarValue::I64(210_000_000)));
@@ -469,7 +486,10 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
                 detail: if ok {
                     String::new()
                 } else {
-                    format!("expected success, got: {}", error_detail(&response).unwrap())
+                    format!(
+                        "expected success, got: {}",
+                        error_detail(&response).unwrap()
+                    )
                 },
             }
         }
@@ -491,8 +511,7 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
                     match dm {
                         Ok(m) => {
                             let found = m.unknown.iter().any(|(f, v)| {
-                                f == *field
-                                    && matches!(v, tpt_proto_core::UnknownValue::Varint(42))
+                                f == *field && matches!(v, tpt_proto_core::UnknownValue::Varint(42))
                             });
                             CaseResult {
                                 name: case.name.clone(),
@@ -528,11 +547,8 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
             }
             match response.get_field(RES_PROTOBUF_PAYLOAD) {
                 Some(Value::Scalar(ScalarValue::Bytes(b))) => {
-                    match DynamicMessage::decode(
-                        &registry.pool,
-                        desc.clone(),
-                        &mut Reader::new(b),
-                    ) {
+                    match DynamicMessage::decode(&registry.pool, desc.clone(), &mut Reader::new(b))
+                    {
                         Ok(m) => {
                             let got = message_to_json_string(
                                 &registry.pool,
@@ -555,7 +571,9 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
                                 detail: if ok {
                                     String::new()
                                 } else {
-                                    format!("binary roundtrip mismatch:\n  got:  {got}\n  want: {want}")
+                                    format!(
+                                        "binary roundtrip mismatch:\n  got:  {got}\n  want: {want}"
+                                    )
                                 },
                             }
                         }

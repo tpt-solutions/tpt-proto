@@ -11,9 +11,11 @@ use std::collections::BTreeSet;
 
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
-use tpt_proto_core::{Message, Reader, Result as CoreResult, Writer};
 use tpt_proto_core::scalar;
-use tpt_proto_descriptor::{DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto};
+use tpt_proto_core::{Message, Reader, Result as CoreResult, Writer};
+use tpt_proto_descriptor::{
+    DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
+};
 
 use crate::context::RpcContext;
 use crate::method::MethodKind;
@@ -147,7 +149,8 @@ impl Message for FileDescriptorResponse {
         while !r.is_empty() {
             let tag = r.read_tag()?;
             if tag.field_number == 1 {
-                self.file_descriptor_proto.push(r.read_length_delimited()?.to_vec());
+                self.file_descriptor_proto
+                    .push(r.read_length_delimited()?.to_vec());
             } else {
                 r.skip(tag.wire_type)?;
             }
@@ -412,7 +415,8 @@ impl ReflectionService {
                 let fqn = service_fqn(f, svc);
                 let base = fqn.trim_start_matches('.');
                 if base == norm
-                    || format!("{base}.{}", svc.name.as_deref().unwrap_or("")).trim_start_matches('.')
+                    || format!("{base}.{}", svc.name.as_deref().unwrap_or(""))
+                        .trim_start_matches('.')
                         == norm
                 {
                     return f.encode_to_vec().ok();
@@ -425,11 +429,9 @@ impl ReflectionService {
                     }
                 }
             }
-            if let Some(bytes) = self.file_bytes_for_message_symbol(
-                f,
-                &f.package.clone().unwrap_or_default(),
-                norm,
-            ) {
+            if let Some(bytes) =
+                self.file_bytes_for_message_symbol(f, &f.package.clone().unwrap_or_default(), norm)
+            {
                 return Some(bytes);
             }
         }
@@ -504,7 +506,10 @@ impl ReflectionService {
                 }
             }
             for m in &f.message_type {
-                let prefix = qualify(&f.package.clone().unwrap_or_default(), m.name.as_deref().unwrap_or(""));
+                let prefix = qualify(
+                    &f.package.clone().unwrap_or_default(),
+                    m.name.as_deref().unwrap_or(""),
+                );
                 if let Some(b) = self.nested_extensions(f, &prefix, m, norm, &mut numbers) {
                     found = found || b;
                 }
@@ -573,7 +578,10 @@ impl ReflectionService {
                 valid_host: host,
                 error_response: None,
                 list_services_response: Some(ListServiceResponse {
-                    service: names.into_iter().map(|n| ServiceResponse { name: n }).collect(),
+                    service: names
+                        .into_iter()
+                        .map(|n| ServiceResponse { name: n })
+                        .collect(),
                 }),
                 file_descriptor_response: None,
                 all_extension_numbers_response: None,
@@ -596,10 +604,14 @@ impl ReflectionService {
             if let Some(bytes) = self.file_bytes_for_symbol(&req.file_containing_symbol) {
                 return single_file(host, bytes);
             }
-            return err(5, format!("symbol not found: {}", req.file_containing_symbol));
+            return err(
+                5,
+                format!("symbol not found: {}", req.file_containing_symbol),
+            );
         }
 
-        if !req.file_containing_extension_str.is_empty() || req.file_containing_extension.is_some() {
+        if !req.file_containing_extension_str.is_empty() || req.file_containing_extension.is_some()
+        {
             let type_name = req
                 .file_containing_extension
                 .as_ref()
@@ -621,7 +633,10 @@ impl ReflectionService {
                     all_extension_numbers_response: Some(resp),
                 }];
             }
-            return err(5, format!("type not found: {}", req.all_extension_numbers_of_type));
+            return err(
+                5,
+                format!("type not found: {}", req.all_extension_numbers_of_type),
+            );
         }
 
         err(3, "no recognized reflection request".to_string())
@@ -811,7 +826,10 @@ service UserService {
         let rbytes = resp.encode_to_vec().unwrap();
         let rback = ServerReflectionResponse::decode(&rbytes).unwrap();
         assert_eq!(
-            rback.file_descriptor_response.unwrap().file_descriptor_proto,
+            rback
+                .file_descriptor_response
+                .unwrap()
+                .file_descriptor_proto,
             vec![vec![1, 2, 3]]
         );
     }

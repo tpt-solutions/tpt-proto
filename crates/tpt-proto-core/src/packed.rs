@@ -113,9 +113,7 @@ pub fn decode_map_entry(r: &mut Reader) -> crate::Result<(Vec<u8>, Vec<u8>)> {
 /// `max_depth`) so depth is enforced across the whole nesting chain rather than
 /// reset to zero at the entry boundary. The returned slices are valid for as
 /// long as the original buffer lives.
-pub fn decode_map_entry_frames<'a>(
-    r: &mut Reader<'a>,
-) -> crate::Result<(&'a [u8], &'a [u8])> {
+pub fn decode_map_entry_frames<'a>(r: &mut Reader<'a>) -> crate::Result<(&'a [u8], &'a [u8])> {
     let body = r.read_length_delimited()?;
     let mut er = r.nested(body)?;
     let mut key: Option<&'a [u8]> = None;

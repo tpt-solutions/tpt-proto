@@ -272,7 +272,12 @@ impl MetricsRecorder for InMemoryMetricsRecorder {
     fn record_call_started(&self, labels: &CallLabels) {
         self.with_sample(labels, |s| s.call_started += 1);
     }
-    fn record_call_completed(&self, labels: &CallLabels, duration: Duration, _outcome: CallOutcome) {
+    fn record_call_completed(
+        &self,
+        labels: &CallLabels,
+        duration: Duration,
+        _outcome: CallOutcome,
+    ) {
         self.with_sample(labels, |s| {
             s.call_completed += 1;
             s.completed_duration_micros += duration.as_micros() as u64;
@@ -614,9 +619,7 @@ impl CallInstrumentor {
     /// Record that a single message was received.
     pub fn message_recv(&self, bytes: u64) {
         self.obs.metrics.record_message_recv(&self.labels, 1);
-        self.obs
-            .metrics
-            .record_bytes_recv(&self.labels, bytes);
+        self.obs.metrics.record_bytes_recv(&self.labels, bytes);
     }
 
     /// Record peer-initiated cancellation.

@@ -93,9 +93,8 @@ pub fn read_frame<R: Read>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
 
 /// Write a single length-prefixed frame.
 pub fn write_frame<W: Write>(writer: &mut W, data: &[u8]) -> io::Result<()> {
-    let len = u32::try_from(data.len()).map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "frame exceeds 4 GiB")
-    })?;
+    let len = u32::try_from(data.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "frame exceeds 4 GiB"))?;
     writer.write_all(&len.to_le_bytes())?;
     writer.write_all(data)?;
     writer.flush()?;

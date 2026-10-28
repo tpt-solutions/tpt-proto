@@ -263,7 +263,8 @@ impl<'a> Lexer<'a> {
 
     fn lex_number(&mut self) -> Result<TokenKind, LexError> {
         let start = self.pos;
-        let is_hex = self.peek() == Some(b'0') && matches!(self.bytes.get(self.pos + 1), Some(b'x') | Some(b'X'));
+        let is_hex = self.peek() == Some(b'0')
+            && matches!(self.bytes.get(self.pos + 1), Some(b'x') | Some(b'X'));
         if is_hex {
             self.bump();
             self.bump();

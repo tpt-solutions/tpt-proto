@@ -32,7 +32,11 @@ fn setup() -> (DescriptorPool, Arc<DescriptorProto>) {
     let parsed = parse_file("vec.proto", PROTO);
     assert!(!parsed.diagnostics.has_errors());
     let (fd, diags) = compile(&parsed.file);
-    assert!(!diags.has_errors(), "{:?}", diags.iter().collect::<Vec<_>>());
+    assert!(
+        !diags.has_errors(),
+        "{:?}",
+        diags.iter().collect::<Vec<_>>()
+    );
     let pool = DescriptorPool::from_file(&fd);
     let m = pool.lookup_message("vec.V").unwrap();
     (pool, m)
@@ -103,10 +107,7 @@ fn vector_fixed_and_zigzag_and_sfixed() {
     // sf=-2 sfixed64: two's complement LE feffffffffffffff, tag 8<<3|1=0x41
     let bytes = "2d01000000310100000000000000380341feffffffffffffff";
     let dm = decode(bytes);
-    assert_eq!(
-        dm.get_field(5),
-        Some(&Value::Scalar(ScalarValue::U64(1)))
-    );
+    assert_eq!(dm.get_field(5), Some(&Value::Scalar(ScalarValue::U64(1))));
     assert_eq!(dm.get_field(6), Some(&Value::Scalar(ScalarValue::U64(1))));
     assert_eq!(dm.get_field(7), Some(&Value::Scalar(ScalarValue::I64(-2))));
     assert_eq!(dm.get_field(8), Some(&Value::Scalar(ScalarValue::I64(-2))));

@@ -7,8 +7,8 @@
 //! Options are stored opaquely as their serialized bytes; higher layers that
 //! need typed access can re-parse them.
 
-use tpt_proto_core::{Reader, WireType, Writer};
 use tpt_proto_core::Message;
+use tpt_proto_core::{Reader, WireType, Writer};
 
 /// The wire type of a field, as in `FieldDescriptorProto.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -403,8 +403,12 @@ impl Message for FileDescriptorProto {
                 (1, WireType::LengthDelimited) => self.name = Some(r.read_string_owned()?),
                 (2, WireType::LengthDelimited) => self.package = Some(r.read_string_owned()?),
                 (3, WireType::LengthDelimited) => decode_repeated_str!(r, self.dependency),
-                (10, WireType::Varint) => self.public_dependency.push(tpt_proto_core::scalar::read_int32(r)?),
-                (11, WireType::Varint) => self.weak_dependency.push(tpt_proto_core::scalar::read_int32(r)?),
+                (10, WireType::Varint) => self
+                    .public_dependency
+                    .push(tpt_proto_core::scalar::read_int32(r)?),
+                (11, WireType::Varint) => self
+                    .weak_dependency
+                    .push(tpt_proto_core::scalar::read_int32(r)?),
                 (4, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = DescriptorProto::default();
@@ -429,7 +433,9 @@ impl Message for FileDescriptorProto {
                     sub.merge_from(&mut r.nested(body)?)?;
                     self.extension.push(sub);
                 }
-                (8, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
+                (8, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
                 (9, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = SourceCodeInfo::default();
@@ -486,9 +492,15 @@ impl Message for Location {
             match (tag.field_number, tag.wire_type) {
                 (1, WireType::Varint) => self.path.push(tpt_proto_core::scalar::read_int32(r)?),
                 (2, WireType::Varint) => self.span.push(tpt_proto_core::scalar::read_int32(r)?),
-                (3, WireType::LengthDelimited) => self.leading_comments = Some(r.read_string_owned()?),
-                (4, WireType::LengthDelimited) => self.trailing_comments = Some(r.read_string_owned()?),
-                (6, WireType::LengthDelimited) => decode_repeated_str!(r, self.leading_detached_comments),
+                (3, WireType::LengthDelimited) => {
+                    self.leading_comments = Some(r.read_string_owned()?)
+                }
+                (4, WireType::LengthDelimited) => {
+                    self.trailing_comments = Some(r.read_string_owned()?)
+                }
+                (6, WireType::LengthDelimited) => {
+                    decode_repeated_str!(r, self.leading_detached_comments)
+                }
                 _ => r.skip(tag.wire_type)?,
             }
         }
@@ -586,7 +598,9 @@ impl Message for DescriptorProto {
                     sub.merge_from(&mut r.nested(body)?)?;
                     self.oneof_decl.push(sub);
                 }
-                (7, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
+                (7, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
                 (9, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = ReservedRange::default();
@@ -603,7 +617,15 @@ impl Message for DescriptorProto {
 
 impl Message for ReservedRange {
     fn encode(&self, w: &mut Writer) -> Result<(), Error> {
-        encode_opt_i32(w, 1, if self.start != 0 { Some(self.start) } else { None });
+        encode_opt_i32(
+            w,
+            1,
+            if self.start != 0 {
+                Some(self.start)
+            } else {
+                None
+            },
+        );
         encode_opt_i32(w, 2, if self.end != 0 { Some(self.end) } else { None });
         Ok(())
     }
@@ -622,7 +644,15 @@ impl Message for ReservedRange {
 
 impl Message for ExtensionRange {
     fn encode(&self, w: &mut Writer) -> Result<(), Error> {
-        encode_opt_i32(w, 1, if self.start != 0 { Some(self.start) } else { None });
+        encode_opt_i32(
+            w,
+            1,
+            if self.start != 0 {
+                Some(self.start)
+            } else {
+                None
+            },
+        );
         encode_opt_i32(w, 2, if self.end != 0 { Some(self.end) } else { None });
         Ok(())
     }
@@ -665,14 +695,24 @@ impl Message for FieldDescriptorProto {
                 (1, WireType::LengthDelimited) => self.name = Some(r.read_string_owned()?),
                 (2, WireType::LengthDelimited) => self.extendee = Some(r.read_string_owned()?),
                 (3, WireType::Varint) => self.number = Some(tpt_proto_core::scalar::read_int32(r)?),
-                (4, WireType::Varint) => self.label = Label::from_i32(tpt_proto_core::scalar::read_int32(r)?),
-                (5, WireType::Varint) => self.r#type = FieldType::from_i32(tpt_proto_core::scalar::read_int32(r)?),
+                (4, WireType::Varint) => {
+                    self.label = Label::from_i32(tpt_proto_core::scalar::read_int32(r)?)
+                }
+                (5, WireType::Varint) => {
+                    self.r#type = FieldType::from_i32(tpt_proto_core::scalar::read_int32(r)?)
+                }
                 (6, WireType::LengthDelimited) => self.type_name = Some(r.read_string_owned()?),
                 (7, WireType::LengthDelimited) => self.default_value = Some(r.read_string_owned()?),
-                (8, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
-                (9, WireType::Varint) => self.oneof_index = Some(tpt_proto_core::scalar::read_int32(r)?),
+                (8, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
+                (9, WireType::Varint) => {
+                    self.oneof_index = Some(tpt_proto_core::scalar::read_int32(r)?)
+                }
                 (10, WireType::LengthDelimited) => self.json_name = Some(r.read_string_owned()?),
-                (17, WireType::Varint) => self.proto3_optional = Some(tpt_proto_core::scalar::read_bool(r)?),
+                (17, WireType::Varint) => {
+                    self.proto3_optional = Some(tpt_proto_core::scalar::read_bool(r)?)
+                }
                 _ => r.skip(tag.wire_type)?,
             }
         }
@@ -710,7 +750,9 @@ impl Message for EnumDescriptorProto {
                     sub.merge_from(&mut r.nested(body)?)?;
                     self.value.push(sub);
                 }
-                (3, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
+                (3, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
                 (4, WireType::LengthDelimited) => {
                     let body = r.read_length_delimited()?;
                     let mut sub = ReservedRange::default();
@@ -738,7 +780,9 @@ impl Message for EnumValueDescriptorProto {
             match (tag.field_number, tag.wire_type) {
                 (1, WireType::LengthDelimited) => self.name = Some(r.read_string_owned()?),
                 (2, WireType::Varint) => self.number = Some(tpt_proto_core::scalar::read_int32(r)?),
-                (3, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
+                (3, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
                 _ => r.skip(tag.wire_type)?,
             }
         }
@@ -757,7 +801,9 @@ impl Message for OneofDescriptorProto {
             let tag = r.read_tag()?;
             match (tag.field_number, tag.wire_type) {
                 (1, WireType::LengthDelimited) => self.name = Some(r.read_string_owned()?),
-                (2, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
+                (2, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
                 _ => r.skip(tag.wire_type)?,
             }
         }
@@ -788,7 +834,9 @@ impl Message for ServiceDescriptorProto {
                     sub.merge_from(&mut r.nested(body)?)?;
                     self.method.push(sub);
                 }
-                (3, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
+                (3, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
                 _ => r.skip(tag.wire_type)?,
             }
         }
@@ -813,9 +861,15 @@ impl Message for MethodDescriptorProto {
                 (1, WireType::LengthDelimited) => self.name = Some(r.read_string_owned()?),
                 (2, WireType::LengthDelimited) => self.input_type = Some(r.read_string_owned()?),
                 (3, WireType::LengthDelimited) => self.output_type = Some(r.read_string_owned()?),
-                (4, WireType::LengthDelimited) => self.options = Some(r.read_length_delimited()?.to_vec()),
-                (5, WireType::Varint) => self.client_streaming = Some(tpt_proto_core::scalar::read_bool(r)?),
-                (6, WireType::Varint) => self.server_streaming = Some(tpt_proto_core::scalar::read_bool(r)?),
+                (4, WireType::LengthDelimited) => {
+                    self.options = Some(r.read_length_delimited()?.to_vec())
+                }
+                (5, WireType::Varint) => {
+                    self.client_streaming = Some(tpt_proto_core::scalar::read_bool(r)?)
+                }
+                (6, WireType::Varint) => {
+                    self.server_streaming = Some(tpt_proto_core::scalar::read_bool(r)?)
+                }
                 _ => r.skip(tag.wire_type)?,
             }
         }

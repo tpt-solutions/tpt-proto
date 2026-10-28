@@ -1,4 +1,4 @@
-﻿//! Real-TCP gRPC interop coverage beyond `runtime_echo.rs`: deadlines
+//! Real-TCP gRPC interop coverage beyond `runtime_echo.rs`: deadlines
 //! (`grpc-timeout`), gzip compression negotiation, response-trailer metadata
 //! merging, and client-side cancellation by dropping the in-flight call.
 //!
@@ -14,11 +14,11 @@ mod generated {
 use std::time::Duration;
 
 use generated::{Echo, EchoServer, ExPing, ExPong};
+use tokio::net::TcpListener;
 use tpt_proto_grpc::{
     Code, Compression, H2Transport, Metadata, Request, Response, Server, ServerStream, Status,
     Transport,
 };
-use tokio::net::TcpListener;
 
 /// Echo service whose unary method sleeps for `delay` before replying.
 struct TimedEcho {
@@ -98,7 +98,10 @@ async fn generous_deadline_completes_over_real_tcp() {
     let addr = spawn(Duration::ZERO).await;
     let t = transport(addr).with_timeout(Duration::from_secs(5));
     let body = encode_ping("slow-ok");
-    let (resp, _) = t.unary("/ex.Echo/Unary", Metadata::new(), body).await.unwrap();
+    let (resp, _) = t
+        .unary("/ex.Echo/Unary", Metadata::new(), body)
+        .await
+        .unwrap();
     let pong = ExPong::decode(&resp).unwrap();
     assert_eq!(pong.msg, "echo: slow-ok");
 }
@@ -112,7 +115,10 @@ async fn gzip_compressed_unary_over_real_tcp() {
         .with_compression(Compression::Gzip)
         .with_max_message_size(1 << 20);
     let body = encode_ping("gz");
-    let (resp, _) = t.unary("/ex.Echo/Unary", Metadata::new(), body).await.unwrap();
+    let (resp, _) = t
+        .unary("/ex.Echo/Unary", Metadata::new(), body)
+        .await
+        .unwrap();
     let pong = ExPong::decode(&resp).unwrap();
     assert_eq!(pong.msg, "echo: gz");
 }

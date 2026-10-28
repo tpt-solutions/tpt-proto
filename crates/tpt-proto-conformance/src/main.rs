@@ -63,11 +63,9 @@ fn main() {
 fn run_testee<R: Read, W: Write>(reader: R, writer: W, registry: &Registry) {
     let mut reader = reader;
     let mut writer = writer;
-    if let Err(e) = tpt_proto_conformance::testee::run_testee_loop(
-        &mut reader,
-        &mut writer,
-        registry,
-    ) {
+    if let Err(e) =
+        tpt_proto_conformance::testee::run_testee_loop(&mut reader, &mut writer, registry)
+    {
         eprintln!("tpt-conformance testee error: {e}");
         std::process::exit(1);
     }

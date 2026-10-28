@@ -74,11 +74,17 @@ impl H2Transport {
             .or_else(|| s.strip_prefix("https://"))
             .unwrap_or(s);
         let (host, port) = s.rsplit_once(':').ok_or_else(|| {
-            Status::new(Code::Internal, format!("invalid endpoint '{}'", self.endpoint))
+            Status::new(
+                Code::Internal,
+                format!("invalid endpoint '{}'", self.endpoint),
+            )
         })?;
-        let port = port
-            .parse::<u16>()
-            .map_err(|_| Status::new(Code::Internal, format!("invalid port in '{}'", self.endpoint)))?;
+        let port = port.parse::<u16>().map_err(|_| {
+            Status::new(
+                Code::Internal,
+                format!("invalid port in '{}'", self.endpoint),
+            )
+        })?;
         Ok((host.to_string(), port))
     }
 
@@ -219,10 +225,7 @@ fn split_grpc_frames(buf: &[u8]) -> Result<Vec<Vec<u8>>, Status> {
     let mut i = 0;
     while i < buf.len() {
         if i + 5 > buf.len() {
-            return Err(Status::new(
-                Code::Internal,
-                "truncated gRPC frame header",
-            ));
+            return Err(Status::new(Code::Internal, "truncated gRPC frame header"));
         }
         let len = u32::from_be_bytes([buf[i + 1], buf[i + 2], buf[i + 3], buf[i + 4]]) as usize;
         let total = 5 + len;

@@ -15,12 +15,12 @@ use std::time::{Duration, SystemTime};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use futures::StreamExt;
-use http::header::{CONTENT_TYPE, HeaderValue};
-use http::{HeaderMap, Response};
 use h2::server;
+use http::header::{HeaderValue, CONTENT_TYPE};
+use http::{HeaderMap, Response};
+use std::sync::RwLock;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
-use std::sync::RwLock;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -31,7 +31,9 @@ use crate::framed::{deframe_stream, read_single_message};
 use crate::interceptor::{InterceptedHandler, Interceptor};
 use crate::metadata::Metadata;
 use crate::method::MethodKind;
-use crate::observability::{CallInstrumentor, CallLabels, Level, LogRecord, Observability, StreamingType};
+use crate::observability::{
+    CallInstrumentor, CallLabels, Level, LogRecord, Observability, StreamingType,
+};
 use crate::security::{identity_from_peer, SecurityPolicy, TlsConfig};
 use crate::service::ServiceHandler;
 use crate::status::{Code, Status};
@@ -402,9 +404,7 @@ impl Server {
             }
         }
 
-        let drain = async {
-            while conns.join_next().await.is_some() {}
-        };
+        let drain = async { while conns.join_next().await.is_some() {} };
         match tokio::time::timeout(self.config.graceful_shutdown_timeout, drain).await {
             Ok(_) => Ok(()),
             Err(_) => {
@@ -542,13 +542,10 @@ async fn handle_request(
     };
 
     let send_headers = |respond: &mut h2::server::SendResponse<Bytes>,
-                         end: bool|
+                        end: bool|
      -> Result<h2::SendStream<Bytes>, Status> {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/grpc"),
-        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc"));
         let (mut parts, ()) = Response::new(()).into_parts();
         parts.headers = headers;
         respond
@@ -564,10 +561,21 @@ async fn handle_request(
     );
 
     let streaming_type = StreamingType::from_flags(
-        matches!(kind, MethodKind::ClientStreaming | MethodKind::BidiStreaming),
-        matches!(kind, MethodKind::ServerStreaming | MethodKind::BidiStreaming),
+        matches!(
+            kind,
+            MethodKind::ClientStreaming | MethodKind::BidiStreaming
+        ),
+        matches!(
+            kind,
+            MethodKind::ServerStreaming | MethodKind::BidiStreaming
+        ),
     );
-    let labels = CallLabels::new(full_service.clone(), method.clone(), Code::Ok, streaming_type);
+    let labels = CallLabels::new(
+        full_service.clone(),
+        method.clone(),
+        Code::Ok,
+        streaming_type,
+    );
     let mut instrumentor = CallInstrumentor::start(labels, config.observability.clone());
 
     let peer = ctx.peer.as_ref().and_then(|p| p.peer_addr.clone());
@@ -643,7 +651,9 @@ async fn handle_request(
     );
 
     let deadline_fut: Option<tokio::time::Sleep> = deadline_opt.map(|d| {
-        let dur = d.duration_since(SystemTime::now()).unwrap_or(Duration::ZERO);
+        let dur = d
+            .duration_since(SystemTime::now())
+            .unwrap_or(Duration::ZERO);
         tokio::time::sleep(dur)
     });
 
@@ -704,7 +714,10 @@ async fn handle_request(
                 }
             }
             let mut trailers = output.status.to_trailers();
-            trailers.insert_raw("grpc-status", output.status.code.as_i32().to_string().as_bytes());
+            trailers.insert_raw(
+                "grpc-status",
+                output.status.code.as_i32().to_string().as_bytes(),
+            );
             if !output.status.message.is_empty() {
                 trailers.insert_raw("grpc-message", output.status.message.as_bytes());
             }
@@ -712,12 +725,10 @@ async fn handle_request(
                 eprintln!("grpc server: send_trailers: {e}");
             }
         }
-        Err(status) => {
-            match send_headers(&mut respond, false) {
-                Ok(mut send) => finish_with_status(&mut send, status).await,
-                Err(e) => finish_with_status_respond(&mut respond, e).await,
-            }
-        }
+        Err(status) => match send_headers(&mut respond, false) {
+            Ok(mut send) => finish_with_status(&mut send, status).await,
+            Err(e) => finish_with_status_respond(&mut respond, e).await,
+        },
     }
 }
 
@@ -778,10 +789,7 @@ async fn finish_with_status(send: &mut h2::SendStream<Bytes>, status: Status) {
 }
 
 /// When response headers could not even be sent, attempt a trailers-only reply.
-async fn finish_with_status_respond(
-    respond: &mut h2::server::SendResponse<Bytes>,
-    status: Status,
-) {
+async fn finish_with_status_respond(respond: &mut h2::server::SendResponse<Bytes>, status: Status) {
     let mut trailers = status.to_trailers();
     trailers.insert_raw("grpc-status", status.code.as_i32().to_string().as_bytes());
     if !status.message.is_empty() {
@@ -867,7 +875,9 @@ async fn dispatch(
             let body = request.into_body();
             let req_stream: ClientStream<Vec<u8>> =
                 Box::pin(deframe_stream(body, request_encoding, max).map(|r| r));
-            let raw = handler.call_client_streaming(method, ctx, req_stream).await?;
+            let raw = handler
+                .call_client_streaming(method, ctx, req_stream)
+                .await?;
             Ok(HandlerOutput {
                 message: Some(raw),
                 stream: None,
@@ -926,8 +936,7 @@ fn build_context(
         }
     }
 
-    let metadata =
-        Metadata::from_headers(&metadata_pairs, max_metadata_size).unwrap_or_default();
+    let metadata = Metadata::from_headers(&metadata_pairs, max_metadata_size).unwrap_or_default();
 
     let ctx = RpcContext {
         metadata,

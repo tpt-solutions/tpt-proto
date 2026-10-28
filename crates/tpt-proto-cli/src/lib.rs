@@ -17,15 +17,14 @@ use tpt_proto_core::{Message, Reader};
 use tpt_proto_descriptor::{DescriptorProto, FileDescriptorProto, FileDescriptorSet};
 use tpt_proto_json::{json_string_to_message, message_to_json_string, JsonOptions};
 use tpt_proto_language::{parse_file, Diagnostic};
-use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue, Value};
 use tpt_proto_lint::lint as run_lint;
+use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue, Value};
 use tpt_proto_text::{message_to_text, text_to_message, TextOptions};
-
 
 /// Parse and compile a `.proto` source file into a [`FileDescriptorProto`].
 pub fn compile_path(path: &Path) -> Result<(FileDescriptorProto, Vec<Diagnostic>)> {
-    let src = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let src =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -43,7 +42,10 @@ fn report_diagnostics(diags: &[Diagnostic]) -> Result<()> {
     for d in diags {
         eprintln!("{}: {}", severity_str(d), d.message);
     }
-    if diags.iter().any(|d| d.severity == tpt_proto_language::Severity::Error) {
+    if diags
+        .iter()
+        .any(|d| d.severity == tpt_proto_language::Severity::Error)
+    {
         bail!("compilation failed with errors");
     }
     Ok(())
@@ -90,7 +92,12 @@ fn print_value(value: &Value, indent: usize) {
         Value::Map(entries) => {
             println!("{{");
             for (k, v) in entries {
-                println!("{}{} => {}", "  ".repeat(indent + 1), scalar_repr_opt(k), scalar_repr_opt(v));
+                println!(
+                    "{}{} => {}",
+                    "  ".repeat(indent + 1),
+                    scalar_repr_opt(k),
+                    scalar_repr_opt(v)
+                );
             }
             println!("{}  }}", "  ".repeat(indent));
         }
@@ -268,28 +275,44 @@ pub fn decode_message(
 }
 
 /// Convert binary wire bytes into a JSON string for the named message.
-pub fn binary_to_json(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, bytes: &[u8]) -> Result<String> {
+pub fn binary_to_json(
+    pool: &DescriptorPool,
+    desc: &Arc<DescriptorProto>,
+    bytes: &[u8],
+) -> Result<String> {
     let dm = decode_message(pool, desc, bytes)?;
     let opts = JsonOptions::default();
     Ok(message_to_json_string(pool, desc, &dm, &opts)?)
 }
 
 /// Convert a JSON string into binary wire bytes for the named message.
-pub fn json_to_binary(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, json: &str) -> Result<Vec<u8>> {
+pub fn json_to_binary(
+    pool: &DescriptorPool,
+    desc: &Arc<DescriptorProto>,
+    json: &str,
+) -> Result<Vec<u8>> {
     let opts = JsonOptions::default();
     let dm = json_string_to_message(pool, desc, json, &opts)?;
     dm.encode().context("encoding message")
 }
 
 /// Convert binary wire bytes into text format for the named message.
-pub fn binary_to_text(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, bytes: &[u8]) -> Result<String> {
+pub fn binary_to_text(
+    pool: &DescriptorPool,
+    desc: &Arc<DescriptorProto>,
+    bytes: &[u8],
+) -> Result<String> {
     let dm = decode_message(pool, desc, bytes)?;
     let opts = TextOptions::default();
     Ok(message_to_text(pool, desc, &dm, &opts))
 }
 
 /// Convert text format into binary wire bytes for the named message.
-pub fn text_to_binary(pool: &DescriptorPool, desc: &Arc<DescriptorProto>, text: &str) -> Result<Vec<u8>> {
+pub fn text_to_binary(
+    pool: &DescriptorPool,
+    desc: &Arc<DescriptorProto>,
+    text: &str,
+) -> Result<Vec<u8>> {
     let opts = TextOptions::default();
     let dm = text_to_message(pool, desc, text, &opts)?;
     dm.encode().context("encoding message")
@@ -352,14 +375,34 @@ pub fn lint_files(
     let new_fd = new_set.file.last().context("new descriptor set empty")?;
     let mut report = run_lint(old_fd, new_fd);
     apply_severity_overrides(&mut report, severity_overrides);
-    Ok(if json { report.render_json() } else { report.render() })
+    Ok(if json {
+        report.render_json()
+    } else {
+        report.render()
+    })
 }
 /// Produce a textual diff summary between two descriptor-set binaries.
 pub fn diff_descriptors(a: &[u8], b: &[u8]) -> Result<String> {
     let sa = FileDescriptorSet::decode(a).context("decoding first descriptor set")?;
     let sb = FileDescriptorSet::decode(b).context("decoding second descriptor set")?;
-    let names_a: Vec<String> = sa.file.iter().flat_map(|f| f.message_type.iter().map(|m| m.name.clone().unwrap_or_default())).collect();
-    let names_b: Vec<String> = sb.file.iter().flat_map(|f| f.message_type.iter().map(|m| m.name.clone().unwrap_or_default())).collect();
+    let names_a: Vec<String> = sa
+        .file
+        .iter()
+        .flat_map(|f| {
+            f.message_type
+                .iter()
+                .map(|m| m.name.clone().unwrap_or_default())
+        })
+        .collect();
+    let names_b: Vec<String> = sb
+        .file
+        .iter()
+        .flat_map(|f| {
+            f.message_type
+                .iter()
+                .map(|m| m.name.clone().unwrap_or_default())
+        })
+        .collect();
     let mut out = String::new();
     for n in &names_a {
         if !names_b.contains(n) {
@@ -387,7 +430,9 @@ pub fn diff_descriptors(a: &[u8], b: &[u8]) -> Result<String> {
 /// Fails unless `force` is set when the target directory already exists.
 pub fn init_project(name: &str, force: bool) -> Result<PathBuf> {
     let valid = !name.is_empty()
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         && !name.starts_with('-');
     if !valid {
         bail!("invalid crate name `{name}`: use ASCII letters, digits, `-`, `_`");
@@ -395,7 +440,10 @@ pub fn init_project(name: &str, force: bool) -> Result<PathBuf> {
 
     let root = PathBuf::from(name);
     if root.exists() && !force {
-        bail!("directory `{}` already exists (pass --force to overwrite)", root.display());
+        bail!(
+            "directory `{}` already exists (pass --force to overwrite)",
+            root.display()
+        );
     }
     std::fs::create_dir_all(root.join("src"))?;
     std::fs::create_dir_all(root.join("proto"))?;

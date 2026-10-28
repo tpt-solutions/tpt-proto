@@ -61,7 +61,12 @@ fn main() {
             || decode_message(&gz_c, Compression::Gzip, usize::MAX).unwrap(),
         );
         let frame_ratio = gz.len() as f64 / size.max(1) as f64;
-        println!("    (gzip frame size {}/{} = {:.2}x payload)", gz.len(), size, frame_ratio);
+        println!(
+            "    (gzip frame size {}/{} = {:.2}x payload)",
+            gz.len(),
+            size,
+            frame_ratio
+        );
     }
 
     println!(

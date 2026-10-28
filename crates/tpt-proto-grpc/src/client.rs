@@ -15,9 +15,9 @@ use bytes::Bytes;
 use bytes::BytesMut;
 use futures::Stream;
 use futures::StreamExt;
-use http::{HeaderMap, Request};
 use h2::client::SendRequest;
 use h2::RecvStream;
+use http::{HeaderMap, Request};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
@@ -311,7 +311,8 @@ impl Stream for GrpcResponseBody {
         loop {
             if this.buf.len() >= 5 {
                 let declared =
-                    u32::from_be_bytes([this.buf[1], this.buf[2], this.buf[3], this.buf[4]]) as usize;
+                    u32::from_be_bytes([this.buf[1], this.buf[2], this.buf[3], this.buf[4]])
+                        as usize;
                 if declared > this.max {
                     return std::task::Poll::Ready(Some(Err(Status::new(
                         Code::ResourceExhausted,
@@ -521,8 +522,11 @@ impl Client {
         let (head, body) = response.into_parts();
         let resp_encoding = encoding_from_headers(&head.headers);
         let resp_metadata = metadata_from_response(&head.headers, endpoint.max_message_size);
-        let stream: ServerStream<Vec<u8>> =
-            Box::pin(GrpcResponseBody::new(body, resp_encoding, endpoint.max_message_size));
+        let stream: ServerStream<Vec<u8>> = Box::pin(GrpcResponseBody::new(
+            body,
+            resp_encoding,
+            endpoint.max_message_size,
+        ));
         Ok((stream, resp_metadata))
     }
 
@@ -551,7 +555,8 @@ impl Client {
                     ) {
                         Ok(framed) => {
                             if let Err(e) = send_stream.send_data(Bytes::from(framed), false) {
-                                last_err = Some(Status::new(Code::Internal, format!("send_data: {e}")));
+                                last_err =
+                                    Some(Status::new(Code::Internal, format!("send_data: {e}")));
                                 break;
                             }
                         }
@@ -630,8 +635,11 @@ impl Client {
         let (head, body) = response.into_parts();
         let resp_encoding = encoding_from_headers(&head.headers);
         let resp_metadata = metadata_from_response(&head.headers, endpoint.max_message_size);
-        let stream: ServerStream<Vec<u8>> =
-            Box::pin(GrpcResponseBody::new(body, resp_encoding, endpoint.max_message_size));
+        let stream: ServerStream<Vec<u8>> = Box::pin(GrpcResponseBody::new(
+            body,
+            resp_encoding,
+            endpoint.max_message_size,
+        ));
         Ok((stream, resp_metadata))
     }
 }

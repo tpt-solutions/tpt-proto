@@ -8,10 +8,8 @@
 
 use std::collections::HashMap;
 
-use tpt_proto_core::{
-    scalar, Reader, WireType, Writer,
-};
 use tpt_proto_core::Message;
+use tpt_proto_core::{scalar, Reader, WireType, Writer};
 
 // ---------------------------------------------------------------------------
 // Timestamp.
@@ -314,7 +312,9 @@ impl Message for Value {
                     let _ = scalar::read_int32(r)?;
                     *self = Value::Null;
                 }
-                (2, WireType::Varint) | (2, WireType::Fixed64) => *self = Value::Number(scalar::read_double(r)?),
+                (2, WireType::Varint) | (2, WireType::Fixed64) => {
+                    *self = Value::Number(scalar::read_double(r)?)
+                }
                 (3, WireType::LengthDelimited) => *self = Value::String(r.read_string_owned()?),
                 (4, WireType::Varint) => *self = Value::Bool(scalar::read_bool(r)?),
                 (5, WireType::LengthDelimited) => {
@@ -406,7 +406,13 @@ pub fn well_known_file_descriptor_set() -> tpt_proto_descriptor::FileDescriptorS
         DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
         FieldType, FileDescriptorProto, Label,
     };
-    fn fld(name: &str, number: i32, ty: FieldType, label: Label, type_name: Option<&str>) -> FieldDescriptorProto {
+    fn fld(
+        name: &str,
+        number: i32,
+        ty: FieldType,
+        label: Label,
+        type_name: Option<&str>,
+    ) -> FieldDescriptorProto {
         FieldDescriptorProto {
             name: Some(name.into()),
             number: Some(number),
@@ -480,12 +486,24 @@ pub fn well_known_file_descriptor_set() -> tpt_proto_descriptor::FileDescriptorS
     // Struct / Value / ListValue.
     messages.push(DescriptorProto {
         name: Some("Struct".into()),
-        field: vec![fld("fields", 1, FieldType::Message, Label::Repeated, Some(".google.protobuf.Struct.FieldsEntry"))],
+        field: vec![fld(
+            "fields",
+            1,
+            FieldType::Message,
+            Label::Repeated,
+            Some(".google.protobuf.Struct.FieldsEntry"),
+        )],
         nested_type: vec![DescriptorProto {
             name: Some("FieldsEntry".into()),
             field: vec![
                 fld("key", 1, FieldType::String, Label::Optional, None),
-                fld("value", 2, FieldType::Message, Label::Optional, Some(".google.protobuf.Value")),
+                fld(
+                    "value",
+                    2,
+                    FieldType::Message,
+                    Label::Optional,
+                    Some(".google.protobuf.Value"),
+                ),
             ],
             options: Some(vec![0x38u8, 0x01u8]),
             ..Default::default()
@@ -495,18 +513,42 @@ pub fn well_known_file_descriptor_set() -> tpt_proto_descriptor::FileDescriptorS
     messages.push(DescriptorProto {
         name: Some("Value".into()),
         field: vec![
-            fld("null_value", 1, FieldType::Enum, Label::Optional, Some(".google.protobuf.NullValue")),
+            fld(
+                "null_value",
+                1,
+                FieldType::Enum,
+                Label::Optional,
+                Some(".google.protobuf.NullValue"),
+            ),
             fld("number_value", 2, FieldType::Double, Label::Optional, None),
             fld("string_value", 3, FieldType::String, Label::Optional, None),
             fld("bool_value", 4, FieldType::Bool, Label::Optional, None),
-            fld("struct_value", 5, FieldType::Message, Label::Optional, Some(".google.protobuf.Struct")),
-            fld("list_value", 6, FieldType::Message, Label::Optional, Some(".google.protobuf.ListValue")),
+            fld(
+                "struct_value",
+                5,
+                FieldType::Message,
+                Label::Optional,
+                Some(".google.protobuf.Struct"),
+            ),
+            fld(
+                "list_value",
+                6,
+                FieldType::Message,
+                Label::Optional,
+                Some(".google.protobuf.ListValue"),
+            ),
         ],
         ..Default::default()
     });
     messages.push(DescriptorProto {
         name: Some("ListValue".into()),
-        field: vec![fld("values", 1, FieldType::Message, Label::Repeated, Some(".google.protobuf.Value"))],
+        field: vec![fld(
+            "values",
+            1,
+            FieldType::Message,
+            Label::Repeated,
+            Some(".google.protobuf.Value"),
+        )],
         ..Default::default()
     });
 
@@ -537,7 +579,10 @@ mod tests {
 
     #[test]
     fn timestamp_roundtrip() {
-        let t = Timestamp { seconds: 1_700_000_000, nanos: 123_456_789 };
+        let t = Timestamp {
+            seconds: 1_700_000_000,
+            nanos: 123_456_789,
+        };
         let bytes = t.encode_to_vec().unwrap();
         let back = Timestamp::decode(&bytes).unwrap();
         assert_eq!(t, back);
@@ -545,7 +590,10 @@ mod tests {
 
     #[test]
     fn duration_roundtrip() {
-        let d = Duration { seconds: -3, nanos: 250_000_000 };
+        let d = Duration {
+            seconds: -3,
+            nanos: 250_000_000,
+        };
         let bytes = d.encode_to_vec().unwrap();
         let back = Duration::decode(&bytes).unwrap();
         assert_eq!(d, back);
@@ -553,7 +601,9 @@ mod tests {
 
     #[test]
     fn field_mask_roundtrip() {
-        let m = FieldMask { paths: vec!["a.b".into(), "c".into()] };
+        let m = FieldMask {
+            paths: vec!["a.b".into(), "c".into()],
+        };
         let bytes = m.encode_to_vec().unwrap();
         let back = FieldMask::decode(&bytes).unwrap();
         assert_eq!(m, back);
@@ -580,7 +630,10 @@ mod tests {
 
     #[test]
     fn any_roundtrip() {
-        let a = Any { type_url: "type.googleapis.com/foo.Bar".into(), value: vec![1, 2, 3] };
+        let a = Any {
+            type_url: "type.googleapis.com/foo.Bar".into(),
+            value: vec![1, 2, 3],
+        };
         let bytes = a.encode_to_vec().unwrap();
         assert_eq!(Any::decode(&bytes).unwrap(), a);
     }
@@ -593,7 +646,7 @@ mod tests {
 
     #[test]
     fn json_struct_via_descriptors() {
-        use tpt_proto_json::{message_to_json_string, json_string_to_message, JsonOptions};
+        use tpt_proto_json::{json_string_to_message, message_to_json_string, JsonOptions};
         use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue as RScalar, Value};
 
         let set = well_known_file_descriptor_set();
@@ -603,12 +656,18 @@ mod tests {
 
         // Build a Struct: { "a": 1, "b": "x" }
         let mut dm = DynamicMessage::new(struct_desc.clone(), pool.clone());
-        let mut vmsg = DynamicMessage::new(pool.lookup_message("google.protobuf.Value").unwrap(), pool.clone());
+        let mut vmsg = DynamicMessage::new(
+            pool.lookup_message("google.protobuf.Value").unwrap(),
+            pool.clone(),
+        );
         vmsg.set_field(2, Value::Scalar(RScalar::F64(1.0)));
-        dm.set_field(1, Value::Map(vec![(
-            Value::Scalar(RScalar::String("a".into())),
-            Value::Message(vmsg),
-        )]));
+        dm.set_field(
+            1,
+            Value::Map(vec![(
+                Value::Scalar(RScalar::String("a".into())),
+                Value::Message(vmsg),
+            )]),
+        );
 
         let opts = JsonOptions::default();
         let json = message_to_json_string(&pool, &struct_desc, &dm, &opts).unwrap();

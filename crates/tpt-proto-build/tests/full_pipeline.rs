@@ -21,8 +21,7 @@ message User {
 
 #[test]
 fn full_pipeline_proto_build_codegen_runtime_json_text_cli() {
-    let root =
-        std::env::temp_dir().join(format!("tpt_fullpipe_{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("tpt_fullpipe_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("proto")).unwrap();
     let proto_path = root.join("proto").join("user.proto");
@@ -30,7 +29,10 @@ fn full_pipeline_proto_build_codegen_runtime_json_text_cli() {
     let out_dir: PathBuf = root.join("out");
 
     // ---- Stage 1: build-crate compilation -------------------------------
-    let config = BuildConfig { incremental: true, ..Default::default() };
+    let config = BuildConfig {
+        incremental: true,
+        ..Default::default()
+    };
     compile_protos(
         &[proto_path.clone()],
         &[root.join("proto")],

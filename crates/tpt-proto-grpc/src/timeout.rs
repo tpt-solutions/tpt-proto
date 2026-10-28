@@ -87,7 +87,11 @@ mod tests {
             Duration::from_nanos(999),
         ] {
             let s = format_timeout(d);
-            assert_eq!(parse_timeout(&s).unwrap(), d, "format `{s}` did not roundtrip");
+            assert_eq!(
+                parse_timeout(&s).unwrap(),
+                d,
+                "format `{s}` did not roundtrip"
+            );
         }
     }
 

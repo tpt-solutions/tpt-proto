@@ -68,7 +68,9 @@ fn make_leaf(
     ca_key: &rcgen::KeyPair,
 ) -> (Vec<u8>, Vec<u8>) {
     let mut params = rcgen::CertificateParams::new(vec![dns.to_string()]).unwrap();
-    params.distinguished_name.push(rcgen::DnType::CommonName, cn);
+    params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, cn);
     params.extended_key_usages = vec![
         rcgen::ExtendedKeyUsagePurpose::ServerAuth,
         rcgen::ExtendedKeyUsagePurpose::ClientAuth,
@@ -82,8 +84,7 @@ fn make_leaf(
 
 /// A real self-signed server material pair (SAN `localhost`).
 fn self_signed_server() -> (Vec<u8>, Vec<u8>) {
-    let mut params =
-        rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    let mut params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
     params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "test-server");
@@ -110,8 +111,7 @@ impl TlsClient {
     fn tls_config(&self) -> Result<rustls::ClientConfig, Status> {
         let mut roots = RootCertStore::empty();
         for cert in rustls_pemfile::certs(&mut Cursor::new(&self.root_pem)) {
-            let cert =
-                cert.map_err(|e| Status::new(Code::Internal, format!("parse root: {e}")))?;
+            let cert = cert.map_err(|e| Status::new(Code::Internal, format!("parse root: {e}")))?;
             roots
                 .add(cert)
                 .map_err(|e| Status::new(Code::Internal, format!("add root: {e}")))?;
@@ -209,7 +209,8 @@ impl TlsClient {
         let len = u32::from_be_bytes([body[1], body[2], body[3], body[4]]) as usize;
         let payload = decode_message(&body[..5 + len], Compression::Identity, usize::MAX)
             .map_err(|e| Status::new(Code::Internal, format!("decode frame: {e}")))?;
-        let pong = ExPong::decode(&payload).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+        let pong =
+            ExPong::decode(&payload).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
         Ok((pong, merge_metadata(&headers, trailers.as_ref())))
     }
 }
@@ -366,8 +367,7 @@ async fn mtls_required_without_client_certificate_is_rejected() {
     // server's `certificate_required` alert arrives, so the rejection may
     // surface either at connect time or on the first exchange.
     assert!(
-        err.message.contains("handshake")
-            || err.message.to_lowercase().contains("cert"),
+        err.message.contains("handshake") || err.message.to_lowercase().contains("cert"),
         "got: {err}"
     );
 }
@@ -431,7 +431,9 @@ async fn malformed_config_fails_fast() {
         .serve_listener(listener)
         .await;
     let io_err = result.unwrap_err();
-    assert_eq!(io_err.kind(), std::io::ErrorKind::InvalidInput, "got: {io_err}");
+    assert_eq!(
+        io_err.kind(),
+        std::io::ErrorKind::InvalidInput,
+        "got: {io_err}"
+    );
 }
-
-

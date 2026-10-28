@@ -56,7 +56,11 @@ service Directory {
     #[test]
     fn parse_proto3_basic() {
         let r = parse_file("test.proto", PROTO3);
-        assert!(!r.diagnostics.has_errors(), "unexpected diagnostics: {:?}", r.diagnostics.iter().collect::<Vec<_>>());
+        assert!(
+            !r.diagnostics.has_errors(),
+            "unexpected diagnostics: {:?}",
+            r.diagnostics.iter().collect::<Vec<_>>()
+        );
         let f = r.file;
         assert_eq!(f.syntax.as_ref().unwrap().value, "proto3");
         assert_eq!(f.package.as_ref().unwrap().name, "example");
@@ -70,7 +74,10 @@ service Directory {
         assert_eq!(person.maps.len(), 1);
         assert_eq!(person.nested_messages.len(), 1);
         assert_eq!(person.nested_enums.len(), 1);
-        assert!(matches!(person.fields[0].ty, ast::TypeRef::Scalar(ScalarType::String)));
+        assert!(matches!(
+            person.fields[0].ty,
+            ast::TypeRef::Scalar(ScalarType::String)
+        ));
         assert_eq!(f.services.len(), 1);
         assert_eq!(f.services[0].methods.len(), 2);
         assert!(f.services[0].methods[1].client_streaming);
@@ -91,7 +98,11 @@ message M {
 }
 "#;
         let r = parse_file("p2.proto", src);
-        assert!(!r.diagnostics.has_errors(), "unexpected diagnostics: {:?}", r.diagnostics.iter().collect::<Vec<_>>());
+        assert!(
+            !r.diagnostics.has_errors(),
+            "unexpected diagnostics: {:?}",
+            r.diagnostics.iter().collect::<Vec<_>>()
+        );
         let m = &r.file.messages[0];
         assert_eq!(m.fields[0].label, ast::Label::Required);
         assert_eq!(m.fields[0].default, Some(ast::Constant::Int(5)));
@@ -111,7 +122,11 @@ message M {
     fn editions_syntax_accepted() {
         let src = r#"edition = "2023"; message M { int32 x = 1; }"#;
         let r = parse_file("e.proto", src);
-        assert!(!r.diagnostics.has_errors(), "diagnostics: {:?}", r.diagnostics.iter().collect::<Vec<_>>());
+        assert!(
+            !r.diagnostics.has_errors(),
+            "diagnostics: {:?}",
+            r.diagnostics.iter().collect::<Vec<_>>()
+        );
         assert!(r.file.syntax.is_none());
     }
 }

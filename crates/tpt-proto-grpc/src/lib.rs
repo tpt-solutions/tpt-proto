@@ -26,16 +26,16 @@ pub mod reflection;
 pub mod security;
 pub mod server;
 pub mod status;
+pub mod timeout;
 #[cfg(feature = "tls")]
 pub mod tls;
-pub mod timeout;
 pub mod transport;
 pub mod transport_http2;
 
 // Internal modules that back the generated server traits and client stubs.
+pub mod client;
 pub mod framed;
 pub mod service;
-pub mod client;
 
 pub use cancellation::CancellationToken;
 pub use codec::{
@@ -60,26 +60,26 @@ pub use reflection::{
     ServiceResponse,
 };
 pub use security::{
-    AllowAllAuthorizer, Authenticator, Authorizer, BearerTokenAuthenticator, identity_from_peer,
-    MetadataAuthenticator, parse_pem, PeerIdentity, PemBlock, RoleAuthorizer, SecurityError,
-    SecurityPolicy, TlsConfig,
+    identity_from_peer, parse_pem, AllowAllAuthorizer, Authenticator, Authorizer,
+    BearerTokenAuthenticator, MetadataAuthenticator, PeerIdentity, PemBlock, RoleAuthorizer,
+    SecurityError, SecurityPolicy, TlsConfig,
 };
 pub use status::{Code, Status};
 pub use timeout::{format_timeout, parse_timeout};
 pub use transport::{request, Channel, ClientStream, ServerStream, Transport};
 
 // Runtime building blocks referenced by generated code and integration tests.
-pub use framed::{deframe_stream, map_client_stream, map_server_stream, read_single_message};
-pub use service::ServiceHandler;
-pub use server::{
-    AcceptedStream, CleartextAcceptor, BoxedStream, Server, ServerBuilder, ServerConfig,
-    StreamAcceptor,
-};
-#[cfg(feature = "tls")]
-pub use tls::RustlsAcceptor;
 pub use client::{
     Client, ClientStreamAcceptor, Endpoint, LoadBalancer, RetryPolicy, StaticLoadBalancer,
 };
+pub use framed::{deframe_stream, map_client_stream, map_server_stream, read_single_message};
+pub use server::{
+    AcceptedStream, BoxedStream, CleartextAcceptor, Server, ServerBuilder, ServerConfig,
+    StreamAcceptor,
+};
+pub use service::ServiceHandler;
+#[cfg(feature = "tls")]
+pub use tls::RustlsAcceptor;
 pub use transport_http2::H2Transport;
 
 /// Primary gRPC content type.

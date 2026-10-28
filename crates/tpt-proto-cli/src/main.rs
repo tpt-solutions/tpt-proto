@@ -15,12 +15,7 @@ use tpt_proto_cli::{
 struct Cli {
     /// Import search directory (repeatable). `import` statements resolve
     /// relative to these paths, in order.
-    #[arg(
-        short = 'I',
-        long = "include",
-        value_name = "DIR",
-        global = true
-    )]
+    #[arg(short = 'I', long = "include", value_name = "DIR", global = true)]
     include: Vec<PathBuf>,
 
     #[command(subcommand)]
@@ -176,7 +171,10 @@ fn main() -> Result<()> {
         .unwrap_or(&empty_overrides);
 
     match cli.command {
-        Command::Compile { proto, descriptor_out } => {
+        Command::Compile {
+            proto,
+            descriptor_out,
+        } => {
             let set = compile_set_with_includes(&proto, &includes)?;
             let fd = set.file.last().expect("non-empty resolved set");
             if let Some(out) = descriptor_out {
@@ -187,9 +185,12 @@ fn main() -> Result<()> {
             }
         }
         Command::Generate { proto, out, grpc } => {
-            let out =
-                out.or_else(|| project.as_ref().and_then(|p| p.codegen_out()));
-            let code = generate_code(&proto, &includes, grpc || project.as_ref().is_some_and(|p| p.codegen.grpc))?;
+            let out = out.or_else(|| project.as_ref().and_then(|p| p.codegen_out()));
+            let code = generate_code(
+                &proto,
+                &includes,
+                grpc || project.as_ref().is_some_and(|p| p.codegen.grpc),
+            )?;
             match out {
                 Some(out) => {
                     std::fs::write(&out, &code)?;
@@ -207,11 +208,21 @@ fn main() -> Result<()> {
             let (_pool, fd) = load_pool(&proto, &includes)?;
             describe(&fd);
         }
-        Command::Decode { proto, message, hex } => {
+        Command::Decode {
+            proto,
+            message,
+            hex,
+        } => {
             let dm = decode_hex(&proto, &includes, &message, &hex)?;
             print_message(&dm, 0);
         }
-        Command::Encode { proto, message, input, from, out } => {
+        Command::Encode {
+            proto,
+            message,
+            input,
+            from,
+            out,
+        } => {
             let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let raw = read_bytes(&input)?;
@@ -224,7 +235,12 @@ fn main() -> Result<()> {
             std::fs::write(&out, bytes)?;
             println!("wrote {}", out.display());
         }
-        Command::Json { proto, message, input, out } => {
+        Command::Json {
+            proto,
+            message,
+            input,
+            out,
+        } => {
             let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let bytes = read_bytes(&input)?;
@@ -235,7 +251,12 @@ fn main() -> Result<()> {
                 println!("{json}");
             }
         }
-        Command::Text { proto, message, input, out } => {
+        Command::Text {
+            proto,
+            message,
+            input,
+            out,
+        } => {
             let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let bytes = read_bytes(&input)?;
@@ -246,7 +267,13 @@ fn main() -> Result<()> {
                 print!("{text}");
             }
         }
-        Command::ToBinary { from, proto, message, input, out } => {
+        Command::ToBinary {
+            from,
+            proto,
+            message,
+            input,
+            out,
+        } => {
             let (pool, fd) = load_pool(&proto, &includes)?;
             let desc = lookup_message(&pool, &fd, &message)?;
             let raw = read_bytes(&input)?;

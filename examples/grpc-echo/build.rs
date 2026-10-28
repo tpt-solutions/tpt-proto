@@ -7,7 +7,10 @@ fn main() {
         &["proto/greet.proto".into()],
         &["proto".into()],
         &out_dir,
-        &tpt_proto_build::BuildConfig { grpc: true, ..Default::default() },
+        &tpt_proto_build::BuildConfig {
+            grpc: true,
+            ..Default::default()
+        },
     )
     .expect("protobuf compilation failed");
 }

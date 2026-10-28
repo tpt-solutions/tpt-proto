@@ -63,7 +63,10 @@ pub struct BuildConfig {
 impl BuildConfig {
     /// A configuration enabling gRPC code generation.
     pub fn grpc() -> BuildConfig {
-        BuildConfig { grpc: true, ..Default::default() }
+        BuildConfig {
+            grpc: true,
+            ..Default::default()
+        }
     }
 }
 
@@ -92,7 +95,8 @@ fn collect_protos(root: &Path) -> Result<Vec<PathBuf>> {
         }
         return Ok(out);
     }
-    let entries = std::fs::read_dir(root).with_context(|| format!("reading dir {}", root.display()))?;
+    let entries =
+        std::fs::read_dir(root).with_context(|| format!("reading dir {}", root.display()))?;
     for e in entries {
         let p = e?.path();
         if p.is_dir() {
@@ -127,9 +131,13 @@ fn collect_protos(root: &Path) -> Result<Vec<PathBuf>> {
 /// package-module wrapping, call [`compile_protos`] with a custom
 /// [`BuildConfig`] instead.
 pub fn compile_protos_simple(protos: &[PathBuf], includes: &[PathBuf]) -> Result<()> {
-    let out_dir = std::env::var_os("OUT_DIR").map(PathBuf::from).ok_or_else(|| {
-        anyhow::anyhow!("`OUT_DIR` is not set: compile_protos_simple must be called from build.rs")
-    })?;
+    let out_dir = std::env::var_os("OUT_DIR")
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "`OUT_DIR` is not set: compile_protos_simple must be called from build.rs"
+            )
+        })?;
     compile_protos(protos, includes, &out_dir, &BuildConfig::default())
 }
 
@@ -173,7 +181,12 @@ fn emit_rerun_if_changed(protos: &[PathBuf], includes: &[PathBuf], files: &[Path
 /// them so they can be included via `include!(concat!(env!("OUT_DIR"), "/mod.rs"))`.
 ///
 /// Behaviour is controlled by `config` (see [`BuildConfig`]).
-pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path, config: &BuildConfig) -> Result<()> {
+pub fn compile_protos(
+    protos: &[PathBuf],
+    includes: &[PathBuf],
+    out_dir: &Path,
+    config: &BuildConfig,
+) -> Result<()> {
     std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
     let mut modules: Vec<String> = Vec::new();
@@ -207,8 +220,10 @@ pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path, 
         }
 
         let code = compile_one(path, includes, config)?;
-        std::fs::write(&out_path, &code).with_context(|| format!("writing {}", out_path.display()))?;
-        std::fs::write(&stamp_path, fp.to_string()).with_context(|| format!("writing {}", stamp_path.display()))?;
+        std::fs::write(&out_path, &code)
+            .with_context(|| format!("writing {}", out_path.display()))?;
+        std::fs::write(&stamp_path, fp.to_string())
+            .with_context(|| format!("writing {}", stamp_path.display()))?;
         modules.push(stem);
     }
 
@@ -216,7 +231,8 @@ pub fn compile_protos(protos: &[PathBuf], includes: &[PathBuf], out_dir: &Path, 
     for m in &modules {
         mod_rs.push_str(&format!("pub mod {m};\n"));
     }
-    std::fs::write(out_dir.join("mod.rs"), mod_rs).with_context(|| format!("writing {}/mod.rs", out_dir.display()))?;
+    std::fs::write(out_dir.join("mod.rs"), mod_rs)
+        .with_context(|| format!("writing {}/mod.rs", out_dir.display()))?;
     Ok(())
 }
 
@@ -268,8 +284,16 @@ mod tests {
         let tmp = std::env::temp_dir().join("tpt_build_test");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(tmp.join("a.proto"), "syntax = \"proto3\"; package t; message A {}").unwrap();
-        std::fs::write(tmp.join("b.proto"), "syntax = \"proto3\"; package t; message B {}").unwrap();
+        std::fs::write(
+            tmp.join("a.proto"),
+            "syntax = \"proto3\"; package t; message A {}",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join("b.proto"),
+            "syntax = \"proto3\"; package t; message B {}",
+        )
+        .unwrap();
         let mut files = collect_protos(&tmp).unwrap();
         files.sort();
         assert_eq!(files.len(), 2);
@@ -281,11 +305,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let src = root.join("m.proto");
-        std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; }").unwrap();
+        std::fs::write(
+            &src,
+            "syntax = \"proto3\"; package t; message M { int32 a = 1; }",
+        )
+        .unwrap();
         let out = root.join("out");
         std::fs::create_dir_all(&out).unwrap();
 
-        let config = BuildConfig { incremental: true, ..Default::default() };
+        let config = BuildConfig {
+            incremental: true,
+            ..Default::default()
+        };
         compile_protos(&[src.clone()], &[], &out, &config).unwrap();
         let out_rs = out.join("m.rs");
         assert!(out_rs.exists());
@@ -295,13 +326,23 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         compile_protos(&[src.clone()], &[], &out, &config).unwrap();
         let second_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
-        assert_eq!(first_mtime, second_mtime, "output was rewritten despite no changes");
+        assert_eq!(
+            first_mtime, second_mtime,
+            "output was rewritten despite no changes"
+        );
 
         // Changing the source should force regeneration.
-        std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; string b = 2; }").unwrap();
+        std::fs::write(
+            &src,
+            "syntax = \"proto3\"; package t; message M { int32 a = 1; string b = 2; }",
+        )
+        .unwrap();
         compile_protos(&[src.clone()], &[], &out, &config).unwrap();
         let third_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
-        assert_ne!(second_mtime, third_mtime, "output was not regenerated after source change");
+        assert_ne!(
+            second_mtime, third_mtime,
+            "output was not regenerated after source change"
+        );
     }
 
     #[test]
@@ -315,9 +356,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let src = root.join("m.proto");
-        std::fs::write(&src, "syntax = \"proto3\"; package t; message M { int32 a = 1; }").unwrap();
+        std::fs::write(
+            &src,
+            "syntax = \"proto3\"; package t; message M { int32 a = 1; }",
+        )
+        .unwrap();
         let err = compile_protos_simple(&[src], &[]).unwrap_err();
-        assert!(err.to_string().contains("OUT_DIR"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("OUT_DIR"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

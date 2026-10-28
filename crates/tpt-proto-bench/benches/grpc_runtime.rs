@@ -87,8 +87,14 @@ impl BenchService {
         BenchService {
             methods: vec![
                 ("/bench.BenchService/Unary".into(), MethodKind::Unary),
-                ("/bench.BenchService/ServerStream".into(), MethodKind::ServerStreaming),
-                ("/bench.BenchService/ClientStream".into(), MethodKind::ClientStreaming),
+                (
+                    "/bench.BenchService/ServerStream".into(),
+                    MethodKind::ServerStreaming,
+                ),
+                (
+                    "/bench.BenchService/ClientStream".into(),
+                    MethodKind::ClientStreaming,
+                ),
                 ("/bench.BenchService/Bidi".into(), MethodKind::BidiStreaming),
             ],
         }
@@ -119,7 +125,14 @@ impl tpt_proto_grpc::service::ServiceHandler for BenchService {
     ) -> Result<ServerStream<Vec<u8>>, Status> {
         let count = Count::decode(&req).map(|c| c.n).unwrap_or(1);
         let items: Vec<Result<Vec<u8>, Status>> = (0..count)
-            .map(|i| Ok(Echo { body: req.clone(), seq: i }.encode_to_vec().unwrap()))
+            .map(|i| {
+                Ok(Echo {
+                    body: req.clone(),
+                    seq: i,
+                }
+                .encode_to_vec()
+                .unwrap())
+            })
             .collect();
         Ok(Box::pin(stream::iter(items)))
     }
@@ -237,13 +250,19 @@ async fn bench_server_streaming() {
         let label = format!("grpc/runtime/server_stream/{count}");
         let warm = 50;
         for _ in 0..warm {
-            let (mut s, _) = client.server_streaming(path, md.clone(), req.clone()).await.unwrap();
+            let (mut s, _) = client
+                .server_streaming(path, md.clone(), req.clone())
+                .await
+                .unwrap();
             while s.next().await.is_some() {}
         }
         let iters = scale(1_000u64);
         let start = std::time::Instant::now();
         for _ in 0..iters {
-            let (mut s, _) = client.server_streaming(path, md.clone(), req.clone()).await.unwrap();
+            let (mut s, _) = client
+                .server_streaming(path, md.clone(), req.clone())
+                .await
+                .unwrap();
             let mut got = 0u64;
             while s.next().await.is_some() {
                 got += 1;
@@ -263,7 +282,14 @@ async fn bench_client_streaming() {
 
     for count in [10u64, 100, 1000] {
         let items: Vec<Result<Vec<u8>, Status>> = (0..count)
-            .map(|i| Ok(Echo { body: vec![1; 64], seq: i as i64 }.encode_to_vec().unwrap()))
+            .map(|i| {
+                Ok(Echo {
+                    body: vec![1; 64],
+                    seq: i as i64,
+                }
+                .encode_to_vec()
+                .unwrap())
+            })
             .collect();
         let client = client.clone();
         let label = format!("grpc/runtime/client_stream/{count}");
@@ -293,7 +319,14 @@ async fn bench_bidi_streaming() {
 
     for count in [10u64, 100, 1000] {
         let items: Vec<Result<Vec<u8>, Status>> = (0..count)
-            .map(|i| Ok(Echo { body: vec![1; 64], seq: i as i64 }.encode_to_vec().unwrap()))
+            .map(|i| {
+                Ok(Echo {
+                    body: vec![1; 64],
+                    seq: i as i64,
+                }
+                .encode_to_vec()
+                .unwrap())
+            })
             .collect();
         let client = client.clone();
         let label = format!("grpc/runtime/bidi/{count}");

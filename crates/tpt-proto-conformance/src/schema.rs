@@ -153,7 +153,9 @@ fn nested_defs() -> String {
 /// Build the proto3 `TestAllTypes` source (with `optional` for explicit
 /// presence coverage).
 fn proto3_src() -> String {
-    let mut s = String::from("syntax = \"proto3\";\npackage proto3;\nimport \"google/protobuf/wkt.proto\";\n");
+    let mut s = String::from(
+        "syntax = \"proto3\";\npackage proto3;\nimport \"google/protobuf/wkt.proto\";\n",
+    );
     s.push_str(&nested_defs());
     s.push_str("message TestAllTypes {\n");
     s.push_str(TEST_ALL_TYPES_BODY);
@@ -163,29 +165,85 @@ fn proto3_src() -> String {
 
 /// Build the proto2 `TestAllTypes` source (all fields `optional`).
 fn proto2_src() -> String {
-    let mut s = String::from("syntax = \"proto2\";\npackage proto2;\nimport \"google/protobuf/wkt.proto\";\n");
+    let mut s = String::from(
+        "syntax = \"proto2\";\npackage proto2;\nimport \"google/protobuf/wkt.proto\";\n",
+    );
     s.push_str(&nested_defs());
     s.push_str("message TestAllTypes {\n");
     // In proto2 every scalar needs `optional`; inject it for the scalar block.
     let body = TEST_ALL_TYPES_BODY
-        .replace("  int32 optional_int32 = 1;\n", "  optional int32 optional_int32 = 1;\n")
-        .replace("  int64 optional_int64 = 2;\n", "  optional int64 optional_int64 = 2;\n")
-        .replace("  uint32 optional_uint32 = 3;\n", "  optional uint32 optional_uint32 = 3;\n")
-        .replace("  uint64 optional_uint64 = 4;\n", "  optional uint64 optional_uint64 = 4;\n")
-        .replace("  sint32 optional_sint32 = 5;\n", "  optional sint32 optional_sint32 = 5;\n")
-        .replace("  sint64 optional_sint64 = 6;\n", "  optional sint64 optional_sint64 = 6;\n")
-        .replace("  fixed32 optional_fixed32 = 7;\n", "  optional fixed32 optional_fixed32 = 7;\n")
-        .replace("  fixed64 optional_fixed64 = 8;\n", "  optional fixed64 optional_fixed64 = 8;\n")
-        .replace("  sfixed32 optional_sfixed32 = 9;\n", "  optional sfixed32 optional_sfixed32 = 9;\n")
-        .replace("  sfixed64 optional_sfixed64 = 10;\n", "  optional sfixed64 optional_sfixed64 = 10;\n")
-        .replace("  float optional_float = 11;\n", "  optional float optional_float = 11;\n")
-        .replace("  double optional_double = 12;\n", "  optional double optional_double = 12;\n")
-        .replace("  bool optional_bool = 13;\n", "  optional bool optional_bool = 13;\n")
-        .replace("  string optional_string = 14;\n", "  optional string optional_string = 14;\n")
-        .replace("  bytes optional_bytes = 15;\n", "  optional bytes optional_bytes = 15;\n")
-        .replace("  NestedMessage optional_nested_message = 18;\n", "  optional NestedMessage optional_nested_message = 18;\n")
-        .replace("  NestedEnum optional_nested_enum = 21;\n", "  optional NestedEnum optional_nested_enum = 21;\n")
-        .replace("  google.protobuf.Timestamp optional_timestamp = 80;\n", "  optional google.protobuf.Timestamp optional_timestamp = 80;\n");
+        .replace(
+            "  int32 optional_int32 = 1;\n",
+            "  optional int32 optional_int32 = 1;\n",
+        )
+        .replace(
+            "  int64 optional_int64 = 2;\n",
+            "  optional int64 optional_int64 = 2;\n",
+        )
+        .replace(
+            "  uint32 optional_uint32 = 3;\n",
+            "  optional uint32 optional_uint32 = 3;\n",
+        )
+        .replace(
+            "  uint64 optional_uint64 = 4;\n",
+            "  optional uint64 optional_uint64 = 4;\n",
+        )
+        .replace(
+            "  sint32 optional_sint32 = 5;\n",
+            "  optional sint32 optional_sint32 = 5;\n",
+        )
+        .replace(
+            "  sint64 optional_sint64 = 6;\n",
+            "  optional sint64 optional_sint64 = 6;\n",
+        )
+        .replace(
+            "  fixed32 optional_fixed32 = 7;\n",
+            "  optional fixed32 optional_fixed32 = 7;\n",
+        )
+        .replace(
+            "  fixed64 optional_fixed64 = 8;\n",
+            "  optional fixed64 optional_fixed64 = 8;\n",
+        )
+        .replace(
+            "  sfixed32 optional_sfixed32 = 9;\n",
+            "  optional sfixed32 optional_sfixed32 = 9;\n",
+        )
+        .replace(
+            "  sfixed64 optional_sfixed64 = 10;\n",
+            "  optional sfixed64 optional_sfixed64 = 10;\n",
+        )
+        .replace(
+            "  float optional_float = 11;\n",
+            "  optional float optional_float = 11;\n",
+        )
+        .replace(
+            "  double optional_double = 12;\n",
+            "  optional double optional_double = 12;\n",
+        )
+        .replace(
+            "  bool optional_bool = 13;\n",
+            "  optional bool optional_bool = 13;\n",
+        )
+        .replace(
+            "  string optional_string = 14;\n",
+            "  optional string optional_string = 14;\n",
+        )
+        .replace(
+            "  bytes optional_bytes = 15;\n",
+            "  optional bytes optional_bytes = 15;\n",
+        )
+        .replace(
+            "  NestedMessage optional_nested_message = 18;\n",
+            "  optional NestedMessage optional_nested_message = 18;\n",
+        )
+        .replace(
+            "  NestedEnum optional_nested_enum = 21;\n",
+            "  optional NestedEnum optional_nested_enum = 21;\n",
+        )
+        .replace(
+            "  google.protobuf.Timestamp optional_timestamp = 80;\n",
+            "  optional google.protobuf.Timestamp optional_timestamp = 80;\n",
+        );
     s.push_str(&body);
     s.push_str("}\n");
     s
@@ -193,7 +251,9 @@ fn proto2_src() -> String {
 
 /// Build the editions `TestAllTypes` source (`edition = "2024"`).
 fn editions_src() -> String {
-    let mut s = String::from("edition = \"2024\";\npackage editions;\nimport \"google/protobuf/wkt.proto\";\n");
+    let mut s = String::from(
+        "edition = \"2024\";\npackage editions;\nimport \"google/protobuf/wkt.proto\";\n",
+    );
     s.push_str(&nested_defs());
     s.push_str("message TestAllTypes {\n");
     s.push_str(TEST_ALL_TYPES_BODY);
@@ -233,13 +293,7 @@ impl Registry {
             }
         }
 
-        let res = compile_set(&[
-            conformance.file,
-            wkt.file,
-            p3.file,
-            p2.file,
-            ed.file,
-        ]);
+        let res = compile_set(&[conformance.file, wkt.file, p3.file, p2.file, ed.file]);
         assert!(
             !res.diagnostics.has_errors(),
             "schema compile errors: {:?}",

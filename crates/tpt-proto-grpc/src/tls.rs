@@ -40,15 +40,11 @@ fn parse_cert_chain(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, Security
 fn parse_private_key(pem: &[u8]) -> Result<PrivateKeyDer<'static>, SecurityError> {
     for block in parse_pem(pem)? {
         match block.label.as_str() {
-            "PRIVATE KEY" => {
-                return Ok(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(block.der)))
-            }
+            "PRIVATE KEY" => return Ok(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(block.der))),
             "RSA PRIVATE KEY" => {
                 return Ok(PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(block.der)))
             }
-            "EC PRIVATE KEY" => {
-                return Ok(PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(block.der)))
-            }
+            "EC PRIVATE KEY" => return Ok(PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(block.der))),
             _ => {}
         }
     }
@@ -198,7 +194,10 @@ impl RustlsAcceptor {
 }
 
 impl crate::server::StreamAcceptor for RustlsAcceptor {
-    fn accept(&self, stream: TcpStream) -> futures::future::BoxFuture<'static, std::io::Result<AcceptedStream>> {
+    fn accept(
+        &self,
+        stream: TcpStream,
+    ) -> futures::future::BoxFuture<'static, std::io::Result<AcceptedStream>> {
         let peer_addr = stream.peer_addr().ok();
         let this = self.clone();
         Box::pin(async move {

@@ -216,8 +216,10 @@ mod tests {
     #[test]
     fn merge_overrides_base() {
         let base = FeatureSet::for_proto3();
-        let mut ov = FeatureOverrides::default();
-        ov.field_presence = Some(FieldPresence::Explicit);
+        let ov = FeatureOverrides {
+            field_presence: Some(FieldPresence::Explicit),
+            ..Default::default()
+        };
         let merged = base.merge(&ov);
         assert_eq!(merged.field_presence, FieldPresence::Explicit);
         // Untouched features fall through from the base deterministically.

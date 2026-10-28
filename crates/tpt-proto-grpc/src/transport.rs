@@ -117,8 +117,8 @@ impl Channel {
             .encode_to_vec()
             .map_err(|e| Status::new(Code::Internal, format!("encode: {e}")))?;
         let (out, trailers) = self.transport.unary(path, metadata, bytes).await?;
-        let resp = R::decode(&out)
-            .map_err(|e| Status::new(Code::Internal, format!("decode: {e}")))?;
+        let resp =
+            R::decode(&out).map_err(|e| Status::new(Code::Internal, format!("decode: {e}")))?;
         Ok((resp, trailers))
     }
 
@@ -231,7 +231,12 @@ mod tests {
         };
         let fut = ch.unary::<Msg, Msg>("/pkg.Svc/Method", Metadata::new(), &req);
         let (resp, _) = futures::executor::block_on(fut).unwrap();
-        assert_eq!(resp, Msg { body: vec![1, 2, 3] });
+        assert_eq!(
+            resp,
+            Msg {
+                body: vec![1, 2, 3]
+            }
+        );
     }
 
     #[test]

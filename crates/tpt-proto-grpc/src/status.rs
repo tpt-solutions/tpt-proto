@@ -282,7 +282,10 @@ mod tests {
         let back = Status::from_trailers(&t);
         assert_eq!(back.code, Code::InvalidArgument);
         assert_eq!(back.details.len(), 1);
-        assert_eq!(back.details[0].type_url, "type.googleapis.com/google.rpc.BadRequest");
+        assert_eq!(
+            back.details[0].type_url,
+            "type.googleapis.com/google.rpc.BadRequest"
+        );
     }
 
     #[test]

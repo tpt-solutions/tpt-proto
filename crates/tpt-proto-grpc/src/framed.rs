@@ -53,8 +53,9 @@ impl Stream for DeframeStream {
         loop {
             // Try to extract a complete frame from the buffer.
             if this.buf.len() >= 5 {
-                let declared = u32::from_be_bytes([this.buf[1], this.buf[2], this.buf[3], this.buf[4]])
-                    as usize;
+                let declared =
+                    u32::from_be_bytes([this.buf[1], this.buf[2], this.buf[3], this.buf[4]])
+                        as usize;
                 if declared > this.max {
                     return Poll::Ready(Some(Err(Status::new(
                         Code::ResourceExhausted,
@@ -129,10 +130,7 @@ pub async fn read_single_message(
 ///
 /// Each `Ok(a)` item is transformed via `f`; `Err` items pass through
 /// unchanged.
-pub fn map_server_stream<A, B, F>(
-    stream: ServerStream<A>,
-    f: F,
-) -> ServerStream<B>
+pub fn map_server_stream<A, B, F>(stream: ServerStream<A>, f: F) -> ServerStream<B>
 where
     A: Send + 'static,
     B: Send + 'static,
@@ -142,10 +140,7 @@ where
 }
 
 /// Map a `ClientStream<A>` (the request side) into a `ClientStream<B>`.
-pub fn map_client_stream<A, B, F>(
-    stream: ClientStream<A>,
-    f: F,
-) -> ClientStream<B>
+pub fn map_client_stream<A, B, F>(stream: ClientStream<A>, f: F) -> ClientStream<B>
 where
     A: Send + 'static,
     B: Send + 'static,

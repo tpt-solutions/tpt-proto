@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures::stream;
-use tpt_proto_core::{Message, Reader, Result as CoreResult, Writer};
 use tpt_proto_core::scalar;
+use tpt_proto_core::{Message, Reader, Result as CoreResult, Writer};
 
 use crate::context::{Request, Response, RpcContext};
 use crate::method::MethodKind;
@@ -209,7 +209,12 @@ impl HealthRegistry {
     }
 
     fn broadcast(&self, service: &str, status: ServingStatus) {
-        if let Some(tx) = self.watchers.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some(tx) = self
+            .watchers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             // Ignore send errors: no active subscribers.
             let _ = tx.send((service.to_string(), status));
         }
@@ -272,18 +277,12 @@ impl HealthService {
             (Some(current), rx, service),
             |(pending, mut rx, service)| async move {
                 if let Some(status) = pending {
-                    return Some((
-                        Ok(HealthCheckResponse { status }),
-                        (None, rx, service),
-                    ));
+                    return Some((Ok(HealthCheckResponse { status }), (None, rx, service)));
                 }
                 loop {
                     match rx.recv().await {
                         Ok((svc, status)) if svc == service || svc.is_empty() => {
-                            return Some((
-                                Ok(HealthCheckResponse { status }),
-                                (None, rx, service),
-                            ));
+                            return Some((Ok(HealthCheckResponse { status }), (None, rx, service)));
                         }
                         Ok(_) => continue,
                         Err(_) => return None,
@@ -384,9 +383,9 @@ impl ServiceHandler for HealthService {
 
 #[cfg(test)]
 mod tests {
-use super::*;
-use crate::context::RpcContext;
-use futures::StreamExt;
+    use super::*;
+    use crate::context::RpcContext;
+    use futures::StreamExt;
 
     #[test]
     fn status_wire_roundtrip() {

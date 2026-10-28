@@ -116,8 +116,8 @@ pub fn discover(start: Option<&Path>) -> Option<PathBuf> {
 /// Parse a config file at `path`. Unknown keys are rejected so typos in rule
 /// codes / sections fail loudly instead of being silently ignored.
 pub fn load(path: &Path) -> Result<ProjectConfig, String> {
-    let raw = std::fs::read_to_string(path)
-        .map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
     #[derive(Deserialize, Default)]
     #[serde(deny_unknown_fields)]
     struct Raw {
@@ -155,9 +155,16 @@ pub fn load(path: &Path) -> Result<ProjectConfig, String> {
         .unwrap_or_else(|| PathBuf::from("."));
     Ok(ProjectConfig {
         base_dir,
-        includes: IncludesSection { paths: raw.includes.paths },
-        lint: LintSection { severity: raw.lint.severity },
-        codegen: CodegenSection { out: raw.codegen.out, grpc: raw.codegen.grpc },
+        includes: IncludesSection {
+            paths: raw.includes.paths,
+        },
+        lint: LintSection {
+            severity: raw.lint.severity,
+        },
+        codegen: CodegenSection {
+            out: raw.codegen.out,
+            grpc: raw.codegen.grpc,
+        },
     })
 }
 
@@ -190,7 +197,10 @@ mod tests {
             cfg.include_paths(),
             vec![tmp.join("proto"), tmp.join("vendor")]
         );
-        assert_eq!(cfg.lint.severity.get("DEFAULT_VALUE_CHANGED").unwrap(), "ignore");
+        assert_eq!(
+            cfg.lint.severity.get("DEFAULT_VALUE_CHANGED").unwrap(),
+            "ignore"
+        );
         assert_eq!(cfg.codegen_out(), Some(tmp.join("src/gen")));
         assert!(cfg.codegen.grpc);
 
@@ -201,8 +211,7 @@ mod tests {
         );
 
         // No config above an isolated dir → None.
-        let empty =
-            std::env::temp_dir().join(format!("tpt_cfg_none_{}", std::process::id()));
+        let empty = std::env::temp_dir().join(format!("tpt_cfg_none_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&empty);
         std::fs::create_dir_all(&empty).unwrap();
         assert_eq!(discover(Some(&empty)), None);
@@ -236,11 +245,7 @@ mod tests {
         assert!(load(&tmp.join(CONFIG_FILE_NAME)).is_err());
         // Unknown rule codes inside lint.severity are allowed (they may
         // target codes from other versions); unknown *sections* are not.
-        std::fs::write(
-            tmp.join(CONFIG_FILE_NAME),
-            "[no_such_section]\nx = 1\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.join(CONFIG_FILE_NAME), "[no_such_section]\nx = 1\n").unwrap();
         assert!(load(&tmp.join(CONFIG_FILE_NAME)).is_err());
         let _ = std::fs::remove_dir_all(tmp);
     }

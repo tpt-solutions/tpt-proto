@@ -91,4 +91,3 @@ proptest! {
         prop_assert!(back.encode().unwrap().is_empty());
     }
 }
-

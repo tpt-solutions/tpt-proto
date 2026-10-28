@@ -6,18 +6,16 @@ use std::sync::Arc;
 use futures::stream;
 use futures::StreamExt;
 use tpt_proto_core::Message;
+use tpt_proto_descriptor::{FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto};
 use tpt_proto_grpc::health::{
     HealthCheckRequest, HealthCheckResponse, HealthRegistry, HealthService, ServingStatus,
 };
 use tpt_proto_grpc::metadata::Metadata;
 use tpt_proto_grpc::observability::{InMemoryMetricsRecorder, Observability};
 use tpt_proto_grpc::reflection::{ReflectionService, ServerReflectionRequest};
-use tpt_proto_grpc::security::{
-    BearerTokenAuthenticator, SecurityPolicy,
-};
+use tpt_proto_grpc::security::{BearerTokenAuthenticator, SecurityPolicy};
 use tpt_proto_grpc::transport::Transport;
 use tpt_proto_grpc::{H2Transport, Server, ServerStream};
-use tpt_proto_descriptor::{FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto};
 
 async fn spawn_server(server: Server) -> (std::net::SocketAddr, tpt_proto_grpc::CancellationToken) {
     use tokio::net::TcpListener;
@@ -37,9 +35,7 @@ async fn observability_records_metrics_for_health_check() {
 
     let mut registry = HealthRegistry::new();
     registry.set_status("", ServingStatus::Serving);
-    let server = Server::builder()
-        .with_observability(obs)
-        .build();
+    let server = Server::builder().with_observability(obs).build();
     server.add_service(HealthService::new(registry));
 
     let (addr, shutdown) = spawn_server(server).await;
@@ -65,7 +61,9 @@ async fn observability_records_metrics_for_health_check() {
     let snap = metrics.snapshot();
     let labels: Vec<_> = snap.keys().cloned().collect();
     assert!(
-        labels.iter().any(|l| l.service == "grpc.health.v1.Health" && l.method == "Check"),
+        labels
+            .iter()
+            .any(|l| l.service == "grpc.health.v1.Health" && l.method == "Check"),
         "expected metrics labelled for health Check, got {labels:?}"
     );
     shutdown.cancel();
@@ -75,9 +73,7 @@ async fn observability_records_metrics_for_health_check() {
 async fn security_policy_enforces_authentication() {
     let policy = SecurityPolicy::none()
         .with_authenticator(Arc::new(BearerTokenAuthenticator::new("secret", "alice")));
-    let server = Server::builder()
-        .with_security(Arc::new(policy))
-        .build();
+    let server = Server::builder().with_security(Arc::new(policy)).build();
     let mut registry = HealthRegistry::new();
     registry.set_status("", ServingStatus::Serving);
     server.add_service(HealthService::new(registry));
@@ -100,7 +96,11 @@ async fn security_policy_enforces_authentication() {
     let mut md = Metadata::new();
     md.insert_text("authorization", "Bearer secret").unwrap();
     let (resp, _trailers) = transport
-        .unary("/grpc.health.v1.Health/Check", md, req.encode_to_vec().unwrap())
+        .unary(
+            "/grpc.health.v1.Health/Check",
+            md,
+            req.encode_to_vec().unwrap(),
+        )
         .await
         .expect("authenticated check succeeds");
     let resp = HealthCheckResponse::decode(&resp).unwrap();
@@ -121,9 +121,7 @@ async fn reflection_lists_registered_services() {
         service: vec![svc],
         ..Default::default()
     };
-    let set = FileDescriptorSet {
-        file: vec![file],
-    };
+    let set = FileDescriptorSet { file: vec![file] };
 
     let server = Server::builder().build();
     server.add_service(ReflectionService::new(set));

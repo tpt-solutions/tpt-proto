@@ -4,7 +4,7 @@
 use std::io::{self, Read, Write};
 
 use tpt_proto_core::Reader;
-use tpt_proto_json::{message_to_json_string, json_string_to_message, JsonOptions};
+use tpt_proto_json::{json_string_to_message, message_to_json_string, JsonOptions};
 use tpt_proto_reflect::{DynamicMessage, ScalarValue, Value};
 
 use crate::protocol::*;
@@ -83,7 +83,10 @@ pub fn process(registry: &Registry, request: &DynamicMessage) -> DynamicMessage 
         match DynamicMessage::decode(&registry.pool, desc.clone(), &mut Reader::new(&bytes)) {
             Ok(m) => m,
             Err(e) => {
-                response.set_field(RES_PARSE_ERROR, str_value(&format!("failed to parse binary: {e}")));
+                response.set_field(
+                    RES_PARSE_ERROR,
+                    str_value(&format!("failed to parse binary: {e}")),
+                );
                 return response;
             }
         }
@@ -103,10 +106,7 @@ pub fn process(registry: &Registry, request: &DynamicMessage) -> DynamicMessage 
             }
         }
     } else {
-        response.set_field(
-            RES_RUNTIME_ERROR,
-            str_value("request contained no payload"),
-        );
+        response.set_field(RES_RUNTIME_ERROR, str_value("request contained no payload"));
         return response;
     };
 
@@ -165,9 +165,7 @@ pub fn run_testee_loop<R: Read, W: Write>(
             }
         };
         let resp = process(registry, &request);
-        let out = resp
-            .encode()
-            .map_err(|e| io::Error::other(e.to_string()))?;
+        let out = resp.encode().map_err(|e| io::Error::other(e.to_string()))?;
         write_frame(writer, &out)?;
     }
     Ok(())

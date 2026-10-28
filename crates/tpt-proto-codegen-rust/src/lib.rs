@@ -555,9 +555,7 @@ fn gen_json_text_methods(ctx: &MessageContext<'_>, options: &GenerateOptions) ->
     s.push_str(&format!("impl {} {{\n", ctx.rust));
 
     if options.json {
-        s.push_str(
-            "    /// Serialize this message to its protobuf JSON representation.\n",
-        );
+        s.push_str("    /// Serialize this message to its protobuf JSON representation.\n");
         s.push_str(
             "    pub fn to_json(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {\n",
         );
@@ -565,7 +563,9 @@ fn gen_json_text_methods(ctx: &MessageContext<'_>, options: &GenerateOptions) ->
         s.push_str("        let desc = __message_descriptor(Self::PROTO_FULL_NAME);\n");
         s.push_str("        let buf = self.encode_to_vec()?;\n");
         s.push_str("        let mut __r = __core::Reader::new(&buf);\n");
-        s.push_str("        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;\n");
+        s.push_str(
+            "        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;\n",
+        );
         s.push_str(
             "        let json = __json::message_to_json_string(pool, &desc, &dm, &__json::JsonOptions::default())?;\n",
         );
@@ -592,7 +592,9 @@ fn gen_json_text_methods(ctx: &MessageContext<'_>, options: &GenerateOptions) ->
         s.push_str("        let desc = __message_descriptor(Self::PROTO_FULL_NAME);\n");
         s.push_str("        let buf = self.encode_to_vec()?;\n");
         s.push_str("        let mut __r = __core::Reader::new(&buf);\n");
-        s.push_str("        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;\n");
+        s.push_str(
+            "        let dm = __reflect::DynamicMessage::decode(pool, desc.clone(), &mut __r)?;\n",
+        );
         s.push_str("        Ok(__text::message_to_text(pool, &desc, &dm, &__text::TextOptions::default()))\n");
         s.push_str("    }\n");
         s.push_str("    /// Parse this message from protobuf text format.\n");
@@ -1457,10 +1459,10 @@ fn gen_convenience_methods(ctx: &MessageContext<'_>) -> String {
     s.push_str("        ::tpt_proto_core::Message::merge_from(&mut __msg, &mut __r)?;\n");
     s.push_str("        Ok(__msg)\n");
     s.push_str("    }\n");
+    s.push_str("    /// Encode this message into a freshly allocated byte vector.\n");
     s.push_str(
-        "    /// Encode this message into a freshly allocated byte vector.\n",
+        "    pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {\n",
     );
-    s.push_str("    pub fn encode_to_vec(&self) -> ::tpt_proto_core::Result<::std::vec::Vec<u8>> {\n");
     s.push_str("        ::tpt_proto_core::Message::encode_to_vec(self)\n");
     s.push_str("    }\n");
     s.push_str("}\n\n");
@@ -1659,11 +1661,7 @@ fn gen_builder(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
 // Service generation (synchronous placeholder traits).
 // ---------------------------------------------------------------------------
 
-fn gen_service(
-    s: &tpt_proto_descriptor::ServiceDescriptorProto,
-    pkg: &str,
-    grpc: bool,
-) -> String {
+fn gen_service(s: &tpt_proto_descriptor::ServiceDescriptorProto, pkg: &str, grpc: bool) -> String {
     let name = to_pascal(s.name.as_deref().unwrap_or("Service"));
     let svc_name = s.name.clone().unwrap_or_default();
     let full_name = if pkg.is_empty() {
@@ -1846,10 +1844,7 @@ fn gen_server_adapter(
 }
 
 /// Match arms for unary dispatch, decoding the request and encoding the reply.
-fn server_unary_arms(
-    s: &tpt_proto_descriptor::ServiceDescriptorProto,
-    pkg: &str,
-) -> String {
+fn server_unary_arms(s: &tpt_proto_descriptor::ServiceDescriptorProto, pkg: &str) -> String {
     let mut arms = String::new();
     for m in &s.method {
         if grpc_kind_name(m) != "Unary" {

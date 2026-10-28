@@ -6,19 +6,21 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, TimeZone, Utc};
 use base64::Engine;
+use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{Map, Number};
 use tpt_proto_core::Reader;
 use tpt_proto_descriptor::{DescriptorProto, FieldType};
 use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue as RScalar, Value};
 
-use super::{JsonError, JsonOptions, Json};
+use super::{Json, JsonError, JsonOptions};
 
 fn wkt_name(pool: &DescriptorPool, desc: &DescriptorProto) -> Option<String> {
     let fqn = pool.full_name_by_value(desc)?;
     let trimmed = fqn.trim_start_matches('.');
-    trimmed.strip_prefix("google.protobuf.").map(|s| s.to_string())
+    trimmed
+        .strip_prefix("google.protobuf.")
+        .map(|s| s.to_string())
 }
 
 /// Returns `Some(json)` if `descriptor` is a well-known type, or `None` to let
@@ -78,8 +80,15 @@ pub fn well_known_from_json(
 fn is_wrapper(name: &str) -> bool {
     matches!(
         name,
-        "DoubleValue" | "FloatValue" | "Int64Value" | "Uint64Value" | "Int32Value"
-            | "Uint32Value" | "BoolValue" | "StringValue" | "BytesValue"
+        "DoubleValue"
+            | "FloatValue"
+            | "Int64Value"
+            | "Uint64Value"
+            | "Int32Value"
+            | "Uint32Value"
+            | "BoolValue"
+            | "StringValue"
+            | "BytesValue"
     )
 }
 
@@ -126,7 +135,10 @@ fn get_msg(msg: &DynamicMessage, n: i32) -> Option<&DynamicMessage> {
 }
 
 fn field_type(desc: &DescriptorProto, n: i32) -> Option<FieldType> {
-    desc.field.iter().find(|f| f.number == Some(n)).and_then(|f| f.r#type)
+    desc.field
+        .iter()
+        .find(|f| f.number == Some(n))
+        .and_then(|f| f.r#type)
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +167,9 @@ fn format_timestamp(dt: DateTime<Utc>, nanos: i32) -> String {
 }
 
 fn timestamp_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMessage, JsonError> {
-    let s = json.as_str().ok_or_else(|| JsonError::TypeMismatch("Timestamp".into(), "expected string".into()))?;
+    let s = json
+        .as_str()
+        .ok_or_else(|| JsonError::TypeMismatch("Timestamp".into(), "expected string".into()))?;
     let dt = DateTime::parse_from_rfc3339(s)
         .map_err(|e| JsonError::WellKnown(format!("invalid RFC3339: {e}")))?;
     let utc = dt.with_timezone(&Utc);
@@ -179,7 +193,11 @@ fn duration_to_json(msg: &DynamicMessage) -> Result<Json, JsonError> {
 }
 
 fn format_duration(secs: i64, nanos: i32) -> String {
-    let sign = if secs < 0 || (secs == 0 && nanos < 0) { "-" } else { "" };
+    let sign = if secs < 0 || (secs == 0 && nanos < 0) {
+        "-"
+    } else {
+        ""
+    };
     let asecs = secs.unsigned_abs();
     let mut out = format!("{sign}{asecs}");
     if nanos != 0 {
@@ -193,8 +211,12 @@ fn format_duration(secs: i64, nanos: i32) -> String {
 }
 
 fn duration_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMessage, JsonError> {
-    let s = json.as_str().ok_or_else(|| JsonError::TypeMismatch("Duration".into(), "expected string".into()))?;
-    let trimmed = s.strip_suffix('s').ok_or_else(|| JsonError::WellKnown("duration missing 's'".into()))?;
+    let s = json
+        .as_str()
+        .ok_or_else(|| JsonError::TypeMismatch("Duration".into(), "expected string".into()))?;
+    let trimmed = s
+        .strip_suffix('s')
+        .ok_or_else(|| JsonError::WellKnown("duration missing 's'".into()))?;
     let (sign, body) = if let Some(b) = trimmed.strip_prefix('-') {
         (-1i64, b)
     } else {
@@ -204,11 +226,15 @@ fn duration_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMess
         Some((a, b)) => (a, Some(b)),
         None => (body, None),
     };
-    let secs: i64 = secs_str.parse().map_err(|_| JsonError::WellKnown("invalid duration seconds".into()))?;
+    let secs: i64 = secs_str
+        .parse()
+        .map_err(|_| JsonError::WellKnown("invalid duration seconds".into()))?;
     let nanos: i32 = match nanos_str {
         Some(b) => {
             let padded = format!("{:0<9}", b.chars().take(9).collect::<String>());
-            padded.parse().map_err(|_| JsonError::WellKnown("invalid duration nanos".into()))?
+            padded
+                .parse()
+                .map_err(|_| JsonError::WellKnown("invalid duration nanos".into()))?
         }
         None => 0,
     };
@@ -235,11 +261,15 @@ fn field_mask_to_json(msg: &DynamicMessage) -> Result<Json, JsonError> {
 }
 
 fn field_mask_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMessage, JsonError> {
-    let s = json.as_str().ok_or_else(|| JsonError::TypeMismatch("FieldMask".into(), "expected string".into()))?;
+    let s = json
+        .as_str()
+        .ok_or_else(|| JsonError::TypeMismatch("FieldMask".into(), "expected string".into()))?;
     let items = if s.is_empty() {
         Vec::new()
     } else {
-        s.split(',').map(|p| Value::Scalar(RScalar::String(p.to_string()))).collect()
+        s.split(',')
+            .map(|p| Value::Scalar(RScalar::String(p.to_string())))
+            .collect()
     };
     let mut msg = DynamicMessage::new(Arc::new(desc.clone()), DescriptorPool::default());
     msg.set_field(1, Value::List(items));
@@ -257,7 +287,10 @@ fn wrapper_to_json(desc: &DescriptorProto, msg: &DynamicMessage) -> Result<Json,
     };
     match v {
         Value::Scalar(s) => scalar_json(t, s),
-        _ => Err(JsonError::TypeMismatch("wrapper".into(), "expected scalar".into())),
+        _ => Err(JsonError::TypeMismatch(
+            "wrapper".into(),
+            "expected scalar".into(),
+        )),
     }
 }
 
@@ -265,14 +298,21 @@ fn scalar_json(t: FieldType, s: &RScalar) -> Result<Json, JsonError> {
     use RScalar::*;
     Ok(match (t, s) {
         (FieldType::String, String(x)) => Json::String(x.clone()),
-        (FieldType::Bytes, Bytes(b)) => Json::String(base64::engine::general_purpose::STANDARD.encode(b)),
+        (FieldType::Bytes, Bytes(b)) => {
+            Json::String(base64::engine::general_purpose::STANDARD.encode(b))
+        }
         (FieldType::Bool, Bool(b)) => Json::Bool(*b),
         (FieldType::Double, F64(x)) | (FieldType::Float, F64(x)) => Json::Number(
             Number::from_f64(*x).ok_or_else(|| JsonError::WellKnown("bad float".into()))?,
         ),
         (_, I64(x)) => Json::Number(Number::from(*x)),
         (_, U64(x)) => Json::Number(Number::from(*x)),
-        _ => return Err(JsonError::TypeMismatch("wrapper".into(), "unsupported".into())),
+        _ => {
+            return Err(JsonError::TypeMismatch(
+                "wrapper".into(),
+                "unsupported".into(),
+            ))
+        }
     })
 }
 
@@ -281,12 +321,16 @@ fn wrapper_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMessa
     let s = match (t, json) {
         (FieldType::String, Json::String(s)) => RScalar::String(s.clone()),
         (FieldType::Bytes, Json::String(s)) => RScalar::Bytes(
-            base64::engine::general_purpose::STANDARD.decode(s).or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(s)).map_err(|_| JsonError::TypeMismatch("BytesValue".into(), "bad base64".into()))?,
+            base64::engine::general_purpose::STANDARD
+                .decode(s)
+                .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(s))
+                .map_err(|_| JsonError::TypeMismatch("BytesValue".into(), "bad base64".into()))?,
         ),
         (FieldType::Bool, Json::Bool(b)) => RScalar::Bool(*b),
-        (FieldType::Double, Json::Number(n)) | (FieldType::Float, Json::Number(n)) => {
-            RScalar::F64(n.as_f64().ok_or_else(|| JsonError::TypeMismatch("float".into(), "bad".into()))?)
-        }
+        (FieldType::Double, Json::Number(n)) | (FieldType::Float, Json::Number(n)) => RScalar::F64(
+            n.as_f64()
+                .ok_or_else(|| JsonError::TypeMismatch("float".into(), "bad".into()))?,
+        ),
         (_, Json::Number(n)) => RScalar::I64(n.as_i64().unwrap_or(0)),
         _ => return Err(JsonError::TypeMismatch("wrapper".into(), "mismatch".into())),
     };
@@ -299,7 +343,12 @@ fn wrapper_from_json(desc: &DescriptorProto, json: &Json) -> Result<DynamicMessa
 // Struct / Value / ListValue.
 // ---------------------------------------------------------------------------
 
-fn struct_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
+fn struct_to_json(
+    pool: &DescriptorPool,
+    msg: &DynamicMessage,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<Json, JsonError> {
     let mut out = Map::new();
     if let Some(Value::Map(entries)) = msg.get_field(1) {
         let value_desc = pool.lookup_message(".google.protobuf.Value");
@@ -326,7 +375,9 @@ fn struct_from_json(
     opts: &JsonOptions,
     depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
-    let obj = json.as_object().ok_or_else(|| JsonError::TypeMismatch("Struct".into(), "expected object".into()))?;
+    let obj = json
+        .as_object()
+        .ok_or_else(|| JsonError::TypeMismatch("Struct".into(), "expected object".into()))?;
     let value_desc = pool.lookup_message(".google.protobuf.Value");
     let mut entries = Vec::with_capacity(obj.len());
     for (k, v) in obj {
@@ -334,21 +385,31 @@ fn struct_from_json(
             Some(d) => super::json_to_message_impl(pool, d, v, opts, depth + 1)?,
             None => DynamicMessage::new(Arc::new(DescriptorProto::default()), pool.clone()),
         };
-        entries.push((Value::Scalar(RScalar::String(k.clone())), Value::Message(value_msg)));
+        entries.push((
+            Value::Scalar(RScalar::String(k.clone())),
+            Value::Message(value_msg),
+        ));
     }
     let mut msg = DynamicMessage::new(Arc::new(desc.clone()), pool.clone());
     msg.set_field(1, Value::Map(entries));
     Ok(msg)
 }
 
-fn value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
+fn value_to_json(
+    pool: &DescriptorPool,
+    msg: &DynamicMessage,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<Json, JsonError> {
     if let Some(v) = get_i64(msg, 1) {
         // null_value enum; any value maps to JSON null.
         let _ = v;
         return Ok(Json::Null);
     }
     if let Some(s) = get_f64(msg, 2) {
-        return Ok(Json::Number(Number::from_f64(s).ok_or_else(|| JsonError::WellKnown("bad number".into()))?));
+        return Ok(Json::Number(
+            Number::from_f64(s).ok_or_else(|| JsonError::WellKnown("bad number".into()))?,
+        ));
     }
     if let Some(s) = get_str(msg, 3) {
         return Ok(Json::String(s));
@@ -357,11 +418,15 @@ fn value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions
         return Ok(Json::Bool(b));
     }
     if let Some(m) = get_msg(msg, 5) {
-        let d = pool.lookup_message(".google.protobuf.Struct").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.Struct".into()))?;
+        let d = pool
+            .lookup_message(".google.protobuf.Struct")
+            .ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.Struct".into()))?;
         return super::message_to_json_impl(pool, &d, m, opts, depth + 1);
     }
     if let Some(m) = get_msg(msg, 6) {
-        let d = pool.lookup_message(".google.protobuf.ListValue").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.ListValue".into()))?;
+        let d = pool
+            .lookup_message(".google.protobuf.ListValue")
+            .ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.ListValue".into()))?;
         return super::message_to_json_impl(pool, &d, m, opts, depth + 1);
     }
     Ok(Json::Null)
@@ -396,12 +461,16 @@ fn value_from_json(
             msg.set_field(3, Value::Scalar(RScalar::String(s.clone())));
         }
         Json::Object(_) => {
-            let d = pool.lookup_message(".google.protobuf.Struct").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.Struct".into()))?;
+            let d = pool
+                .lookup_message(".google.protobuf.Struct")
+                .ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.Struct".into()))?;
             let inner = super::json_to_message_impl(pool, &d, json, opts, depth + 1)?;
             msg.set_field(5, Value::Message(inner));
         }
         Json::Array(_arr) => {
-            let d = pool.lookup_message(".google.protobuf.ListValue").ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.ListValue".into()))?;
+            let d = pool
+                .lookup_message(".google.protobuf.ListValue")
+                .ok_or_else(|| JsonError::UnresolvedType(".google.protobuf.ListValue".into()))?;
             let inner = super::json_to_message_impl(pool, &d, json, opts, depth + 1)?;
             msg.set_field(6, Value::Message(inner));
         }
@@ -409,7 +478,12 @@ fn value_from_json(
     Ok(msg)
 }
 
-fn list_value_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
+fn list_value_to_json(
+    pool: &DescriptorPool,
+    msg: &DynamicMessage,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<Json, JsonError> {
     let mut out = Vec::new();
     if let Some(Value::List(items)) = msg.get_field(1) {
         let value_desc = pool.lookup_message(".google.protobuf.Value");
@@ -432,7 +506,9 @@ fn list_value_from_json(
     opts: &JsonOptions,
     depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
-    let arr = json.as_array().ok_or_else(|| JsonError::TypeMismatch("ListValue".into(), "expected array".into()))?;
+    let arr = json
+        .as_array()
+        .ok_or_else(|| JsonError::TypeMismatch("ListValue".into(), "expected array".into()))?;
     let value_desc = pool.lookup_message(".google.protobuf.Value");
     let mut items = Vec::with_capacity(arr.len());
     for it in arr {
@@ -451,7 +527,12 @@ fn list_value_from_json(
 // Any.
 // ---------------------------------------------------------------------------
 
-fn any_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, depth: u32) -> Result<Json, JsonError> {
+fn any_to_json(
+    pool: &DescriptorPool,
+    msg: &DynamicMessage,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<Json, JsonError> {
     let type_url = get_str(msg, 1).unwrap_or_default();
     let value_bytes = match msg.get_field(2) {
         Some(Value::Scalar(RScalar::Bytes(b))) => b.clone(),
@@ -464,7 +545,9 @@ fn any_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, 
             let mut r = Reader::new(&value_bytes);
             let inner = DynamicMessage::decode(pool, desc.clone(), &mut r)
                 .map_err(|e| JsonError::WellKnown(e.to_string()))?;
-            if let Json::Object(inner_obj) = super::message_to_json_impl(pool, &desc, &inner, opts, depth + 1)? {
+            if let Json::Object(inner_obj) =
+                super::message_to_json_impl(pool, &desc, &inner, opts, depth + 1)?
+            {
                 for (k, v) in inner_obj {
                     out.insert(k, v);
                 }
@@ -473,7 +556,10 @@ fn any_to_json(pool: &DescriptorPool, msg: &DynamicMessage, opts: &JsonOptions, 
         }
     }
     // Unresolvable type: keep the encoded value as base64.
-    out.insert("value".to_string(), Json::String(base64::engine::general_purpose::STANDARD.encode(&value_bytes)));
+    out.insert(
+        "value".to_string(),
+        Json::String(base64::engine::general_purpose::STANDARD.encode(&value_bytes)),
+    );
     Ok(Json::Object(out))
 }
 
@@ -484,7 +570,9 @@ fn any_from_json(
     opts: &JsonOptions,
     depth: u32,
 ) -> Result<DynamicMessage, JsonError> {
-    let obj = json.as_object().ok_or_else(|| JsonError::TypeMismatch("Any".into(), "expected object".into()))?;
+    let obj = json
+        .as_object()
+        .ok_or_else(|| JsonError::TypeMismatch("Any".into(), "expected object".into()))?;
     let type_url = obj
         .get("@type")
         .and_then(|v| v.as_str())
@@ -507,7 +595,10 @@ fn any_from_json(
     }
     // Unresolvable: try a "value" base64 field.
     if let Some(Json::String(b64)) = obj.get("value") {
-        let bytes = base64::engine::general_purpose::STANDARD.decode(b64).or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(b64)).map_err(|_| JsonError::WellKnown("bad Any value".into()))?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(b64))
+            .map_err(|_| JsonError::WellKnown("bad Any value".into()))?;
         msg.set_field(2, Value::Scalar(RScalar::Bytes(bytes)));
     }
     Ok(msg)

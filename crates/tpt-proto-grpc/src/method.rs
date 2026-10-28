@@ -34,12 +34,18 @@ impl MethodKind {
 
     /// Whether the request side streams.
     pub fn client_streaming(self) -> bool {
-        matches!(self, MethodKind::ClientStreaming | MethodKind::BidiStreaming)
+        matches!(
+            self,
+            MethodKind::ClientStreaming | MethodKind::BidiStreaming
+        )
     }
 
     /// Whether the response side streams.
     pub fn server_streaming(self) -> bool {
-        matches!(self, MethodKind::ServerStreaming | MethodKind::BidiStreaming)
+        matches!(
+            self,
+            MethodKind::ServerStreaming | MethodKind::BidiStreaming
+        )
     }
 }
 
@@ -126,7 +132,9 @@ pub fn build_service(file: &FileDescriptorProto, svc: &ServiceDescriptorProto) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tpt_proto_descriptor::{FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto};
+    use tpt_proto_descriptor::{
+        FileDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto,
+    };
 
     fn method(name: &str, cs: bool, ss: bool) -> MethodDescriptorProto {
         MethodDescriptorProto {
@@ -167,7 +175,10 @@ mod tests {
         };
         let svc = ServiceDescriptorProto {
             name: Some("UserService".into()),
-            method: vec![method("GetUser", false, false), method("Watch", false, true)],
+            method: vec![
+                method("GetUser", false, false),
+                method("Watch", false, true),
+            ],
             options: None,
         };
         let s = build_service(&file, &svc);

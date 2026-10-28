@@ -321,10 +321,7 @@ mod tests {
         let t2 = nested.read_tag().expect("second inner tag within budget");
         nested.skip(t2.wire_type).expect("value well-formed");
         assert!(
-            matches!(
-                nested.read_tag(),
-                Err(Error::LimitExceeded("max_fields"))
-            ),
+            matches!(nested.read_tag(), Err(Error::LimitExceeded("max_fields"))),
             "third inner tag must exceed the per-message max_fields budget"
         );
     }

@@ -12,9 +12,8 @@ use std::net::SocketAddr;
 // Message types are prefixed with the PascalCase package (`greet.v1`);
 // re-alias them for readability.
 use generated::{
-    GreetV1HelloReply as HelloReply,
-    GreetV1HelloRequest as HelloRequest,
-    Greeter, GreeterClient, GreeterServer,
+    GreetV1HelloReply as HelloReply, GreetV1HelloRequest as HelloRequest, Greeter, GreeterClient,
+    GreeterServer,
 };
 use tpt_proto_core::Message;
 use tpt_proto_grpc::{Client, Endpoint, Request, Response, Server, Status};

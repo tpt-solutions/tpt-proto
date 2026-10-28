@@ -3,9 +3,7 @@
 //! These exercise the descriptor-driven path (no generated code): building and
 //! decoding [`DynamicMessage`] values, and converting them to/from JSON.
 
-use tpt_proto_bench::{
-    bench, build_big, build_person, compile_msg, BIG_PROTO, PERSON_PROTO,
-};
+use tpt_proto_bench::{bench, build_big, build_person, compile_msg, BIG_PROTO, PERSON_PROTO};
 
 fn main() {
     println!("=== dynamic decoding + json ===");
@@ -16,10 +14,15 @@ fn main() {
     let person_bytes = person.encode().unwrap();
     let pool_c = pool.clone();
     let desc_c = desc.clone();
-    bench("dynamic/decode_person", person_bytes.len() as u64, 100_000, || {
-        let mut r = tpt_proto_core::Reader::new(&person_bytes);
-        tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
-    });
+    bench(
+        "dynamic/decode_person",
+        person_bytes.len() as u64,
+        100_000,
+        || {
+            let mut r = tpt_proto_core::Reader::new(&person_bytes);
+            tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
+        },
+    );
 
     // --- JSON: message -> JSON -> message roundtrips. ---
     use tpt_proto_json::{json_string_to_message, message_to_json_string, JsonOptions};

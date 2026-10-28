@@ -31,7 +31,9 @@ fn generates_grpc_server_trait_and_client() {
     assert!(code.contains("pub trait Echo: Send + Sync"));
     assert!(code.contains("async fn unary(&self, request: __grpc::Request<ExPing>)"));
     assert!(code.contains("async fn watch(&self, request: __grpc::Request<ExPing>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status>"));
-    assert!(code.contains("async fn upload(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>)"));
+    assert!(code.contains(
+        "async fn upload(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>)"
+    ));
     assert!(code.contains("async fn chat(&self, request: __grpc::Request<__grpc::ClientStream<ExPing>>) -> std::result::Result<__grpc::Response<__grpc::ServerStream<ExPong>>, __grpc::Status>"));
 
     // Client stub.

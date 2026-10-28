@@ -24,10 +24,7 @@ struct MyEcho;
 
 #[async_trait]
 impl Echo for MyEcho {
-    async fn unary(
-        &self,
-        request: Request<ExPing>,
-    ) -> Result<Response<ExPong>, Status> {
+    async fn unary(&self, request: Request<ExPing>) -> Result<Response<ExPong>, Status> {
         let mut pong = ExPong::default();
         pong.msg = format!("echo: {}", request.message.msg);
         Ok(Response::new(pong))
@@ -69,8 +66,8 @@ impl Transport for LocalTransport {
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Metadata), Status> {
         assert_eq!(path, "/ex.Echo/Unary");
-        let req = ExPing::decode(&message)
-            .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+        let req =
+            ExPing::decode(&message).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
         let resp = self.server.unary(Request::new(req)).await?;
         let bytes = resp
             .message

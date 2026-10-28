@@ -6,6 +6,8 @@
 //! emitting diagnostics. This is the validated-AST → descriptor step of the
 //! compiler pipeline; deeper editions feature resolution is layered on top.
 
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use tpt_proto_core::{Message, Result as CoreResult};
 use tpt_proto_descriptor::{
     DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, ExtensionRange,
@@ -15,8 +17,6 @@ use tpt_proto_descriptor::{
 use tpt_proto_language::ast;
 use tpt_proto_language::diagnostic::{Diagnostic, Diagnostics, ErrorCode};
 use tpt_proto_language::ParseResult;
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 
 mod features;
 mod pipeline;
@@ -581,9 +581,10 @@ pub fn resolve_and_parse(entry: &Path, includes: &[PathBuf]) -> std::io::Result<
         if !ctx.seen.insert(name.clone()) {
             return Ok(());
         }
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| std::io::Error::new(e.kind(), format!("reading {}: {e}", path.display())))?;
-        let mut parsed = tpt_proto_language::parse_file(&name, &src);
+        let src = std::fs::read_to_string(path).map_err(|e| {
+            std::io::Error::new(e.kind(), format!("reading {}: {e}", path.display()))
+        })?;
+        let parsed = tpt_proto_language::parse_file(&name, &src);
         // Depth-first over imports so dependencies precede importers.
         let imports: Vec<String> = parsed.file.imports.iter().map(|i| i.path.clone()).collect();
         for import in imports {
@@ -761,7 +762,10 @@ mod resolve_tests {
         let tmp = std::env::temp_dir().join(format!(
             "tpt_resolve_{}_{}",
             std::process::id(),
-            std::thread::current().name().unwrap_or("t").replace(':', "_")
+            std::thread::current()
+                .name()
+                .unwrap_or("t")
+                .replace(':', "_")
         ));
         let _ = std::fs::remove_dir_all(&tmp);
         let include1 = tmp.join("include");
@@ -844,7 +848,7 @@ mod resolve_tests {
         )
         .unwrap();
 
-        let set = resolve_and_parse(&tmp.join("a.proto"), &[tmp.clone()])
+        let set = resolve_and_parse(&tmp.join("a.proto"), std::slice::from_ref(&tmp))
             .expect("cycles must not hang or error at the resolver level");
         assert_eq!(set.files.len(), 2);
 

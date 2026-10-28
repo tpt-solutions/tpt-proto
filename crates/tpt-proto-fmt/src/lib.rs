@@ -200,25 +200,23 @@ pub fn format_source(src: &str) -> Result<String, FmtError> {
                     if gap && at_bol {
                         out.push('\n');
                     } else if !at_bol {
-                        let need_space =
-                            match (prev.and_then(|p| p.kind()), Some(kind)) {
-                                (_, Some(TokenKind::Comma))
-                                | (_, Some(TokenKind::Semicolon))
-                                | (_, Some(TokenKind::RParen))
-                                | (_, Some(TokenKind::RBracket))
-                                | (_, Some(TokenKind::Gt))
-                                | (_, Some(TokenKind::Dot)) => false,
-                                (Some(TokenKind::Dot), _)
-                                | (Some(TokenKind::LParen), _)
-                                | (_, Some(TokenKind::LParen))
-                                | (Some(TokenKind::LBracket), _)
-                                | (_, Some(TokenKind::LBracket))
-                                | (Some(TokenKind::Lt), _)
-                                | (_, Some(TokenKind::Lt)) => false,
-                                (Some(TokenKind::Equals), _)
-                                | (_, Some(TokenKind::Equals)) => true,
-                                _ => true,
-                            };
+                        let need_space = match (prev.and_then(|p| p.kind()), Some(kind)) {
+                            (_, Some(TokenKind::Comma))
+                            | (_, Some(TokenKind::Semicolon))
+                            | (_, Some(TokenKind::RParen))
+                            | (_, Some(TokenKind::RBracket))
+                            | (_, Some(TokenKind::Gt))
+                            | (_, Some(TokenKind::Dot)) => false,
+                            (Some(TokenKind::Dot), _)
+                            | (Some(TokenKind::LParen), _)
+                            | (_, Some(TokenKind::LParen))
+                            | (Some(TokenKind::LBracket), _)
+                            | (_, Some(TokenKind::LBracket))
+                            | (Some(TokenKind::Lt), _)
+                            | (_, Some(TokenKind::Lt)) => false,
+                            (Some(TokenKind::Equals), _) | (_, Some(TokenKind::Equals)) => true,
+                            _ => true,
+                        };
                         if need_space {
                             out.push(' ');
                         }
@@ -319,4 +317,3 @@ mod tests {
         ));
     }
 }
-

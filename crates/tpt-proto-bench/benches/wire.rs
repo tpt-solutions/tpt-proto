@@ -66,10 +66,18 @@ fn main() {
 
     // Small message (manual low-level).
     let small = lowlevel_encode_person();
-    bench("wire/small/encode_lowlevel", small.len() as u64, 200_000, lowlevel_encode_person);
-    bench("wire/small/decode_borrowed(zerocopy)", small.len() as u64, 200_000, || {
-        lowlevel_decode_borrowed(&small)
-    });
+    bench(
+        "wire/small/encode_lowlevel",
+        small.len() as u64,
+        200_000,
+        lowlevel_encode_person,
+    );
+    bench(
+        "wire/small/decode_borrowed(zerocopy)",
+        small.len() as u64,
+        200_000,
+        || lowlevel_decode_borrowed(&small),
+    );
 
     // Small message via the descriptor-driven DynamicMessage.
     let (pool, desc) = compile_msg(PERSON_PROTO, "bench.Person");
@@ -77,20 +85,35 @@ fn main() {
     let person_bytes = person.encode().unwrap();
     let pool_c = pool.clone();
     let desc_c: Arc<DescriptorProto> = desc.clone();
-    bench("wire/small/encode_dynamic", person_bytes.len() as u64, 100_000, || {
-        let dm = build_person(&pool_c, &desc_c);
-        dm.encode().unwrap()
-    });
-    bench("wire/small/decode_dynamic", person_bytes.len() as u64, 100_000, || {
-        let mut r = Reader::new(&person_bytes);
-        tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
-    });
-    bench("wire/small/roundtrip_dynamic", person_bytes.len() as u64, 100_000, || {
-        let dm = build_person(&pool_c, &desc_c);
-        let bytes = dm.encode().unwrap();
-        let mut r = Reader::new(&bytes);
-        tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
-    });
+    bench(
+        "wire/small/encode_dynamic",
+        person_bytes.len() as u64,
+        100_000,
+        || {
+            let dm = build_person(&pool_c, &desc_c);
+            dm.encode().unwrap()
+        },
+    );
+    bench(
+        "wire/small/decode_dynamic",
+        person_bytes.len() as u64,
+        100_000,
+        || {
+            let mut r = Reader::new(&person_bytes);
+            tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
+        },
+    );
+    bench(
+        "wire/small/roundtrip_dynamic",
+        person_bytes.len() as u64,
+        100_000,
+        || {
+            let dm = build_person(&pool_c, &desc_c);
+            let bytes = dm.encode().unwrap();
+            let mut r = Reader::new(&bytes);
+            tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
+        },
+    );
 
     // Large message (many repeated fields).
     let n_big = 2_000;
@@ -115,14 +138,24 @@ fn main() {
     let nested_bytes = nested.encode().unwrap();
     let pool_c = pool.clone();
     let desc_c = desc.clone();
-    bench("wire/nested/encode(depth=100)", nested_bytes.len() as u64, 20_000, || {
-        let dm = build_nested(&pool_c, &desc_c, depth);
-        dm.encode().unwrap()
-    });
-    bench("wire/nested/decode(depth=100)", nested_bytes.len() as u64, 20_000, || {
-        let mut r = Reader::new(&nested_bytes);
-        tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
-    });
+    bench(
+        "wire/nested/encode(depth=100)",
+        nested_bytes.len() as u64,
+        20_000,
+        || {
+            let dm = build_nested(&pool_c, &desc_c, depth);
+            dm.encode().unwrap()
+        },
+    );
+    bench(
+        "wire/nested/decode(depth=100)",
+        nested_bytes.len() as u64,
+        20_000,
+        || {
+            let mut r = Reader::new(&nested_bytes);
+            tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
+        },
+    );
 
     // Repeated & packed fields.
     let n_packed = 2_000;
@@ -131,14 +164,24 @@ fn main() {
     let packed_bytes = packed.encode().unwrap();
     let pool_c = pool.clone();
     let desc_c = desc.clone();
-    bench("wire/packed/encode", packed_bytes.len() as u64, 20_000, || {
-        let dm = build_packed(&pool_c, &desc_c, n_packed);
-        dm.encode().unwrap()
-    });
-    bench("wire/packed/decode", packed_bytes.len() as u64, 20_000, || {
-        let mut r = Reader::new(&packed_bytes);
-        tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
-    });
+    bench(
+        "wire/packed/encode",
+        packed_bytes.len() as u64,
+        20_000,
+        || {
+            let dm = build_packed(&pool_c, &desc_c, n_packed);
+            dm.encode().unwrap()
+        },
+    );
+    bench(
+        "wire/packed/decode",
+        packed_bytes.len() as u64,
+        20_000,
+        || {
+            let mut r = Reader::new(&packed_bytes);
+            tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap()
+        },
+    );
 
     // Maps.
     let n_maps = 1_000;
@@ -164,9 +207,15 @@ fn main() {
     let with_unknown = with_unknown_field(&person_bytes);
     let pool_c = pool.clone();
     let desc_c = desc.clone();
-    bench("wire/unknown/decode+reencode", with_unknown.len() as u64, 50_000, || {
-        let mut r = Reader::new(&with_unknown);
-        let dm = tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap();
-        dm.encode().unwrap()
-    });
+    bench(
+        "wire/unknown/decode+reencode",
+        with_unknown.len() as u64,
+        50_000,
+        || {
+            let mut r = Reader::new(&with_unknown);
+            let dm =
+                tpt_proto_reflect::DynamicMessage::decode(&pool_c, desc_c.clone(), &mut r).unwrap();
+            dm.encode().unwrap()
+        },
+    );
 }

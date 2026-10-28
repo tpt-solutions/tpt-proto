@@ -6,7 +6,10 @@
 
 use std::io::Cursor;
 
-use tpt_proto_conformance::protocol::{read_frame, write_frame, FMT_PROTOBUF, REQ_MESSAGE_TYPE, REQ_PROTOBUF_PAYLOAD, REQ_REQUESTED_FORMAT};
+use tpt_proto_conformance::protocol::{
+    read_frame, write_frame, FMT_PROTOBUF, REQ_MESSAGE_TYPE, REQ_PROTOBUF_PAYLOAD,
+    REQ_REQUESTED_FORMAT,
+};
 use tpt_proto_conformance::schema::Registry;
 use tpt_proto_conformance::testee::run_testee_loop;
 use tpt_proto_conformance::{run_all, Status};
@@ -24,10 +27,7 @@ fn harness_all_cases_pass() {
         "conformance harness reported failures:\n{}",
         report.render()
     );
-    assert!(
-        report.total() > 0,
-        "conformance harness generated no cases"
-    );
+    assert!(report.total() > 0, "conformance harness generated no cases");
 }
 
 /// Every required conformance area must be represented in the case set:
@@ -64,7 +64,9 @@ fn harness_covers_required_areas() {
 /// protobuf payload of `proto3.TestAllTypes` and echo it back as protobuf.
 fn build_framed_request(registry: &Registry) -> Vec<u8> {
     let pool = &registry.pool;
-    let desc = registry.lookup("proto3.TestAllTypes").expect("proto3 TestAllTypes");
+    let desc = registry
+        .lookup("proto3.TestAllTypes")
+        .expect("proto3 TestAllTypes");
 
     let mut msg = DynamicMessage::new(desc.clone(), pool.clone());
     msg.set_field(1, Value::Scalar(ScalarValue::I64(7)));
@@ -76,10 +78,7 @@ fn build_framed_request(registry: &Registry) -> Vec<u8> {
         Value::Scalar(ScalarValue::String("proto3.TestAllTypes".into())),
     );
     req.set_field(REQ_REQUESTED_FORMAT, Value::Enum(FMT_PROTOBUF));
-    req.set_field(
-        REQ_PROTOBUF_PAYLOAD,
-        Value::Scalar(ScalarValue::Bytes(bin)),
-    );
+    req.set_field(REQ_PROTOBUF_PAYLOAD, Value::Scalar(ScalarValue::Bytes(bin)));
 
     let encoded = req.encode().expect("encode request");
     let mut framed = Vec::new();
@@ -99,13 +98,19 @@ fn testee_loop_speaks_framed_protocol() {
         .expect("testee loop should not error on a valid frame");
 
     let mut cursor = Cursor::new(out);
-    let frame = read_frame(&mut cursor).expect("response frame").expect("response present");
+    let frame = read_frame(&mut cursor)
+        .expect("response frame")
+        .expect("response present");
     assert!(!frame.is_empty(), "response frame was empty");
 
     // The response must decode as a valid ConformanceResponse carrying a
     // protobuf payload (field 4).
-    let resp = DynamicMessage::decode(&registry.pool, registry.response_desc.clone(), &mut Reader::new(&frame))
-        .expect("response decodes as ConformanceResponse");
+    let resp = DynamicMessage::decode(
+        &registry.pool,
+        registry.response_desc.clone(),
+        &mut Reader::new(&frame),
+    )
+    .expect("response decodes as ConformanceResponse");
     assert!(
         resp.get_field(4).is_some(),
         "expected protobuf_payload (field 4) in response"
@@ -117,6 +122,10 @@ fn testee_loop_speaks_framed_protocol() {
 fn status_classification_is_stable() {
     let registry = Registry::build();
     let report = run_all(&registry);
-    let pass = report.results().iter().filter(|r| r.status == Status::Pass).count();
+    let pass = report
+        .results()
+        .iter()
+        .filter(|r| r.status == Status::Pass)
+        .count();
     assert_eq!(pass, report.passed());
 }

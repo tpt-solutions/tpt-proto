@@ -38,7 +38,10 @@ impl InterceptedHandler {
         inner: Arc<dyn ServiceHandler>,
         interceptors: Vec<Arc<dyn Interceptor>>,
     ) -> Self {
-        InterceptedHandler { inner, interceptors }
+        InterceptedHandler {
+            inner,
+            interceptors,
+        }
     }
 
     async fn apply(&self, ctx: RpcContext, path: &str) -> Result<RpcContext, Status> {

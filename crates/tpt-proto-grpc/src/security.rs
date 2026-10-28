@@ -95,7 +95,10 @@ pub fn parse_pem(data: &[u8]) -> Result<Vec<PemBlock>, SecurityError> {
     let mut lines = text.lines().peekable();
     while let Some(line) = lines.next() {
         let line = line.trim();
-        if let Some(label) = line.strip_prefix("-----BEGIN ").and_then(|s| s.strip_suffix("-----")) {
+        if let Some(label) = line
+            .strip_prefix("-----BEGIN ")
+            .and_then(|s| s.strip_suffix("-----"))
+        {
             let mut b64 = String::new();
             for l in lines.by_ref() {
                 let l = l.trim();
@@ -194,9 +197,7 @@ impl TlsConfig {
     /// [`crate::tls::build_server_config`] can reuse it without recursing.
     pub(crate) fn validate_structure(&self) -> Result<(), SecurityError> {
         if parse_pem(&self.cert_chain_pem)?.is_empty() {
-            return Err(SecurityError::MissingCertChain(
-                "no PEM block found".into(),
-            ));
+            return Err(SecurityError::MissingCertChain("no PEM block found".into()));
         }
         if parse_pem(&self.private_key_pem)?.is_empty() {
             return Err(SecurityError::MissingPrivateKey(
@@ -205,7 +206,11 @@ impl TlsConfig {
         }
         if self.require_client_cert {
             match &self.client_ca_pem {
-                None => return Err(SecurityError::MissingClientCa("mTLS requires a client CA".into())),
+                None => {
+                    return Err(SecurityError::MissingClientCa(
+                        "mTLS requires a client CA".into(),
+                    ))
+                }
                 Some(ca) if parse_pem(ca)?.is_empty() => {
                     return Err(SecurityError::MissingClientCa("no PEM block found".into()))
                 }
@@ -220,7 +225,10 @@ impl TlsConfig {
 
     /// The ALPN protocols as raw byte vectors (for `rustls`/`h2` negotiation).
     pub fn alpn_as_bytes(&self) -> Vec<Vec<u8>> {
-        self.alpn_protocols.iter().map(|p| p.as_bytes().to_vec()).collect()
+        self.alpn_protocols
+            .iter()
+            .map(|p| p.as_bytes().to_vec())
+            .collect()
     }
 
     /// Whether mTLS (client-certificate authentication) is enabled.
@@ -235,11 +243,7 @@ pub trait Authenticator: Send + Sync {
     ///
     /// Returns the authenticated [`PeerIdentity`] or a [`Status`] describing the
     /// failure (typically [`Code::Unauthenticated`]).
-    fn authenticate(
-        &self,
-        metadata: &Metadata,
-        peer: &PeerInfo,
-    ) -> Result<PeerIdentity, Status>;
+    fn authenticate(&self, metadata: &Metadata, peer: &PeerInfo) -> Result<PeerIdentity, Status>;
 }
 
 /// Authenticate using a bearer token from the `authorization` header
@@ -267,7 +271,11 @@ impl BearerTokenAuthenticator {
     }
 
     /// Add an accepted token mapped to a principal.
-    pub fn add_token(&mut self, token: impl Into<String>, principal: impl Into<String>) -> &mut Self {
+    pub fn add_token(
+        &mut self,
+        token: impl Into<String>,
+        principal: impl Into<String>,
+    ) -> &mut Self {
         let token = token.into();
         let principal = principal.into();
         self.accepted.insert(token.clone());
@@ -296,10 +304,13 @@ fn extract_bearer(metadata: &Metadata) -> Option<String> {
 
 impl Authenticator for BearerTokenAuthenticator {
     fn authenticate(&self, metadata: &Metadata, _peer: &PeerInfo) -> Result<PeerIdentity, Status> {
-        let token = extract_bearer(metadata).ok_or_else(|| {
-            Status::new(Code::Unauthenticated, "missing bearer token")
-        })?;
-        if !self.accepted.iter().any(|t| constant_time_eq(t.as_bytes(), token.as_bytes())) {
+        let token = extract_bearer(metadata)
+            .ok_or_else(|| Status::new(Code::Unauthenticated, "missing bearer token"))?;
+        if !self
+            .accepted
+            .iter()
+            .any(|t| constant_time_eq(t.as_bytes(), token.as_bytes()))
+        {
             return Err(Status::new(Code::Unauthenticated, "invalid bearer token"));
         }
         let principal = self
@@ -326,7 +337,11 @@ pub struct MetadataAuthenticator {
 
 impl MetadataAuthenticator {
     /// Create a metadata-based authenticator.
-    pub fn new(key: impl Into<String>, expected: impl Into<String>, principal: impl Into<String>) -> Self {
+    pub fn new(
+        key: impl Into<String>,
+        expected: impl Into<String>,
+        principal: impl Into<String>,
+    ) -> Self {
         MetadataAuthenticator {
             key: key.into(),
             expected: expected.into(),
@@ -385,7 +400,8 @@ pub fn identity_from_peer(peer: &PeerInfo) -> Option<PeerIdentity> {
         if let Some(principal) = principal {
             let mut id = PeerIdentity::new(principal).with_attribute("auth", "peer-cert");
             if !cert.san_dns.is_empty() {
-                id.attributes.insert("san_dns".to_string(), cert.san_dns.join(","));
+                id.attributes
+                    .insert("san_dns".to_string(), cert.san_dns.join(","));
             }
             return Some(id);
         }
@@ -400,12 +416,8 @@ pub trait Authorizer: Send + Sync {
     /// Authorize an already-authenticated identity to invoke
     /// `<service>/<method>`. Returns `Ok(())` or a [`Status`]
     /// ([`Code::PermissionDenied`] on denial).
-    fn authorize(
-        &self,
-        identity: &PeerIdentity,
-        service: &str,
-        method: &str,
-    ) -> Result<(), Status>;
+    fn authorize(&self, identity: &PeerIdentity, service: &str, method: &str)
+        -> Result<(), Status>;
 }
 
 /// An authorizer that allows everything (the default when no policy is set).
@@ -413,7 +425,12 @@ pub trait Authorizer: Send + Sync {
 pub struct AllowAllAuthorizer;
 
 impl Authorizer for AllowAllAuthorizer {
-    fn authorize(&self, _identity: &PeerIdentity, _service: &str, _method: &str) -> Result<(), Status> {
+    fn authorize(
+        &self,
+        _identity: &PeerIdentity,
+        _service: &str,
+        _method: &str,
+    ) -> Result<(), Status> {
         Ok(())
     }
 }
@@ -466,7 +483,12 @@ impl RoleAuthorizer {
 }
 
 impl Authorizer for RoleAuthorizer {
-    fn authorize(&self, identity: &PeerIdentity, service: &str, method: &str) -> Result<(), Status> {
+    fn authorize(
+        &self,
+        identity: &PeerIdentity,
+        service: &str,
+        method: &str,
+    ) -> Result<(), Status> {
         let path = format!("{service}/{method}");
         if self.allowed(&path, &identity.principal) {
             Ok(())
@@ -530,9 +552,17 @@ impl SecurityPolicy {
     ///
     /// Authentication and authorization failures are surfaced as [`Status`]
     /// (`UNAUTHENTICATED` / `PERMISSION_DENIED`).
-    pub fn apply(&self, ctx: &RpcContext, service: &str, method: &str) -> Result<PeerIdentity, Status> {
+    pub fn apply(
+        &self,
+        ctx: &RpcContext,
+        service: &str,
+        method: &str,
+    ) -> Result<PeerIdentity, Status> {
         let identity = match &self.authenticator {
-            Some(auth) => auth.authenticate(&ctx.metadata, ctx.peer.as_ref().unwrap_or(&PeerInfo::default()))?,
+            Some(auth) => auth.authenticate(
+                &ctx.metadata,
+                ctx.peer.as_ref().unwrap_or(&PeerInfo::default()),
+            )?,
             None => match ctx.peer.as_ref().and_then(|p| identity_from_peer(p)) {
                 Some(id) => id,
                 None => PeerIdentity::default(),
@@ -549,8 +579,10 @@ mod tests {
 
     #[test]
     fn tls_validate_requires_h2() {
-        let mut cfg = TlsConfig::from_pem(b"-----BEGIN CERTIFICATE-----\nMII=\n-----END CERTIFICATE-----".to_vec(),
-            b"-----BEGIN PRIVATE KEY-----\nMII=\n-----END PRIVATE KEY-----".to_vec());
+        let mut cfg = TlsConfig::from_pem(
+            b"-----BEGIN CERTIFICATE-----\nMII=\n-----END CERTIFICATE-----".to_vec(),
+            b"-----BEGIN PRIVATE KEY-----\nMII=\n-----END PRIVATE KEY-----".to_vec(),
+        );
         cfg.alpn_protocols = vec!["http/1.1".to_string()];
         assert!(matches!(cfg.validate(), Err(SecurityError::MissingH2Alpn)));
     }
@@ -612,7 +644,9 @@ mod tests {
         let mut md = Metadata::new();
         md.insert_text("authorization", "Bearer wrong").unwrap();
         assert_eq!(
-            auth.authenticate(&md, &PeerInfo::default()).unwrap_err().code,
+            auth.authenticate(&md, &PeerInfo::default())
+                .unwrap_err()
+                .code,
             Code::Unauthenticated
         );
     }
@@ -638,7 +672,9 @@ mod tests {
             .with_authenticator(auth)
             .with_authorizer(authz);
         let mut ctx = RpcContext::new();
-        ctx.metadata.insert_text("authorization", "Bearer t").unwrap();
+        ctx.metadata
+            .insert_text("authorization", "Bearer t")
+            .unwrap();
         let id = policy.apply(&ctx, "ex.Svc", "Get").unwrap();
         assert_eq!(id.principal, "alice");
 
@@ -660,9 +696,10 @@ mod tests {
         /// CN `test-server`, both `serverAuth` and `clientAuth` EKUs so the
         /// same helper works for either role).
         fn gen_self_signed(cn: &str, dns: &str) -> (Vec<u8>, Vec<u8>) {
-            let mut params =
-                rcgen::CertificateParams::new(vec![dns.to_string()]).unwrap();
-            params.distinguished_name.push(rcgen::DnType::CommonName, cn);
+            let mut params = rcgen::CertificateParams::new(vec![dns.to_string()]).unwrap();
+            params
+                .distinguished_name
+                .push(rcgen::DnType::CommonName, cn);
             params.extended_key_usages = vec![
                 rcgen::ExtendedKeyUsagePurpose::ServerAuth,
                 rcgen::ExtendedKeyUsagePurpose::ClientAuth,
@@ -697,7 +734,11 @@ mod tests {
             let (cert, key) = gen_self_signed("test-server", "localhost");
             let (ca_pem, _) = gen_self_signed("test-ca", "not-a-san-ca");
             let cfg = TlsConfig::from_pem(cert, key).with_client_ca(ca_pem);
-            assert!(cfg.validate().is_ok(), "expected Ok, got {:?}", cfg.validate());
+            assert!(
+                cfg.validate().is_ok(),
+                "expected Ok, got {:?}",
+                cfg.validate()
+            );
         }
 
         #[test]
