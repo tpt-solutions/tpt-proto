@@ -21,7 +21,7 @@ use tokio_rustls::TlsAcceptor;
 use x509_parser::prelude::*;
 
 use crate::context::PeerCertificate;
-use crate::observability::{Level, LogRecord, Logger, Observability};
+use crate::observability::{Level, LogRecord, Observability};
 use crate::security::{parse_pem, SecurityError, TlsConfig};
 use crate::server::AcceptedStream;
 

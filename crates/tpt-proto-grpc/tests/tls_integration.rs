@@ -257,8 +257,10 @@ impl Echo for TimedEcho {
         &self,
         request: tpt_proto_grpc::Request<ExPing>,
     ) -> Result<tpt_proto_grpc::Response<ExPong>, Status> {
-        let mut p = ExPong::default();
-        p.msg = format!("echo: {}", request.message.msg);
+        let p = ExPong {
+            msg: format!("echo: {}", request.message.msg),
+            ..Default::default()
+        };
         Ok(tpt_proto_grpc::Response::new(p))
     }
 
@@ -327,8 +329,10 @@ async fn plain_server_tls_roundtrip() {
     let addr = spawn_tls_server(TlsConfig::from_pem(cert.clone(), key), None).await;
 
     let client = client_for(addr, cert, None);
-    let mut ping = ExPing::default();
-    ping.msg = "over-tls".to_string();
+    let ping = ExPing {
+        msg: "over-tls".to_string(),
+        ..Default::default()
+    };
     let (pong, meta) = client.call_unary("/ex.Echo/Unary", ping).await.unwrap();
     assert_eq!(pong.msg, "echo: over-tls");
     assert_eq!(meta.get_text("grpc-status"), Some("0"));
@@ -368,8 +372,10 @@ async fn mtls_required_without_client_certificate_is_rejected() {
     let addr = spawn_tls_server(tls, None).await;
 
     let client = client_for(addr, ca_pem.into_bytes(), None);
-    let mut ping = ExPing::default();
-    ping.msg = "should-fail".to_string();
+    let ping = ExPing {
+        msg: "should-fail".to_string(),
+        ..Default::default()
+    };
     let err = client.call_unary("/ex.Echo/Unary", ping).await.unwrap_err();
     assert_eq!(err.code, Code::Unavailable, "got: {err}");
     // Under TLS 1.3 the client's handshake flight completes before the
@@ -405,8 +411,10 @@ async fn full_mtls_roundtrip_identity_feeds_role_authorizer() {
     let addr = spawn_tls_server(tls, Some(policy)).await;
 
     let client = client_for(addr, ca_pem.into_bytes(), Some((client_pem, client_key)));
-    let mut ping = ExPing::default();
-    ping.msg = "mtls-ok".to_string();
+    let ping = ExPing {
+        msg: "mtls-ok".to_string(),
+        ..Default::default()
+    };
     let (pong, _) = client.call_unary("/ex.Echo/Unary", ping).await.unwrap();
     assert_eq!(pong.msg, "echo: mtls-ok");
 }
