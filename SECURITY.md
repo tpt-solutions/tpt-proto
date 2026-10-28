@@ -32,7 +32,7 @@ centrally in `Reader::read_tag`/`advance` so every decoder funnels through
 them; see [`docs/security.md`](docs/security.md) for the full decoder-limits
 threat model (decompression bombs, deep-nesting stack exhaustion, oversized
 allocations). The gRPC layer additionally bounds frame sizes, metadata size,
-and concurrent RPCs; fuzz coverage lives under [`fuzz/`](fuzz/) with nightly
+and concurrent RPCs; fuzz coverage lives under [`fuzz/`](fuzz/) with weekly
 CI.
 
 ## Supported versions
