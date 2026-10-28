@@ -3,6 +3,15 @@
 //! The `generated` module below is produced by `build.rs` from
 //! `proto/greet.proto` — nothing here is hand-written or checked in.
 
+// Generated code: skip clippy style lints and the rustc unused/dead-code
+// warnings that stubs and unused message builders trigger.
+#[allow(
+    clippy::all,
+    dead_code,
+    non_camel_case_types,
+    unused_imports,
+    unused_variables
+)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/greet.rs"));
 }
@@ -15,7 +24,6 @@ use generated::{
     GreetV1HelloReply as HelloReply, GreetV1HelloRequest as HelloRequest, Greeter, GreeterClient,
     GreeterServer,
 };
-use tpt_proto_core::Message;
 use tpt_proto_grpc::{Client, Endpoint, Request, Response, Server, Status};
 
 /// The user-implemented service logic, exactly like implementing a tonic
@@ -28,8 +36,10 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let mut reply = HelloReply::default();
-        reply.message = format!("Hello, {}!", request.message.name);
+        let reply = HelloReply {
+            message: format!("Hello, {}!", request.message.name),
+            ..Default::default()
+        };
         Ok(Response::new(reply))
     }
 }
@@ -39,8 +49,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ------------------------------------------------------------------
     // 1) Plain message roundtrip through the binary wire format.
     // ------------------------------------------------------------------
-    let mut req = HelloRequest::default();
-    req.name = "wire".into();
+    let req = HelloRequest {
+        name: "wire".into(),
+        ..Default::default()
+    };
     let bytes = req.encode_to_vec()?;
     let decoded = HelloRequest::decode(&bytes)?;
     assert_eq!(decoded.name, "wire");
@@ -65,10 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let endpoint = Endpoint::from_shared(&addr.to_string())?;
     let channel = Client::new(endpoint).into_channel();
-    let mut client = GreeterClient::new(channel);
+    let client = GreeterClient::new(channel);
 
-    let mut hello = HelloRequest::default();
-    hello.name = "Ada".into();
+    let hello = HelloRequest {
+        name: "Ada".into(),
+
+        ..Default::default()
+    };
     let resp = client.say_hello(Request::new(hello)).await?;
     println!("grpc reply: {}", resp.message.message);
     assert_eq!(resp.message.message, "Hello, Ada!");

@@ -198,14 +198,9 @@ mod tests {
         }
     }
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Default, PartialEq)]
     struct Msg {
         body: Vec<u8>,
-    }
-    impl Default for Msg {
-        fn default() -> Self {
-            Msg { body: Vec::new() }
-        }
     }
     impl Message for Msg {
         fn encode(&self, w: &mut tpt_proto_core::Writer) -> tpt_proto_core::Result<()> {

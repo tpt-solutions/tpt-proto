@@ -18,6 +18,15 @@
 
 #![cfg(feature = "tls")]
 
+// Generated code: skip clippy style lints and the rustc unused/dead-code
+// warnings that stubs and unused message builders trigger.
+#[allow(
+    clippy::all,
+    dead_code,
+    non_camel_case_types,
+    unused_imports,
+    unused_variables
+)]
 mod generated {
     include!("../examples/grpc_echo/echo_gen.rs");
 }

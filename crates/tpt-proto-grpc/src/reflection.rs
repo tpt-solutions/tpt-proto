@@ -25,21 +25,12 @@ use crate::transport::{ClientStream, ServerStream};
 
 /// `grpc.reflection.v1alpha.ErrorResponse` — field 1 `error_code` (int32),
 /// field 2 `error_message` (string).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ErrorResponse {
     /// A gRPC status code describing the failure.
     pub error_code: i32,
     /// A human-readable message.
     pub error_message: String,
-}
-
-impl Default for ErrorResponse {
-    fn default() -> Self {
-        ErrorResponse {
-            error_code: 0,
-            error_message: String::new(),
-        }
-    }
 }
 
 impl Message for ErrorResponse {
@@ -66,18 +57,10 @@ impl Message for ErrorResponse {
 }
 
 /// `grpc.reflection.v1alpha.ServiceResponse` — field 1 `name` (string).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ServiceResponse {
     /// Fully-qualified service name (e.g. `example.UserService`).
     pub name: String,
-}
-
-impl Default for ServiceResponse {
-    fn default() -> Self {
-        ServiceResponse {
-            name: String::new(),
-        }
-    }
 }
 
 impl Message for ServiceResponse {
@@ -676,14 +659,16 @@ impl ServiceHandler for ReflectionService {
                 let raw = match item {
                     Ok(b) => b,
                     Err(e) => {
-                        let _ = tx.send(Err(e));
+                        let _ = tx.send(Err(e)).await;
                         return;
                     }
                 };
                 let req = match ServerReflectionRequest::decode(&raw) {
                     Ok(r) => r,
                     Err(e) => {
-                        let _ = tx.send(Err(Status::new(Code::Internal, e.to_string())));
+                        let _ = tx
+                            .send(Err(Status::new(Code::Internal, e.to_string())))
+                            .await;
                         continue;
                     }
                 };
@@ -691,7 +676,9 @@ impl ServiceHandler for ReflectionService {
                     let bytes = match resp.encode_to_vec() {
                         Ok(b) => b,
                         Err(e) => {
-                            let _ = tx.send(Err(Status::new(Code::Internal, e.to_string())));
+                            let _ = tx
+                                .send(Err(Status::new(Code::Internal, e.to_string())))
+                                .await;
                             continue;
                         }
                     };

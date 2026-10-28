@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn enforces_size_limit() {
         let mut m = Metadata::new();
-        m.insert_binary("big-bin", &vec![0u8; 100]).unwrap();
+        m.insert_binary("big-bin", &[0u8; 100]).unwrap();
         assert!(Metadata::from_headers(&m.to_headers(), 10).is_err());
     }
 }

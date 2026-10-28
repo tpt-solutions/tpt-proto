@@ -783,7 +783,7 @@ mod tests {
         inst.cancelled();
         inst.deadline_exceeded();
         inst.finish_with_status(Code::Cancelled);
-        let s = metrics.snapshot().get(&labels).unwrap().clone();
+        let s = *metrics.snapshot().get(&labels).unwrap();
         assert_eq!(s.cancelled, 1);
         assert_eq!(s.deadline_exceeded, 1);
         assert_eq!(s.call_completed, 1);

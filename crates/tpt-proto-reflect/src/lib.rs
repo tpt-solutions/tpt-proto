@@ -32,6 +32,9 @@ pub enum ScalarValue {
 }
 
 /// A field value in a dynamic message.
+// `Message` holds a whole `DynamicMessage` inline. Boxing it would change
+// the public `Value` API for every consumer, so the size gap is accepted.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     /// A scalar.
@@ -140,8 +143,10 @@ impl DescriptorPool {
     /// enums by fully-qualified name, and all (nested) extensions by field
     /// number.
     pub fn from_file(file: &FileDescriptorProto) -> DescriptorPool {
-        let mut pool = DescriptorPool::default();
-        pool.syntax = file.syntax.clone().unwrap_or_else(|| "proto3".to_string());
+        let mut pool = DescriptorPool {
+            syntax: file.syntax.clone().unwrap_or_else(|| "proto3".to_string()),
+            ..Default::default()
+        };
         let pkg = file.package.as_deref().unwrap_or("");
         for m in &file.message_type {
             pool.index_message(m, pkg);
@@ -610,7 +615,7 @@ impl DynamicMessage {
             },
             Some(f) if f.oneof_index.is_some() => self
                 .which_oneof(f.oneof_index.unwrap())
-                .map_or(false, |active| active == number),
+                .is_some_and(|active| active == number),
             _ => self.fields.contains_key(&number),
         }
     }
@@ -994,8 +999,10 @@ message M { repeated int32 nums = 1; }
         body.push(inner.len() as u8);
         body.extend_from_slice(&inner);
 
-        let mut limits = DecoderLimits::default();
-        limits.max_depth = 1;
+        let limits = DecoderLimits {
+            max_depth: 1,
+            ..Default::default()
+        };
         // Simulate already being one nesting level deep (as if `M` were
         // itself a nested message), so the packed-scalar decode inside would
         // need depth 2, exceeding max_depth = 1. Before the fix this always
@@ -1070,23 +1077,29 @@ message Foo {
             DescriptorProto, ExtensionRange, FieldDescriptorProto, FieldType, FileDescriptorProto,
             Label,
         };
-        let mut msg = DescriptorProto::default();
-        msg.name = Some("M".into());
+        let mut msg = DescriptorProto {
+            name: Some("M".into()),
+            ..Default::default()
+        };
         msg.extension_range.push(ExtensionRange {
             start: 100,
             end: 200,
         });
 
-        let mut ext = FieldDescriptorProto::default();
-        ext.name = Some("ext_i".into());
-        ext.number = Some(100);
-        ext.label = Some(Label::Optional);
-        ext.r#type = Some(FieldType::Int32);
-        ext.extendee = Some(".M".into());
+        let ext = FieldDescriptorProto {
+            name: Some("ext_i".into()),
+            number: Some(100),
+            label: Some(Label::Optional),
+            r#type: Some(FieldType::Int32),
+            extendee: Some(".M".into()),
+            ..Default::default()
+        };
 
-        let mut fd = FileDescriptorProto::default();
-        fd.name = Some("m.proto".into());
-        fd.package = Some("p".into());
+        let mut fd = FileDescriptorProto {
+            name: Some("m.proto".into()),
+            package: Some("p".into()),
+            ..Default::default()
+        };
         fd.message_type.push(msg);
         fd.extension.push(ext);
 

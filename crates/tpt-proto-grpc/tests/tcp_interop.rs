@@ -7,6 +7,15 @@
 //! connection. True third-party interop (grpc-go/C++/Java) is out of scope in
 //! this repo without that toolchain available.
 
+// Generated code: skip clippy style lints and the rustc unused/dead-code
+// warnings that stubs and unused message builders trigger.
+#[allow(
+    clippy::all,
+    dead_code,
+    non_camel_case_types,
+    unused_imports,
+    unused_variables
+)]
 mod generated {
     include!("../examples/grpc_echo/echo_gen.rs");
 }
@@ -29,8 +38,10 @@ struct TimedEcho {
 impl Echo for TimedEcho {
     async fn unary(&self, request: Request<ExPing>) -> Result<Response<ExPong>, Status> {
         tokio::time::sleep(self.delay).await;
-        let mut p = ExPong::default();
-        p.msg = format!("echo: {}", request.message.msg);
+        let p = ExPong {
+            msg: format!("echo: {}", request.message.msg),
+            ..Default::default()
+        };
         Ok(Response::new(p))
     }
 
@@ -157,7 +168,9 @@ async fn cancelled_call_does_not_wedge_subsequent_calls() {
 }
 
 fn encode_ping(msg: &str) -> Vec<u8> {
-    let mut p = ExPing::default();
-    p.msg = msg.to_string();
+    let p = ExPing {
+        msg: msg.to_string(),
+        ..Default::default()
+    };
     p.encode_to_vec().unwrap()
 }

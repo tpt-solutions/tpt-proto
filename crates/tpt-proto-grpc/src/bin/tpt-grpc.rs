@@ -360,6 +360,7 @@ async fn main() -> Result<()> {
 // Command implementations
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_health(
     target: &str,
     service: &str,
@@ -450,6 +451,7 @@ async fn reflection_list_services(
     Ok((names, trailers))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_reflect(
     target: &str,
     symbol: Option<String>,
@@ -714,15 +716,18 @@ fn load_descriptor_set(path: &PathBuf) -> Result<FileDescriptorSet> {
     FileDescriptorSet::decode(&raw).map_err(|e| anyhow!("decode descriptor set: {e}"))
 }
 
+/// The pool plus the optional request and response message descriptors.
+type PreparedDescriptors = (
+    DescriptorPool,
+    Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>,
+    Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>,
+);
+
 fn prepare_descriptors(
     descriptor_set: Option<PathBuf>,
     message_type: &Option<String>,
     response_type: &Option<String>,
-) -> Result<(
-    DescriptorPool,
-    Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>,
-    Option<std::sync::Arc<tpt_proto_descriptor::DescriptorProto>>,
-)> {
+) -> Result<PreparedDescriptors> {
     let (pool, set) = match &descriptor_set {
         Some(p) => {
             let set = load_descriptor_set(p)?;

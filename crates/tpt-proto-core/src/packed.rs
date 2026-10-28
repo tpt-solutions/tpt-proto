@@ -227,8 +227,10 @@ mod tests {
         use crate::limits::DecoderLimits;
         let mut w = Writer::new();
         encode_packed_fixed32(&mut w, 2, [10u32, 20, 30]);
-        let mut limits = DecoderLimits::default();
-        limits.max_depth = 1;
+        let limits = DecoderLimits {
+            max_depth: 1,
+            ..Default::default()
+        };
         let mut r = Reader::with_limits(w.buf(), limits);
         let _ = r.read_tag().unwrap();
         // One nesting level deep must succeed (depth counted, not reset to
@@ -241,8 +243,10 @@ mod tests {
         use crate::limits::DecoderLimits;
         let mut inner = Writer::new();
         encode_packed_fixed32(&mut inner, 1, [1u32]);
-        let mut limits = DecoderLimits::default();
-        limits.max_depth = 1;
+        let limits = DecoderLimits {
+            max_depth: 1,
+            ..Default::default()
+        };
         // Simulate the parent reader already being one level deep (as it
         // would be after decoding into a nested message), then attempt a
         // further packed decode: this must be depth 2, exceeding
@@ -261,8 +265,10 @@ mod tests {
         use crate::limits::DecoderLimits;
         let mut inner = Writer::new();
         encode_packed_fixed64(&mut inner, 1, [1u64]);
-        let mut limits = DecoderLimits::default();
-        limits.max_depth = 1;
+        let limits = DecoderLimits {
+            max_depth: 1,
+            ..Default::default()
+        };
         let root = Reader::with_limits(&[][..], limits);
         let mut at_depth_1 = root.nested(inner.buf()).unwrap();
         let _ = at_depth_1.read_tag().unwrap();
@@ -280,8 +286,10 @@ mod tests {
         crate::scalar::encode_int32(&mut v, 2, 7);
         encode_map_entry(&mut w, 3, k.buf(), v.buf());
         // A tiny max_length must still allow the entry body itself.
-        let mut limits = DecoderLimits::default();
-        limits.max_depth = 1;
+        let limits = DecoderLimits {
+            max_depth: 1,
+            ..Default::default()
+        };
         let mut r = Reader::with_limits(w.buf(), limits);
         let _ = r.read_tag().unwrap();
         // The entry is one nesting level deep; decoding it at max_depth=1 must

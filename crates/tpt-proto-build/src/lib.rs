@@ -317,14 +317,14 @@ mod tests {
             incremental: true,
             ..Default::default()
         };
-        compile_protos(&[src.clone()], &[], &out, &config).unwrap();
+        compile_protos(std::slice::from_ref(&src), &[], &out, &config).unwrap();
         let out_rs = out.join("m.rs");
         assert!(out_rs.exists());
         let first_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
 
         // Second build with identical inputs should not rewrite the output.
         std::thread::sleep(std::time::Duration::from_millis(20));
-        compile_protos(&[src.clone()], &[], &out, &config).unwrap();
+        compile_protos(std::slice::from_ref(&src), &[], &out, &config).unwrap();
         let second_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
         assert_eq!(
             first_mtime, second_mtime,
@@ -337,7 +337,7 @@ mod tests {
             "syntax = \"proto3\"; package t; message M { int32 a = 1; string b = 2; }",
         )
         .unwrap();
-        compile_protos(&[src.clone()], &[], &out, &config).unwrap();
+        compile_protos(std::slice::from_ref(&src), &[], &out, &config).unwrap();
         let third_mtime = std::fs::metadata(&out_rs).unwrap().modified().unwrap();
         assert_ne!(
             second_mtime, third_mtime,

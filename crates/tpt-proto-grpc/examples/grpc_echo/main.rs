@@ -6,6 +6,15 @@
 //! drive the generated `EchoClient` through a [`Channel`] — exercising exactly
 //! the code a user would compile and run.
 
+// Generated code: skip clippy style lints and the rustc unused/dead-code
+// warnings that stubs and unused message builders trigger.
+#[allow(
+    clippy::all,
+    dead_code,
+    non_camel_case_types,
+    unused_imports,
+    unused_variables
+)]
 mod generated {
     include!("echo_gen.rs");
 }
@@ -14,7 +23,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use generated::{Echo, EchoClient, ExPing, ExPong};
-use tpt_proto_core::Message;
 use tpt_proto_grpc::{
     Channel, ClientStream, Code, Metadata, Request, Response, ServerStream, Status, Transport,
 };
@@ -25,8 +33,10 @@ struct MyEcho;
 #[async_trait]
 impl Echo for MyEcho {
     async fn unary(&self, request: Request<ExPing>) -> Result<Response<ExPong>, Status> {
-        let mut pong = ExPong::default();
-        pong.msg = format!("echo: {}", request.message.msg);
+        let pong = ExPong {
+            msg: format!("echo: {}", request.message.msg),
+            ..Default::default()
+        };
         Ok(Response::new(pong))
     }
 
@@ -107,10 +117,13 @@ impl Transport for LocalTransport {
 fn main() {
     let server = Arc::new(MyEcho);
     let channel = Channel::new(Arc::new(LocalTransport { server }));
-    let mut client = EchoClient::new(channel);
+    let client = EchoClient::new(channel);
 
-    let mut ping = ExPing::default();
-    ping.msg = "hello, gRPC".into();
+    let ping = ExPing {
+        msg: "hello, gRPC".into(),
+
+        ..Default::default()
+    };
 
     let resp = futures::executor::block_on(client.unary(Request::new(ping))).unwrap();
     println!("client received: {}", resp.message.msg);

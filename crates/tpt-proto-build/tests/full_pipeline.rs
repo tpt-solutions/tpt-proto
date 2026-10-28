@@ -34,7 +34,7 @@ fn full_pipeline_proto_build_codegen_runtime_json_text_cli() {
         ..Default::default()
     };
     compile_protos(
-        &[proto_path.clone()],
+        std::slice::from_ref(&proto_path),
         &[root.join("proto")],
         &out_dir,
         &config,

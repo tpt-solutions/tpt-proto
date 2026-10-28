@@ -358,7 +358,7 @@ fn struct_to_json(
                 _ => continue,
             };
             let json_val = if let (Some(d), Value::Message(m)) = (&value_desc, v) {
-                super::message_to_json_impl(pool, &d, m, opts, depth + 1)?
+                super::message_to_json_impl(pool, d, m, opts, depth + 1)?
             } else {
                 Json::Null
             };
@@ -489,7 +489,7 @@ fn list_value_to_json(
         let value_desc = pool.lookup_message(".google.protobuf.Value");
         for it in items {
             let json_val = if let (Some(d), Value::Message(m)) = (&value_desc, it) {
-                super::message_to_json_impl(pool, &d, m, opts, depth + 1)?
+                super::message_to_json_impl(pool, d, m, opts, depth + 1)?
             } else {
                 Json::Null
             };

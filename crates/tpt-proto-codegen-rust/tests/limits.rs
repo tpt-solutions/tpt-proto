@@ -6,15 +6,20 @@
 //! zero and silently discarding caller-supplied limits.
 
 // The checked-in generated sample (same file used by roundtrip.rs).
-include!("./sample_generated.rs");
+#[path = "sample_generated.rs"]
+mod generated;
+
+use generated::*;
 
 use tpt_proto_core::{decode_with_limits, DecoderLimits};
 
 fn nested_sample() -> Vec<u8> {
-    let mut m = SampleScalars::default();
-    m.i32 = 7;
-    m.nested = SampleNested {
-        name: "deep".into(),
+    let m = SampleScalars {
+        i32: 7,
+        nested: SampleNested {
+            name: "deep".into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     m.encode_to_vec().unwrap()
@@ -34,8 +39,10 @@ fn default_limits_accept_nested_generated() {
 #[test]
 fn tight_max_depth_rejected_through_generated_path() {
     let bytes = nested_sample();
-    let mut tight = DecoderLimits::default();
-    tight.max_depth = 0;
+    let tight = DecoderLimits {
+        max_depth: 0,
+        ..Default::default()
+    };
     let err = decode_with_limits::<SampleScalars>(&bytes, tight).unwrap_err();
     assert!(
         matches!(err, tpt_proto_core::Error::DepthLimitExceeded),
@@ -43,8 +50,10 @@ fn tight_max_depth_rejected_through_generated_path() {
     );
 
     // The same payload decodes fine one level deeper.
-    let mut ok = DecoderLimits::default();
-    ok.max_depth = 1;
+    let ok = DecoderLimits {
+        max_depth: 1,
+        ..Default::default()
+    };
     decode_with_limits::<SampleScalars>(&bytes, ok).unwrap();
 }
 
@@ -52,8 +61,10 @@ fn tight_max_depth_rejected_through_generated_path() {
 #[test]
 fn tight_max_bytes_rejected_through_generated_path() {
     let bytes = nested_sample();
-    let mut tight = DecoderLimits::default();
-    tight.max_bytes = Some(2);
+    let tight = DecoderLimits {
+        max_bytes: Some(2),
+        ..Default::default()
+    };
     assert!(decode_with_limits::<SampleScalars>(&bytes, tight).is_err());
 }
 

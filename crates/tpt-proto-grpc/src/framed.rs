@@ -136,7 +136,7 @@ where
     B: Send + 'static,
     F: Fn(A) -> Result<B, Status> + Send + 'static,
 {
-    Box::pin(stream.map(move |r| r.and_then(|a| f(a))))
+    Box::pin(stream.map(move |r| r.and_then(&f)))
 }
 
 /// Map a `ClientStream<A>` (the request side) into a `ClientStream<B>`.
@@ -146,5 +146,5 @@ where
     B: Send + 'static,
     F: Fn(A) -> Result<B, Status> + Send + 'static,
 {
-    Box::pin(stream.map(move |r| r.and_then(|a| f(a))))
+    Box::pin(stream.map(move |r| r.and_then(&f)))
 }

@@ -563,10 +563,11 @@ impl SecurityPolicy {
                 &ctx.metadata,
                 ctx.peer.as_ref().unwrap_or(&PeerInfo::default()),
             )?,
-            None => match ctx.peer.as_ref().and_then(|p| identity_from_peer(p)) {
-                Some(id) => id,
-                None => PeerIdentity::default(),
-            },
+            None => ctx
+                .peer
+                .as_ref()
+                .and_then(identity_from_peer)
+                .unwrap_or_default(),
         };
         self.authorizer.authorize(&identity, service, method)?;
         Ok(identity)

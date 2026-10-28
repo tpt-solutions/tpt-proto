@@ -18,12 +18,16 @@ allow = [
     "Unicode-DFS-2016",
     "Zlib",
     "CDLA-Permissive-2.0",
+    # libFuzzer (via libfuzzer-sys) is distributed under the NCSA license.
+    "NCSA",
 ]
 
 [bans]
 # Duplicated transitive versions are noisy but not fatal; surface them.
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace path dependencies are unversioned by design.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "warn"

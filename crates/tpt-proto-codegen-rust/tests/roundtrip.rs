@@ -5,19 +5,24 @@
 //! contract: encode → decode must be identity for scalars, messages, repeated
 //! (packed) fields, maps, oneofs, and enums (including unknown values).
 
-include!("./sample_generated.rs");
+#[path = "sample_generated.rs"]
+mod generated;
+
+use generated::*;
 
 #[test]
 fn roundtrip_scalars_and_nested() {
-    let mut m = SampleScalars::default();
-    m.d = 1.5;
-    m.f = -0.25;
-    m.i32 = -3;
-    m.i64 = 1_000_000_000;
-    m.u32 = 42;
-    m.u64 = 99;
-    m.s32 = -7;
-    m.s64 = -8;
+    let mut m = SampleScalars {
+        d: 1.5,
+        f: -0.25,
+        i32: -3,
+        i64: 1_000_000_000,
+        u32: 42,
+        u64: 99,
+        s32: -7,
+        s64: -8,
+        ..Default::default()
+    };
     m.f32 = 9;
     m.f64 = 10;
     m.sf32 = -11;
@@ -37,9 +42,11 @@ fn roundtrip_scalars_and_nested() {
 
 #[test]
 fn roundtrip_collections_packed() {
-    let mut c = SampleCollections::default();
-    c.nums = vec![1, 2, 300, -4];
-    c.strs = vec!["a".into(), "b".into()];
+    let mut c = SampleCollections {
+        nums: vec![1, 2, 300, -4],
+        strs: vec!["a".into(), "b".into()],
+        ..Default::default()
+    };
     c.items.push(SampleNested {
         name: "item".into(),
         ..Default::default()
@@ -97,8 +104,10 @@ fn roundtrip_oneof() {
 fn unknown_fields_preserved() {
     // Build with a field, then append a synthetic unknown field, and confirm
     // the unknown bytes are re-emitted on re-encode.
-    let mut m = SampleScalars::default();
-    m.s = "kept".into();
+    let m = SampleScalars {
+        s: "kept".into(),
+        ..Default::default()
+    };
     let mut bytes = m.encode_to_vec().unwrap();
 
     // Append an unknown field 99 (varint 5) to the encoded output.
@@ -136,14 +145,16 @@ fn proto_full_name_hook() {
 
 #[test]
 fn json_roundtrip_scalars() {
-    let mut m = SampleScalars::default();
-    m.d = 1.5;
-    m.i32 = -3;
-    m.u64 = 99;
-    m.s = "héllo".into();
-    m.by = vec![1, 2, 3];
-    m.nested = SampleNested {
-        name: "nested".into(),
+    let m = SampleScalars {
+        d: 1.5,
+        i32: -3,
+        u64: 99,
+        s: "héllo".into(),
+        by: vec![1, 2, 3],
+        nested: SampleNested {
+            name: "nested".into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -154,10 +165,12 @@ fn json_roundtrip_scalars() {
 
 #[test]
 fn json_roundtrip_collections() {
-    let mut c = SampleCollections::default();
-    c.nums = vec![1, 2, 300, -4];
-    c.strs = vec!["a".into(), "b".into()];
-    c.color = SampleColor::GREEN;
+    let mut c = SampleCollections {
+        nums: vec![1, 2, 300, -4],
+        strs: vec!["a".into(), "b".into()],
+        color: SampleColor::GREEN,
+        ..Default::default()
+    };
     c.labels.insert("alpha".into(), 1);
     c.by_id.insert(
         7,
@@ -182,9 +195,11 @@ fn json_roundtrip_oneof() {
 
 #[test]
 fn text_roundtrip_scalars() {
-    let mut m = SampleScalars::default();
-    m.i32 = 7;
-    m.s = "text".into();
+    let m = SampleScalars {
+        i32: 7,
+        s: "text".into(),
+        ..Default::default()
+    };
 
     let text = m.to_text().expect("to_text failed");
     let back = SampleScalars::from_text(&text).expect("from_text failed");
@@ -193,8 +208,10 @@ fn text_roundtrip_scalars() {
 
 #[test]
 fn text_roundtrip_collections() {
-    let mut c = SampleCollections::default();
-    c.nums = vec![5, 6];
+    let mut c = SampleCollections {
+        nums: vec![5, 6],
+        ..Default::default()
+    };
     c.labels.insert("k".into(), 9);
 
     let text = c.to_text().expect("to_text failed");

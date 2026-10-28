@@ -139,7 +139,7 @@ impl Default for ServerConfig {
             max_metadata_size: 8 * 1024,
             max_header_list_size: 16 * 1024,
             http2_initial_stream_window: 256 * 1024,
-            http2_initial_connection_window: 1 * 1024 * 1024,
+            http2_initial_connection_window: 1024 * 1024,
             response_compression: Compression::Identity,
             graceful_shutdown_timeout: Duration::from_secs(30),
             max_concurrent_rpcs: 1000,
@@ -820,6 +820,7 @@ struct HandlerOutput {
 }
 
 /// Dispatch to the right `call_*` based on the method kind.
+#[allow(clippy::too_many_arguments)]
 async fn dispatch(
     kind: MethodKind,
     request: http::Request<h2::RecvStream>,

@@ -114,14 +114,19 @@ pub fn format_source(src: &str) -> Result<String, FmtError> {
             at_bol = true;
         }};
     }
-    macro_rules! ensure_indent {
+    macro_rules! indent_if_bol {
         () => {
             if at_bol {
                 for _ in 0..indent {
                     out.push_str("  ");
                 }
-                at_bol = false;
             }
+        };
+    }
+    macro_rules! ensure_indent {
+        () => {
+            indent_if_bol!();
+            at_bol = false;
         };
     }
 
@@ -154,12 +159,10 @@ pub fn format_source(src: &str) -> Result<String, FmtError> {
                     ensure_indent!();
                     if c.text.trim_start().starts_with("/*") {
                         for line in c.text.lines() {
-                            if at_bol {
-                                ensure_indent!();
-                            } else {
+                            if !at_bol {
                                 newline!();
-                                ensure_indent!();
                             }
+                            ensure_indent!();
                             out.push_str(line.trim_end());
                         }
                         newline!();
@@ -176,7 +179,7 @@ pub fn format_source(src: &str) -> Result<String, FmtError> {
                 if matches!(kind, TokenKind::RBrace) && brace_open_inline {
                     // Empty body: close the brace on the same line (`{}`).
                     brace_open_inline = false;
-                    ensure_indent!();
+                    indent_if_bol!();
                     out.push('}');
                     newline!();
                     prev = Some(ev);
@@ -240,7 +243,10 @@ pub fn format_source(src: &str) -> Result<String, FmtError> {
     }
 
     if !out.ends_with('\n') {
-        newline!();
+        while out.ends_with([' ', '\t']) {
+            out.pop();
+        }
+        out.push('\n');
     }
     Ok(out)
 }

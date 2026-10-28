@@ -84,7 +84,7 @@ fn print_value(value: &Value, indent: usize) {
         Value::List(items) => {
             println!("[");
             for it in items {
-                print!("{}{}", "  ".repeat(indent + 1), "");
+                print!("{}", "  ".repeat(indent + 1));
                 print_value(it, indent + 1);
             }
             println!("{}  ]", "  ".repeat(indent));

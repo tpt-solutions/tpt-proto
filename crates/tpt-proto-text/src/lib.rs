@@ -262,7 +262,7 @@ fn print_scalar_inline(v: &Value, out: &mut String) {
         Value::Scalar(RScalar::I64(x)) => out.push_str(&x.to_string()),
         Value::Scalar(RScalar::U64(x)) => out.push_str(&x.to_string()),
         Value::Enum(n) => out.push_str(&n.to_string()),
-        _ => out.push_str("?"),
+        _ => out.push('?'),
     }
 }
 

@@ -130,7 +130,7 @@ impl Default for Endpoint {
             compression: Compression::Identity,
             max_message_size: 4 * 1024 * 1024,
             http2_initial_stream_window: 256 * 1024,
-            http2_initial_connection_window: 1 * 1024 * 1024,
+            http2_initial_connection_window: 1024 * 1024,
             max_concurrent_streams: 100,
             connect_timeout: Duration::from_secs(10),
             retry_policy: RetryPolicy::default(),
@@ -149,10 +149,11 @@ impl Endpoint {
         let port: u16 = port
             .parse()
             .map_err(|_| Status::new(Code::InvalidArgument, "invalid port"))?;
-        let mut e = Endpoint::default();
-        e.host = host.to_string();
-        e.port = port;
-        Ok(e)
+        Ok(Endpoint {
+            host: host.to_string(),
+            port,
+            ..Default::default()
+        })
     }
 
     /// Set the outgoing compression algorithm.

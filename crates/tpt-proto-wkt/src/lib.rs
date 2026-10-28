@@ -205,9 +205,10 @@ impl Message for Empty {
 // ---------------------------------------------------------------------------
 
 /// A `google.protobuf.Value`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum Value {
     /// A JSON null.
+    #[default]
     Null,
     /// A number.
     Number(f64),
@@ -219,12 +220,6 @@ pub enum Value {
     Struct(Struct),
     /// A list value.
     List(ListValue),
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Value::Null
-    }
 }
 
 /// A `google.protobuf.Struct`.
@@ -248,8 +243,8 @@ impl Message for Struct {
             scalar::encode_string(&mut entry, 1, k);
             let mut val = Writer::new();
             v.encode(&mut val)?;
-            scalar::encode_message(&mut entry, 2, &val.buf());
-            scalar::encode_message(w, 1, &entry.buf());
+            scalar::encode_message(&mut entry, 2, val.buf());
+            scalar::encode_message(w, 1, entry.buf());
         }
         Ok(())
     }
@@ -293,12 +288,12 @@ impl Message for Value {
             Value::Struct(s) => {
                 let mut inner = Writer::new();
                 s.encode(&mut inner)?;
-                scalar::encode_message(w, 5, &inner.buf());
+                scalar::encode_message(w, 5, inner.buf());
             }
             Value::List(l) => {
                 let mut inner = Writer::new();
                 l.encode(&mut inner)?;
-                scalar::encode_message(w, 6, &inner.buf());
+                scalar::encode_message(w, 6, inner.buf());
             }
         }
         Ok(())
@@ -341,7 +336,7 @@ impl Message for ListValue {
         for v in &self.values {
             let mut inner = Writer::new();
             v.encode(&mut inner)?;
-            scalar::encode_message(w, 1, &inner.buf());
+            scalar::encode_message(w, 1, inner.buf());
         }
         Ok(())
     }
@@ -435,17 +430,15 @@ pub fn well_known_file_descriptor_set() -> tpt_proto_descriptor::FileDescriptorS
         ..Default::default()
     };
 
-    let mut messages = Vec::new();
-
     // Timestamp / Duration / FieldMask / Empty.
-    messages.push(DescriptorProto {
+    let mut messages = vec![DescriptorProto {
         name: Some("Timestamp".into()),
         field: vec![
             fld("seconds", 1, FieldType::Int64, Label::Optional, None),
             fld("nanos", 2, FieldType::Int32, Label::Optional, None),
         ],
         ..Default::default()
-    });
+    }];
     messages.push(DescriptorProto {
         name: Some("Duration".into()),
         field: vec![

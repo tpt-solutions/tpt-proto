@@ -112,16 +112,12 @@ enum TyRef {
 }
 
 impl TyRef {
-    fn from_field(f: &FieldDescriptorProto, type_map: &HashMap<String, String>) -> Option<TyRef> {
+    fn from_field(f: &FieldDescriptorProto) -> Option<TyRef> {
         let ty = f.r#type?;
         match ty {
             FieldType::Message => {
                 let fqn = f.type_name.clone()?;
-                if type_map.contains_key(&fqn) {
-                    Some(TyRef::Message(fqn))
-                } else {
-                    Some(TyRef::Message(fqn))
-                }
+                Some(TyRef::Message(fqn))
             }
             FieldType::Enum => {
                 let fqn = f.type_name.clone()?;
@@ -189,7 +185,7 @@ fn dec_scalar_expr(t: FieldType, r: &str) -> String {
         FieldType::String => format!("{r}.read_string_owned()?"),
         FieldType::Bytes => format!("{r}.read_length_delimited()?.to_vec()"),
         // Message/group/enum are not scalars and use dedicated paths.
-        FieldType::Message | FieldType::Group | FieldType::Enum => format!("unreachable!()"),
+        FieldType::Message | FieldType::Group | FieldType::Enum => "unreachable!()".to_string(),
     }
 }
 
@@ -212,7 +208,7 @@ fn dec_scalar_expr_nq(t: FieldType, r: &str) -> String {
         FieldType::Double => format!("scalar::read_double({r})"),
         FieldType::String => format!("{r}.read_string_owned()"),
         FieldType::Bytes => format!("{r}.read_length_delimited()?.to_vec()"),
-        FieldType::Message | FieldType::Group | FieldType::Enum => format!("unreachable!()"),
+        FieldType::Message | FieldType::Group | FieldType::Enum => "unreachable!()".to_string(),
     }
 }
 
@@ -262,18 +258,18 @@ fn pack_from(t: FieldType, raw: &str) -> String {
         FieldType::Int32 => format!("{raw} as i32"),
         FieldType::Int64 => format!("{raw} as i64"),
         FieldType::Uint32 => format!("{raw} as u32"),
-        FieldType::Uint64 => format!("{raw}"),
+        FieldType::Uint64 => raw.to_string(),
         FieldType::Bool => format!("{raw} != 0"),
         FieldType::Enum => format!("{raw} as i32"),
         FieldType::Sint32 => format!("__core::scalar::decode_zigzag32({raw} as u32)"),
         FieldType::Sint64 => format!("__core::scalar::decode_zigzag64({raw})"),
-        FieldType::Fixed32 => format!("{raw}"),
+        FieldType::Fixed32 => raw.to_string(),
         FieldType::Sfixed32 => format!("{raw} as i32"),
-        FieldType::Fixed64 => format!("{raw}"),
+        FieldType::Fixed64 => raw.to_string(),
         FieldType::Sfixed64 => format!("{raw} as i64"),
         FieldType::Float => format!("f32::from_bits({raw})"),
         FieldType::Double => format!("f64::from_bits({raw})"),
-        _ => format!("{raw}"),
+        _ => raw.to_string(),
     }
 }
 
@@ -624,9 +620,7 @@ fn gen_enum(fqn: &str, e: &EnumDescriptorProto) -> String {
         "/// Generated from protobuf enum `{}`.\n",
         fqn.trim_start_matches('.')
     ));
-    s.push_str(&format!(
-        "#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n"
-    ));
+    s.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n");
     s.push_str("#[repr(i32)]\n");
     s.push_str(&format!("pub enum {rust} {{\n"));
     let mut first = true;
@@ -634,12 +628,12 @@ fn gen_enum(fqn: &str, e: &EnumDescriptorProto) -> String {
         let vname = to_pascal(v.name.as_deref().unwrap_or("Unknown"));
         let num = v.number.unwrap_or(0);
         if first {
-            s.push_str(&format!("    #[default]\n"));
+            s.push_str("    #[default]\n");
             first = false;
         }
         s.push_str(&format!("    {vname} = {num},\n"));
     }
-    s.push_str(&format!("    Unknown(i32),\n"));
+    s.push_str("    Unknown(i32),\n");
     s.push_str("}\n\n");
 
     s.push_str(&format!("impl {rust} {{\n"));
@@ -734,7 +728,7 @@ fn gen_message(
             let vt = v.rust(&schema.type_map);
             struct_def.push_str(&format!("    pub {snake}: HashMap<{kt}, {vt}>,\n"));
         } else {
-            let tyref = match TyRef::from_field(f, &schema.type_map) {
+            let tyref = match TyRef::from_field(f) {
                 Some(t) => t,
                 None => continue,
             };
@@ -811,7 +805,7 @@ fn is_map_field(f: &FieldDescriptorProto, schema: &Schema) -> bool {
         && f.r#type == Some(FieldType::Message)
         && f.type_name
             .as_ref()
-            .map_or(false, |t| schema.map_entries.contains_key(t))
+            .is_some_and(|t| schema.map_entries.contains_key(t))
 }
 
 fn map_kv(f: &FieldDescriptorProto, schema: &Schema) -> (TyRef, TyRef) {
@@ -845,11 +839,11 @@ fn gen_oneof_enum(
     s.push_str(&format!("pub enum {name} {{\n"));
     for f in m.field.iter().filter(|f| f.oneof_index == Some(oi as i32)) {
         let vname = to_pascal(f.name.as_deref().unwrap_or("field"));
-        let tyref = match TyRef::from_field(f, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(f) {
             Some(t) => t,
             None => continue,
         };
-        let vt = oneof_variant_type(&ctx, f, &tyref);
+        let vt = oneof_variant_type(ctx, f, &tyref);
         s.push_str(&format!("    {vname}({vt}),\n"));
     }
     s.push_str("}\n\n");
@@ -879,7 +873,7 @@ fn gen_message_impl(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
             s.push_str(&gen_map_encode(ctx, f, num, &snake));
             continue;
         }
-        let tyref = match TyRef::from_field(f, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(f) {
             Some(t) => t,
             None => continue,
         };
@@ -911,7 +905,7 @@ fn gen_message_impl(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
             s.push_str("}\n");
             continue;
         }
-        let tyref = match TyRef::from_field(f, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(f) {
             Some(t) => t,
             None => continue,
         };
@@ -1274,7 +1268,7 @@ fn gen_oneof_encode(
     for of in m.field.iter().filter(|x| x.oneof_index == Some(oi as i32)) {
         let vname = to_pascal(of.name.as_deref().unwrap_or("field"));
         let num = of.number.unwrap_or(0) as u32;
-        let tyref = match TyRef::from_field(of, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(of) {
             Some(t) => t,
             None => continue,
         };
@@ -1328,7 +1322,7 @@ fn gen_oneof_decode(
     for of in m.field.iter().filter(|x| x.oneof_index == Some(oi as i32)) {
         let num = of.number.unwrap_or(0) as u32;
         let vname = to_pascal(of.name.as_deref().unwrap_or("field"));
-        let tyref = match TyRef::from_field(of, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(of) {
             Some(t) => t,
             None => continue,
         };
@@ -1370,12 +1364,12 @@ fn gen_map_encode(
 
 fn map_key_val_expr(k: &TyRef, var: &str) -> String {
     let _ = k;
-    format!("{var}")
+    var.to_string()
 }
 
 fn map_val_val_expr(v: &TyRef, var: &str) -> String {
     let _ = v;
-    format!("{var}")
+    var.to_string()
 }
 
 fn gen_map_decode(ctx: &MessageContext<'_>, f: &FieldDescriptorProto, snake: &str) -> String {
@@ -1490,7 +1484,7 @@ fn gen_default_impl(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
             ));
             continue;
         }
-        let tyref = match TyRef::from_field(f, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(f) {
             Some(t) => t,
             None => {
                 s.push_str(&format!("            {snake}: Default::default(),\n"));
@@ -1606,7 +1600,7 @@ fn gen_builder(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
             ));
             continue;
         }
-        let tyref = match TyRef::from_field(f, &ctx.schema.type_map) {
+        let tyref = match TyRef::from_field(f) {
             Some(t) => t,
             None => continue,
         };
@@ -1649,7 +1643,7 @@ fn gen_builder(ctx: &MessageContext<'_>, m: &DescriptorProto) -> String {
             ));
         }
     }
-    s.push_str(&format!("        Ok(self.inner)\n    }}\n"));
+    s.push_str("        Ok(self.inner)\n    }\n");
     s.push_str(&format!(
         "    /// Build the message without required-field validation.\n    pub fn build(self) -> {name} {{\n        self.inner\n    }}\n"
     ));
@@ -1758,7 +1752,7 @@ fn gen_service_grpc(
     out.push_str("}\n\n");
 
     // ---- Server adapter ----
-    out.push_str(&gen_server_adapter(&name, full_name, s, pkg));
+    out.push_str(&gen_server_adapter(name, full_name, s, pkg));
     out
 }
 

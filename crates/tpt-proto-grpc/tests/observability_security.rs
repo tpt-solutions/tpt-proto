@@ -33,7 +33,7 @@ async fn observability_records_metrics_for_health_check() {
     let metrics = InMemoryMetricsRecorder::new();
     let obs = Observability::default().with_metrics(Arc::new(metrics.clone()));
 
-    let mut registry = HealthRegistry::new();
+    let registry = HealthRegistry::new();
     registry.set_status("", ServingStatus::Serving);
     let server = Server::builder().with_observability(obs).build();
     server.add_service(HealthService::new(registry));
@@ -74,7 +74,7 @@ async fn security_policy_enforces_authentication() {
     let policy = SecurityPolicy::none()
         .with_authenticator(Arc::new(BearerTokenAuthenticator::new("secret", "alice")));
     let server = Server::builder().with_security(Arc::new(policy)).build();
-    let mut registry = HealthRegistry::new();
+    let registry = HealthRegistry::new();
     registry.set_status("", ServingStatus::Serving);
     server.add_service(HealthService::new(registry));
     let (addr, shutdown) = spawn_server(server).await;

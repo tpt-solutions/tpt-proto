@@ -6,11 +6,18 @@
 //! through the real h2 runtime, exercising framing, compression negotiation,
 //! metadata, deadlines, and streaming backpressure.
 
+// Generated code: skip clippy style lints and the rustc unused/dead-code
+// warnings that stubs and unused message builders trigger.
+#[allow(
+    clippy::all,
+    dead_code,
+    non_camel_case_types,
+    unused_imports,
+    unused_variables
+)]
 mod generated {
     include!("../examples/grpc_echo/echo_gen.rs");
 }
-
-use std::sync::Arc;
 
 use futures::StreamExt;
 use tokio::net::TcpListener;
@@ -25,8 +32,10 @@ struct MyEcho;
 #[async_trait::async_trait]
 impl Echo for MyEcho {
     async fn unary(&self, request: Request<ExPing>) -> Result<Response<ExPong>, Status> {
-        let mut p = ExPong::default();
-        p.msg = format!("echo: {}", request.message.msg);
+        let p = ExPong {
+            msg: format!("echo: {}", request.message.msg),
+            ..Default::default()
+        };
         Ok(Response::new(p))
     }
 
@@ -37,8 +46,10 @@ impl Echo for MyEcho {
         let msg = request.message.msg.clone();
         let items: Vec<Result<ExPong, Status>> = (0..3)
             .map(|i| {
-                let mut p = ExPong::default();
-                p.msg = format!("{msg}-{i}");
+                let p = ExPong {
+                    msg: format!("{msg}-{i}"),
+                    ..Default::default()
+                };
                 Ok(p)
             })
             .collect();
@@ -56,8 +67,10 @@ impl Echo for MyEcho {
             let _ = item?;
             count += 1;
         }
-        let mut p = ExPong::default();
-        p.msg = format!("count={count}");
+        let p = ExPong {
+            msg: format!("count={count}"),
+            ..Default::default()
+        };
         Ok(Response::new(p))
     }
 
@@ -71,8 +84,10 @@ impl Echo for MyEcho {
             while let Some(item) = input.next().await {
                 match item {
                     Ok(p) => {
-                        let mut out = ExPong::default();
-                        out.msg = format!("echo: {}", p.msg);
+                        let out = ExPong {
+                            msg: format!("echo: {}", p.msg),
+                            ..Default::default()
+                        };
                         if tx.start_send(Ok(out)).is_err() {
                             break;
                         }
@@ -112,10 +127,13 @@ fn client_for(addr: std::net::SocketAddr) -> EchoClient {
 #[tokio::test]
 async fn unary_over_tcp() {
     let (addr, shutdown) = spawn_server().await;
-    let mut client = client_for(addr);
+    let client = client_for(addr);
 
-    let mut ping = ExPing::default();
-    ping.msg = "hello".into();
+    let ping = ExPing {
+        msg: "hello".into(),
+
+        ..Default::default()
+    };
     let resp = client.unary(Request::new(ping)).await.unwrap();
     assert_eq!(resp.message.msg, "echo: hello");
 
@@ -125,10 +143,13 @@ async fn unary_over_tcp() {
 #[tokio::test]
 async fn server_streaming_over_tcp() {
     let (addr, shutdown) = spawn_server().await;
-    let mut client = client_for(addr);
+    let client = client_for(addr);
 
-    let mut ping = ExPing::default();
-    ping.msg = "s".into();
+    let ping = ExPing {
+        msg: "s".into(),
+
+        ..Default::default()
+    };
     let resp = client.server_stream(Request::new(ping)).await.unwrap();
     let msgs: Vec<String> = resp.message.map(|r| r.unwrap().msg).collect().await;
     assert_eq!(msgs, vec!["s-0", "s-1", "s-2"]);
@@ -139,12 +160,14 @@ async fn server_streaming_over_tcp() {
 #[tokio::test]
 async fn client_streaming_over_tcp() {
     let (addr, shutdown) = spawn_server().await;
-    let mut client = client_for(addr);
+    let client = client_for(addr);
 
     let items: Vec<Result<ExPing, Status>> = (0..4)
         .map(|i| {
-            let mut p = ExPing::default();
-            p.msg = format!("p{i}");
+            let p = ExPing {
+                msg: format!("p{i}"),
+                ..Default::default()
+            };
             Ok(p)
         })
         .collect();
@@ -161,12 +184,14 @@ async fn client_streaming_over_tcp() {
 #[tokio::test]
 async fn bidi_streaming_over_tcp() {
     let (addr, shutdown) = spawn_server().await;
-    let mut client = client_for(addr);
+    let client = client_for(addr);
 
     let items: Vec<Result<ExPing, Status>> = (0..3)
         .map(|i| {
-            let mut p = ExPing::default();
-            p.msg = format!("b{i}");
+            let p = ExPing {
+                msg: format!("b{i}"),
+                ..Default::default()
+            };
             Ok(p)
         })
         .collect();
@@ -181,11 +206,13 @@ async fn bidi_streaming_over_tcp() {
 #[tokio::test]
 async fn unary_error_status_surfaces() {
     let (addr, shutdown) = spawn_server().await;
-    let mut client = client_for(addr);
+    let client = client_for(addr);
 
     // Unknown method path should produce a gRPC Unimplemented status.
-    let mut ping = ExPing::default();
-    ping.msg = "x".into();
+    let ping = ExPing {
+        msg: "x".into(),
+        ..Default::default()
+    };
     // The generated client only knows `Unary`; exercise the transport error
     // path by driving the channel's transport directly against a bad path.
     let result = client
