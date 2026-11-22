@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use tpt_proto_core::Reader;
 use tpt_proto_json::{message_to_json_string, JsonOptions};
-use tpt_proto_reflect::{DynamicMessage, ScalarValue, Value};
+use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue, Value};
 
 use crate::protocol::*;
 use crate::schema::Registry;
@@ -166,21 +166,41 @@ fn make_request(
     req
 }
 
-/// Look up a top-level `NestedMessage`/`NestedEnum` descriptor defined per
-/// dialect package (`proto2`/`proto3`/`editions`).
-fn lookup_nested(registry: &Registry, name: &str) -> Arc<DescriptorProto> {
-    for pkg in ["proto3", "proto2", "editions"] {
-        if let Some(d) = registry.lookup(&format!("{pkg}.{name}")) {
-            return d;
-        }
-    }
-    panic!("nested descriptor {name} not found");
+/// The message type of the named field in `desc`, resolved through the
+/// registry. Using the parent's own field type keeps each dialect's nested
+/// message in step with that dialect's field layout.
+fn field_message_type(
+    registry: &Registry,
+    desc: &DescriptorProto,
+    name: &str,
+) -> Arc<DescriptorProto> {
+    let type_name = desc
+        .field
+        .iter()
+        .find(|f| f.name.as_deref() == Some(name))
+        .and_then(|f| f.type_name.clone())
+        .unwrap_or_else(|| panic!("field {name} has no message type"));
+    registry
+        .lookup(&type_name)
+        .unwrap_or_else(|| panic!("message type {type_name} not found"))
+}
+
+/// Field number of the named field in `desc`, if present.
+fn field_number(desc: &DescriptorProto, name: &str) -> Option<i32> {
+    desc.field
+        .iter()
+        .find(|f| f.name.as_deref() == Some(name))
+        .and_then(|f| f.number)
 }
 
 /// Construct a representative `TestAllTypes` message for the given dialect's
 /// descriptor.
-fn build_sample(registry: &Registry, desc: &Arc<DescriptorProto>) -> DynamicMessage {
-    let pool = &registry.pool;
+fn build_sample(
+    registry: &Registry,
+    message_type: &str,
+    desc: &Arc<DescriptorProto>,
+) -> DynamicMessage {
+    let pool = registry.pool_for(message_type);
     let mut msg = DynamicMessage::new(desc.clone(), pool.clone());
 
     msg.set_field(1, Value::Scalar(ScalarValue::I64(42)));
@@ -199,10 +219,14 @@ fn build_sample(registry: &Registry, desc: &Arc<DescriptorProto>) -> DynamicMess
     msg.set_field(14, Value::Scalar(ScalarValue::String("hello".into())));
     msg.set_field(15, Value::Scalar(ScalarValue::Bytes(b"bytes".to_vec())));
 
-    let nested = lookup_nested(registry, "NestedMessage");
+    let nested = field_message_type(registry, desc, "optional_nested_message");
     let mut nm = DynamicMessage::new(nested.clone(), pool.clone());
     nm.set_field(1, Value::Scalar(ScalarValue::I64(100)));
-    nm.set_field(2, Value::Scalar(ScalarValue::String("nested".into())));
+    // proto2/editions `NestedMessage` has a string `bb = 2`; proto3's field 2
+    // is the `corecursive` message, so only set it where it is a string.
+    if let Some(num) = field_number(&nested, "bb") {
+        nm.set_field(num, Value::Scalar(ScalarValue::String("nested".into())));
+    }
     msg.set_field(18, Value::Message(nm));
     msg.set_field(21, Value::Enum(1)); // BAR
 
@@ -214,13 +238,15 @@ fn build_sample(registry: &Registry, desc: &Arc<DescriptorProto>) -> DynamicMess
             Value::Scalar(ScalarValue::I64(3)),
         ]),
     );
-    msg.set_field(
-        34,
-        Value::List(vec![
-            Value::Scalar(ScalarValue::String("a".into())),
-            Value::Scalar(ScalarValue::String("b".into())),
-        ]),
-    );
+    if let Some(num) = field_number(desc, "repeated_string") {
+        msg.set_field(
+            num,
+            Value::List(vec![
+                Value::Scalar(ScalarValue::String("a".into())),
+                Value::Scalar(ScalarValue::String("b".into())),
+            ]),
+        );
+    }
 
     msg.set_field(
         56,
@@ -235,13 +261,17 @@ fn build_sample(registry: &Registry, desc: &Arc<DescriptorProto>) -> DynamicMess
             ),
         ]),
     );
-    msg.set_field(
-        58,
-        Value::Map(vec![(
-            Value::Scalar(ScalarValue::String("k".into())),
-            Value::Scalar(ScalarValue::String("v".into())),
-        )]),
-    );
+    // The string-keyed map's field number differs between dialects (58 in
+    // proto2, 69 in proto3), so resolve it by name.
+    if let Some(num) = field_number(desc, "map_string_string") {
+        msg.set_field(
+            num,
+            Value::Map(vec![(
+                Value::Scalar(ScalarValue::String("k".into())),
+                Value::Scalar(ScalarValue::String("v".into())),
+            )]),
+        );
+    }
 
     msg.set_field(113, Value::Scalar(ScalarValue::String("oneof".into())));
 
@@ -250,7 +280,9 @@ fn build_sample(registry: &Registry, desc: &Arc<DescriptorProto>) -> DynamicMess
         let mut ts = DynamicMessage::new(ts_desc.clone(), pool.clone());
         ts.set_field(1, Value::Scalar(ScalarValue::I64(61)));
         ts.set_field(2, Value::Scalar(ScalarValue::I64(210_000_000)));
-        msg.set_field(80, Value::Message(ts));
+        if let Some(num) = field_number(desc, "optional_timestamp") {
+            msg.set_field(num, Value::Message(ts));
+        }
     }
 
     msg
@@ -262,9 +294,14 @@ fn dialect_cases(registry: &Registry, message_type: &str) -> Vec<Case> {
         Some(d) => d,
         None => return Vec::new(),
     };
-    let sample = build_sample(registry, &desc);
-    let json = message_to_json_string(&registry.pool, &desc, &sample, &JsonOptions::default())
-        .expect("sample -> json");
+    let sample = build_sample(registry, message_type, &desc);
+    let json = message_to_json_string(
+        registry.pool_for(message_type),
+        &desc,
+        &sample,
+        &JsonOptions::default(),
+    )
+    .expect("sample -> json");
 
     let mut cases = Vec::new();
 
@@ -327,7 +364,7 @@ fn dialect_cases(registry: &Registry, message_type: &str) -> Vec<Case> {
 /// Build the cross-cutting (failure / unknown / wkt) cases.
 fn behavior_cases(registry: &Registry) -> Vec<Case> {
     let mut cases = Vec::new();
-    let p3 = "proto3.TestAllTypes";
+    let p3 = "protobuf_test_messages.proto3.TestAllTypesProto3";
 
     // Failure behavior: malformed binary -> parse_error.
     cases.push(Case {
@@ -357,7 +394,7 @@ fn behavior_cases(registry: &Registry) -> Vec<Case> {
 
     // Unknown field handling (binary): unknown field preserved on roundtrip.
     let desc = registry.lookup(p3).expect("proto3 TestAllTypes");
-    let sample = build_sample(registry, &desc);
+    let sample = build_sample(registry, p3, &desc);
     let mut base = sample.encode().expect("sample encode");
     // Append an unknown field 9000 (varint 42).
     let mut extra = tpt_proto_core::Writer::new();
@@ -434,8 +471,8 @@ fn behavior_cases(registry: &Registry) -> Vec<Case> {
 fn generate_cases(registry: &Registry) -> Vec<Case> {
     let mut cases = Vec::new();
     for mt in [
-        "proto2.TestAllTypes",
-        "proto3.TestAllTypes",
+        "protobuf_test_messages.proto2.TestAllTypesProto2",
+        "protobuf_test_messages.proto3.TestAllTypesProto3",
         "editions.TestAllTypes",
     ] {
         cases.extend(dialect_cases(registry, mt));
@@ -463,7 +500,16 @@ fn error_detail(response: &DynamicMessage) -> Option<String> {
 }
 
 /// Run a single case and report its result.
+/// The pool for a case, chosen by the message type its request names.
+fn case_pool<'a>(registry: &'a Registry, case: &Case) -> &'a DescriptorPool {
+    match case.request.get_field(REQ_MESSAGE_TYPE) {
+        Some(Value::Scalar(ScalarValue::String(s))) => registry.pool_for(s),
+        _ => &registry.pool,
+    }
+}
+
 fn run_case(registry: &Registry, case: &Case) -> CaseResult {
+    let pool = case_pool(registry, case);
     let response = crate::testee::process(registry, &case.request);
     match &case.expected {
         Expected::ParseError => {
@@ -504,8 +550,10 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
             match response.get_field(RES_PROTOBUF_PAYLOAD) {
                 Some(Value::Scalar(ScalarValue::Bytes(b))) => {
                     let dm = DynamicMessage::decode(
-                        &registry.pool,
-                        registry.lookup("proto3.TestAllTypes").unwrap(),
+                        pool,
+                        registry
+                            .lookup("protobuf_test_messages.proto3.TestAllTypesProto3")
+                            .unwrap(),
                         &mut Reader::new(b),
                     );
                     match dm {
@@ -547,18 +595,13 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
             }
             match response.get_field(RES_PROTOBUF_PAYLOAD) {
                 Some(Value::Scalar(ScalarValue::Bytes(b))) => {
-                    match DynamicMessage::decode(&registry.pool, desc.clone(), &mut Reader::new(b))
-                    {
+                    match DynamicMessage::decode(pool, desc.clone(), &mut Reader::new(b)) {
                         Ok(m) => {
-                            let got = message_to_json_string(
-                                &registry.pool,
-                                desc,
-                                &m,
-                                &JsonOptions::default(),
-                            )
-                            .unwrap_or_default();
+                            let got =
+                                message_to_json_string(pool, desc, &m, &JsonOptions::default())
+                                    .unwrap_or_default();
                             let want = message_to_json_string(
-                                &registry.pool,
+                                pool,
                                 desc,
                                 expected,
                                 &JsonOptions::default(),
@@ -601,13 +644,9 @@ fn run_case(registry: &Registry, case: &Case) -> CaseResult {
             }
             match response.get_field(RES_JSON_PAYLOAD) {
                 Some(Value::Scalar(ScalarValue::String(s))) => {
-                    let want = message_to_json_string(
-                        &registry.pool,
-                        desc,
-                        expected,
-                        &JsonOptions::default(),
-                    )
-                    .expect("expected -> json");
+                    let want =
+                        message_to_json_string(pool, desc, expected, &JsonOptions::default())
+                            .expect("expected -> json");
                     let ok = s.trim() == want.trim();
                     CaseResult {
                         name: case.name.clone(),

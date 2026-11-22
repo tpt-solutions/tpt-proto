@@ -354,6 +354,28 @@ impl Parser {
     fn parse_constant(&mut self) -> Option<Constant> {
         let tok = self.peek()?.clone();
         match &tok.kind {
+            TokenKind::Minus => {
+                // Signed numeric constant: `-` followed by an int or float.
+                self.advance();
+                match self.peek_kind().cloned() {
+                    Some(TokenKind::Int(v)) => {
+                        self.advance();
+                        Some(Constant::Int(-v))
+                    }
+                    Some(TokenKind::Float(v)) => {
+                        self.advance();
+                        Some(Constant::Float(-v))
+                    }
+                    _ => {
+                        self.error(
+                            ErrorCode::UnexpectedToken,
+                            "expected a number after '-'",
+                            self.peek().map(|t| t.span),
+                        );
+                        None
+                    }
+                }
+            }
             TokenKind::Int(v) => {
                 self.advance();
                 Some(Constant::Int(*v))
@@ -578,6 +600,7 @@ impl Parser {
                 json_name: None,
                 default: None,
                 options: Vec::new(),
+                is_group: false,
             };
             msg.fields.push(f);
         }
@@ -631,6 +654,8 @@ impl Parser {
                 } else {
                     self.recover();
                 }
+            } else if self.at_group_field() {
+                self.parse_group_into(msg);
             } else if self.is_scalar_keyword()
                 || self.peek_kind() == Some(&TokenKind::Dot)
                 || matches!(self.peek_kind(), Some(TokenKind::Ident(_)))
@@ -652,6 +677,108 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RBrace);
+    }
+
+    /// Whether the cursor is at `optional|required|repeated group ...`.
+    fn at_group_field(&self) -> bool {
+        let labelled = matches!(
+            self.peek_kind(),
+            Some(TokenKind::Ident(s)) if s == "optional" || s == "required" || s == "repeated"
+        );
+        labelled
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Ident(s)) if s == "group"
+            )
+    }
+
+    /// Parse a group field into `msg`. Kept out of `parse_message_body`, which
+    /// recurses once per nesting level, so the group's locals do not add to
+    /// that frame.
+    #[inline(never)]
+    fn parse_group_into(&mut self, msg: &mut Message) {
+        if let Some((field, group)) = self.parse_group_field() {
+            msg.fields.push(field);
+            msg.nested_messages.push(group);
+        } else {
+            self.recover();
+        }
+    }
+
+    /// `label group Name = N [options] { ... }`: a nested message `Name` plus
+    /// a field (named after the lowercased group name) of that message type.
+    fn parse_group_field(&mut self) -> Option<(Field, Message)> {
+        let span = self.peek().unwrap().span;
+        let label = self.parse_label();
+        self.advance(); // 'group'
+        let name = self.expect_ident()?;
+        self.expect(&TokenKind::Equals);
+        let number = match self.peek_kind() {
+            Some(TokenKind::Int(n)) => {
+                let n = *n;
+                self.advance();
+                n
+            }
+            _ => {
+                self.error(
+                    ErrorCode::UnexpectedToken,
+                    "group requires a field number",
+                    self.peek().map(|t| t.span),
+                );
+                0
+            }
+        };
+        if self.peek_kind() == Some(&TokenKind::LBracket) {
+            // Options on a group field are accepted and ignored.
+            while !matches!(self.peek_kind(), Some(TokenKind::RBracket) | None) {
+                self.advance();
+            }
+            self.advance();
+        }
+        if self.depth >= MAX_PROTO_NESTING {
+            let span = self.peek().map(|t| t.span);
+            self.error(
+                ErrorCode::Other,
+                format!("`.proto` nesting exceeds maximum depth of {MAX_PROTO_NESTING}"),
+                span,
+            );
+            self.skip_balanced_block();
+            return None;
+        }
+        self.depth += 1;
+        let mut group = Message {
+            span,
+            name: name.clone(),
+            fields: Vec::new(),
+            oneofs: Vec::new(),
+            maps: Vec::new(),
+            nested_messages: Vec::new(),
+            nested_enums: Vec::new(),
+            nested_extends: Vec::new(),
+            reserved_ranges: Vec::new(),
+            reserved_names: Vec::new(),
+            extension_ranges: Vec::new(),
+            options: Vec::new(),
+            is_group: true,
+        };
+        self.expect(&TokenKind::LBrace);
+        self.parse_message_body(&mut group);
+        self.depth -= 1;
+        let field = Field {
+            span,
+            name: Ident {
+                name: name.name.to_ascii_lowercase(),
+                span: name.span,
+            },
+            number,
+            ty: TypeRef::Named(name.clone()),
+            label,
+            json_name: None,
+            default: None,
+            options: Vec::new(),
+            is_group: true,
+        };
+        Some((field, group))
     }
 
     fn parse_label(&mut self) -> Label {
@@ -727,6 +854,7 @@ impl Parser {
             json_name,
             default,
             options,
+            is_group: false,
         })
     }
 
@@ -825,6 +953,7 @@ impl Parser {
                 json_name: None,
                 default: None,
                 options: field_options,
+                is_group: false,
             });
         }
         self.expect(&TokenKind::RBrace);
@@ -1020,9 +1149,13 @@ impl Parser {
                 // enum value: name = number [options] ;
                 let vname = self.expect_ident()?;
                 self.expect(&TokenKind::Equals);
+                let negative = self.peek_kind() == Some(&TokenKind::Minus);
+                if negative {
+                    self.advance();
+                }
                 let number = match self.peek_kind() {
                     Some(TokenKind::Int(n)) => {
-                        let n = *n;
+                        let n = if negative { -*n } else { *n };
                         self.advance();
                         n
                     }
@@ -1199,11 +1332,19 @@ impl Parser {
             extendee,
             fields: Vec::new(),
             options: Vec::new(),
+            messages: Vec::new(),
         };
         while self.peek_kind() != Some(&TokenKind::RBrace) && self.peek().is_some() {
             if self.at_keyword("option") {
                 if let Some(o) = self.parse_option_stmt() {
                     ext.options.push(o);
+                }
+            } else if self.at_group_field() {
+                if let Some((field, group)) = self.parse_group_field() {
+                    ext.fields.push(field);
+                    ext.messages.push(group);
+                } else {
+                    self.recover();
                 }
             } else if let Some(f) = self.parse_field() {
                 ext.fields.push(f);
@@ -1245,6 +1386,7 @@ impl PartialEq for TokenKind {
             (TokenKind::Dot, TokenKind::Dot) => true,
             (TokenKind::Equals, TokenKind::Equals) => true,
             (TokenKind::Colon, TokenKind::Colon) => true,
+            (TokenKind::Minus, TokenKind::Minus) => true,
             _ => false,
         }
     }
@@ -1270,6 +1412,7 @@ impl std::hash::Hash for TokenKind {
             TokenKind::Dot => 14u8.hash(state),
             TokenKind::Equals => 15u8.hash(state),
             TokenKind::Colon => 16u8.hash(state),
+            TokenKind::Minus => 17u8.hash(state),
         }
     }
 }

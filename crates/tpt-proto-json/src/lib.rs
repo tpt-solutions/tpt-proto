@@ -151,7 +151,24 @@ fn message_to_json_impl(
             }
             continue;
         };
+        // proto3 scalars without presence are omitted when they hold their
+        // default value, unless the caller asked for primitive fields.
+        if !opts.always_print_primitive_fields
+            && tpt_proto_reflect::is_implicit_default(pool, field, value)
+        {
+            continue;
+        }
         out.insert(name, value_to_json(pool, field, value, opts, depth + 1)?);
+    }
+    for (number, value) in &msg.extensions {
+        let (Some(full_name), Some(ext)) = (
+            pool.extension_full_name(*number),
+            pool.get_extension(*number),
+        ) else {
+            continue;
+        };
+        let json = value_to_json(pool, &ext, value, opts, depth + 1)?;
+        out.insert(format!("[{full_name}]"), json);
     }
     Ok(Json::Object(out))
 }
@@ -225,10 +242,14 @@ fn enum_to_json(
     n: i32,
     opts: &JsonOptions,
 ) -> Result<Json, JsonError> {
+    let name = field.type_name.as_deref().unwrap_or("");
+    // google.protobuf.NullValue is written as JSON null.
+    if name.trim_start_matches('.') == "google.protobuf.NullValue" {
+        return Ok(Json::Null);
+    }
     if opts.enum_as_ints {
         return Ok(Json::Number(Number::from(n)));
     }
-    let name = field.type_name.as_deref().unwrap_or("");
     if let Some(edesc) = pool.lookup_enum(name) {
         if let Some(v) = edesc.value.iter().find(|v| v.number == Some(n)) {
             return Ok(Json::String(
@@ -254,26 +275,28 @@ fn scalar_to_json(t: FieldType, s: &RScalar, opts: &JsonOptions) -> Result<Json,
         })),
         (FieldType::Bool, Bool(b)) => Ok(Json::Bool(*b)),
         (FieldType::Double, F64(x)) | (FieldType::Float, F64(x)) => float_to_json(*x),
+        // 32-bit integers are always JSON numbers.
         (FieldType::Int32, I64(x))
-        | (FieldType::Int64, I64(x))
         | (FieldType::Sint32, I64(x))
+        | (FieldType::Sfixed32, I64(x)) => Ok(Json::Number(Number::from(*x))),
+        (FieldType::Uint32, U64(x)) | (FieldType::Fixed32, U64(x)) => {
+            Ok(Json::Number(Number::from(*x)))
+        }
+        // 64-bit integers are strings unless the options ask for numbers.
+        (FieldType::Int64, I64(x))
         | (FieldType::Sint64, I64(x))
-        | (FieldType::Sfixed32, I64(x))
         | (FieldType::Sfixed64, I64(x)) => {
             if opts.int64_as_string {
                 Ok(Json::String(x.to_string()))
             } else {
-                number_from_i64(*x)
+                Ok(Json::Number(Number::from(*x)))
             }
         }
-        (FieldType::Uint32, U64(x))
-        | (FieldType::Uint64, U64(x))
-        | (FieldType::Fixed32, U64(x))
-        | (FieldType::Fixed64, U64(x)) => {
+        (FieldType::Uint64, U64(x)) | (FieldType::Fixed64, U64(x)) => {
             if opts.int64_as_string {
                 Ok(Json::String(x.to_string()))
             } else {
-                number_from_u64(*x)
+                Ok(Json::Number(Number::from(*x)))
             }
         }
         _ => Err(JsonError::TypeMismatch(
@@ -281,18 +304,6 @@ fn scalar_to_json(t: FieldType, s: &RScalar, opts: &JsonOptions) -> Result<Json,
             "type/value mismatch".into(),
         )),
     }
-}
-
-fn number_from_i64(x: i64) -> Result<Json, JsonError> {
-    Number::from_f64(x as f64)
-        .map(Json::Number)
-        .ok_or_else(|| JsonError::InvalidNumber("int".into(), x.to_string()))
-}
-
-fn number_from_u64(x: u64) -> Result<Json, JsonError> {
-    Number::from_f64(x as f64)
-        .map(Json::Number)
-        .ok_or_else(|| JsonError::InvalidNumber("uint".into(), x.to_string()))
 }
 
 fn float_to_json(x: f64) -> Result<Json, JsonError> {
@@ -392,15 +403,38 @@ fn json_to_message_impl(
         ));
     };
     let mut used = HashSet::new();
+    let mut oneofs_set = HashSet::new();
     for field in &descriptor.field {
         if field.extendee.is_some() {
             continue;
         }
-        let name = field_json_name(field, opts);
-        let Some(jv) = map.get(&name) else { continue };
-        used.insert(name.clone());
-        if jv.is_null() {
-            continue; // explicit null -> default
+        // Accept the JSON name, and also the original proto field name.
+        let json_key = field_json_name(field, opts);
+        let key = if map.contains_key(&json_key) {
+            json_key
+        } else if let Some(orig) = field.name.as_ref().filter(|o| map.contains_key(*o)) {
+            orig.clone()
+        } else {
+            continue;
+        };
+        let name = key.clone();
+        let Some(jv) = map.get(&key) else { continue };
+        used.insert(key.clone());
+        if jv.is_null() && is_null_value_enum_field(field) {
+            // `null` for a NullValue field is the NULL_VALUE enum value.
+            msg.set_field(field.number.unwrap_or(0), Value::Enum(0));
+            continue;
+        }
+        if jv.is_null() && !is_value_message_field(field) {
+            continue; // explicit null -> default (except google.protobuf.Value)
+        }
+        if let Some(oi) = field.oneof_index {
+            if !oneofs_set.insert(oi) {
+                return Err(JsonError::WellKnown(format!(
+                    "more than one member of oneof set in `{}`",
+                    descriptor.name.clone().unwrap_or_default()
+                )));
+            }
         }
         if is_map_field(pool, field) {
             let Some((kf, vf)) = map_entry_fields(pool, field) else {
@@ -415,14 +449,37 @@ fn json_to_message_impl(
             let mut entries = Vec::with_capacity(obj.len());
             for (k, v) in obj {
                 let key_val = json_to_map_key(&kf, k)?;
-                let val_val = json_to_value(pool, &vf, v, opts, depth + 1)?;
+                let val_val = match json_to_value(pool, &vf, v, opts, depth + 1) {
+                    Ok(v) => v,
+                    Err(e) if ignorable_enum_error(&e, opts) => continue,
+                    Err(e) => return Err(e),
+                };
                 entries.push((key_val, val_val));
             }
             msg.set_field(field.number.unwrap_or(0), Value::Map(entries));
             continue;
         }
-        let val = json_to_value(pool, field, jv, opts, depth + 1)?;
+        let val = match json_to_value(pool, field, jv, opts, depth + 1) {
+            Ok(v) => v,
+            Err(e) if ignorable_enum_error(&e, opts) => continue,
+            Err(e) => return Err(e),
+        };
         msg.set_field(field.number.unwrap_or(0), val);
+    }
+    // Extension fields appear as "[full.name]" keys.
+    for (key, jv) in map {
+        let Some(full_name) = key.strip_prefix('[').and_then(|k| k.strip_suffix(']')) else {
+            continue;
+        };
+        let Some(ext) = pool.get_extension_by_name(full_name) else {
+            continue;
+        };
+        used.insert(key.clone());
+        if jv.is_null() {
+            continue;
+        }
+        let val = json_to_value(pool, &ext, jv, opts, depth + 1)?;
+        msg.set_extension(ext.number.unwrap_or(0), val);
     }
     if !opts.ignore_unknown_fields {
         for key in map.keys() {
@@ -434,7 +491,33 @@ fn json_to_message_impl(
     Ok(msg)
 }
 
+/// Convert a JSON value for a field. Arrays are lists only for repeated
+/// fields; a singular field (for example `google.protobuf.ListValue`) takes
+/// the array as its own value.
 fn json_to_value(
+    pool: &DescriptorPool,
+    field: &FieldDescriptorProto,
+    jv: &Json,
+    opts: &JsonOptions,
+    depth: u32,
+) -> Result<Value, JsonError> {
+    if field.label == Some(Label::Repeated) {
+        if let Json::Array(arr) = jv {
+            let mut out = Vec::with_capacity(arr.len());
+            for it in arr {
+                match json_to_single(pool, field, it, opts, depth) {
+                    Ok(v) => out.push(v),
+                    Err(e) if ignorable_enum_error(&e, opts) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            return Ok(Value::List(out));
+        }
+    }
+    json_to_single(pool, field, jv, opts, depth)
+}
+
+fn json_to_single(
     pool: &DescriptorPool,
     field: &FieldDescriptorProto,
     jv: &Json,
@@ -454,19 +537,35 @@ fn json_to_value(
             Ok(Value::Message(dm))
         }
         FieldType::Enum => json_to_enum(pool, field, jv),
-        _ => {
-            if jv.is_array() {
-                let arr = jv.as_array().unwrap();
-                let mut out = Vec::with_capacity(arr.len());
-                for it in arr {
-                    out.push(Value::Scalar(json_to_scalar(t, it, &fname, opts)?));
-                }
-                Ok(Value::List(out))
-            } else {
-                Ok(Value::Scalar(json_to_scalar(t, jv, &fname, opts)?))
-            }
-        }
+        _ => Ok(Value::Scalar(json_to_scalar(t, jv, &fname)?)),
     }
+}
+
+/// An unknown enum name is skipped (the value is dropped) when unknown fields
+/// are being ignored, as the spec allows for enum strings.
+fn ignorable_enum_error(err: &JsonError, opts: &JsonOptions) -> bool {
+    opts.ignore_unknown_fields && matches!(err, JsonError::UnknownEnum(..))
+}
+
+/// True when the field is a `google.protobuf.NullValue` enum.
+fn is_null_value_enum_field(field: &FieldDescriptorProto) -> bool {
+    field.r#type == Some(FieldType::Enum)
+        && field
+            .type_name
+            .as_deref()
+            .map(|t| t.trim_start_matches('.'))
+            == Some("google.protobuf.NullValue")
+}
+
+/// True when the field's type is `google.protobuf.Value`, which accepts an
+/// explicit JSON `null` as a value rather than meaning "unset".
+fn is_value_message_field(field: &FieldDescriptorProto) -> bool {
+    field.r#type == Some(FieldType::Message)
+        && field
+            .type_name
+            .as_deref()
+            .map(|t| t.trim_start_matches('.'))
+            == Some("google.protobuf.Value")
 }
 
 fn json_to_enum(
@@ -496,12 +595,18 @@ fn json_to_enum(
     }
 }
 
-fn json_to_scalar(
-    t: FieldType,
-    jv: &Json,
-    fname: &str,
-    opts: &JsonOptions,
-) -> Result<RScalar, JsonError> {
+/// Base64 decoders for JSON `bytes` input: either alphabet, padding optional,
+/// and non-zero trailing bits tolerated (the spec accepts any of these).
+const LENIENT_CONFIG: base64::engine::GeneralPurposeConfig =
+    base64::engine::GeneralPurposeConfig::new()
+        .with_decode_allow_trailing_bits(true)
+        .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent);
+const LENIENT_STANDARD: base64::engine::GeneralPurpose =
+    base64::engine::GeneralPurpose::new(&base64::alphabet::STANDARD, LENIENT_CONFIG);
+const LENIENT_URL_SAFE: base64::engine::GeneralPurpose =
+    base64::engine::GeneralPurpose::new(&base64::alphabet::URL_SAFE, LENIENT_CONFIG);
+
+fn json_to_scalar(t: FieldType, jv: &Json, fname: &str) -> Result<RScalar, JsonError> {
     match t {
         FieldType::String => match jv {
             Json::String(s) => Ok(RScalar::String(s.clone())),
@@ -512,15 +617,9 @@ fn json_to_scalar(
         },
         FieldType::Bytes => match jv {
             Json::String(s) => {
-                let bytes = if opts.bytes_as_base64 {
-                    base64::engine::general_purpose::STANDARD
-                        .decode(s)
-                        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(s))
-                } else {
-                    base64::engine::general_purpose::URL_SAFE
-                        .decode(s)
-                        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(s))
-                };
+                let bytes = LENIENT_STANDARD
+                    .decode(s)
+                    .or_else(|_| LENIENT_URL_SAFE.decode(s));
                 bytes
                     .map(RScalar::Bytes)
                     .map_err(|_| JsonError::TypeMismatch(fname.into(), "invalid base64".into()))
@@ -537,7 +636,14 @@ fn json_to_scalar(
                 "expected bool".into(),
             )),
         },
-        FieldType::Double | FieldType::Float => match jv {
+        FieldType::Float => match json_to_scalar(FieldType::Double, jv, fname)? {
+            // Finite values must fit in a 32-bit float.
+            RScalar::F64(x) if x.is_finite() && x.abs() > f64::from(f32::MAX) => Err(
+                JsonError::TypeMismatch(fname.into(), "float out of range".into()),
+            ),
+            other => Ok(other),
+        },
+        FieldType::Double => match jv {
             Json::Number(n) => n
                 .as_f64()
                 .map(RScalar::F64)
@@ -546,10 +652,10 @@ fn json_to_scalar(
                 "NaN" => Ok(RScalar::F64(f64::NAN)),
                 "Infinity" => Ok(RScalar::F64(f64::INFINITY)),
                 "-Infinity" => Ok(RScalar::F64(f64::NEG_INFINITY)),
-                _ => Err(JsonError::TypeMismatch(
-                    fname.into(),
-                    "invalid float string".into(),
-                )),
+                // Numbers may also be quoted, e.g. "1.5" or "1e5".
+                _ => s.parse::<f64>().map(RScalar::F64).map_err(|_| {
+                    JsonError::TypeMismatch(fname.into(), "invalid float string".into())
+                }),
             },
             _ => Err(JsonError::TypeMismatch(
                 fname.into(),
@@ -557,17 +663,21 @@ fn json_to_scalar(
             )),
         },
         FieldType::Int32 | FieldType::Sint32 | FieldType::Sfixed32 => {
-            let x = parse_i64(jv, fname)?;
-            Ok(RScalar::I64(x as i32 as i64))
+            let x = parse_int(jv, fname, i32::MIN.into(), i32::MAX.into())?;
+            Ok(RScalar::I64(x as i64))
         }
         FieldType::Int64 | FieldType::Sint64 | FieldType::Sfixed64 => {
-            Ok(RScalar::I64(parse_i64(jv, fname)?))
+            let x = parse_int(jv, fname, i64::MIN.into(), i64::MAX.into())?;
+            Ok(RScalar::I64(x as i64))
         }
         FieldType::Uint32 | FieldType::Fixed32 => {
-            let x = parse_u64(jv, fname)?;
-            Ok(RScalar::U64(x as u32 as u64))
+            let x = parse_int(jv, fname, 0, u32::MAX.into())?;
+            Ok(RScalar::U64(x as u64))
         }
-        FieldType::Uint64 | FieldType::Fixed64 => Ok(RScalar::U64(parse_u64(jv, fname)?)),
+        FieldType::Uint64 | FieldType::Fixed64 => {
+            let x = parse_int(jv, fname, 0, u64::MAX.into())?;
+            Ok(RScalar::U64(x as u64))
+        }
         _ => Err(JsonError::TypeMismatch(
             fname.into(),
             "unsupported scalar".into(),
@@ -575,35 +685,33 @@ fn json_to_scalar(
     }
 }
 
-fn parse_i64(jv: &Json, fname: &str) -> Result<i64, JsonError> {
-    match jv {
+/// Parse an integer JSON value (a number or a string holding a number) and
+/// check it against `[min, max]`. Integral values written with a fraction or
+/// exponent (`1e5`, `2.0`) are accepted; fractional values are not.
+fn parse_int(jv: &Json, fname: &str, min: i128, max: i128) -> Result<i128, JsonError> {
+    fn integral(f: f64) -> Option<i128> {
+        (f.is_finite() && f.fract() == 0.0 && f.abs() < 1.0e38).then_some(f as i128)
+    }
+    let parsed = match jv {
         Json::Number(n) => n
             .as_i64()
-            .or_else(|| n.as_f64().map(|f| f as i64))
-            .ok_or_else(|| JsonError::InvalidNumber(fname.into(), n.to_string())),
+            .map(i128::from)
+            .or_else(|| n.as_u64().map(i128::from))
+            .or_else(|| n.as_f64().and_then(integral)),
         Json::String(s) => s
-            .parse::<i64>()
-            .map_err(|_| JsonError::InvalidNumber(fname.into(), s.clone())),
-        _ => Err(JsonError::TypeMismatch(
-            fname.into(),
-            "expected number".into(),
-        )),
-    }
-}
-
-fn parse_u64(jv: &Json, fname: &str) -> Result<u64, JsonError> {
-    match jv {
-        Json::Number(n) => n
-            .as_u64()
-            .or_else(|| n.as_f64().map(|f| f as u64))
-            .ok_or_else(|| JsonError::InvalidNumber(fname.into(), n.to_string())),
-        Json::String(s) => s
-            .parse::<u64>()
-            .map_err(|_| JsonError::InvalidNumber(fname.into(), s.clone())),
-        _ => Err(JsonError::TypeMismatch(
-            fname.into(),
-            "expected number".into(),
-        )),
+            .parse::<i128>()
+            .ok()
+            .or_else(|| s.parse::<f64>().ok().and_then(integral)),
+        _ => {
+            return Err(JsonError::TypeMismatch(
+                fname.into(),
+                "expected number".into(),
+            ))
+        }
+    };
+    match parsed {
+        Some(v) if v >= min && v <= max => Ok(v),
+        _ => Err(JsonError::InvalidNumber(fname.into(), jv.to_string())),
     }
 }
 
@@ -644,14 +752,34 @@ fn field_json_name(field: &FieldDescriptorProto, opts: &JsonOptions) -> String {
     if opts.use_proto_field_names {
         return field.name.clone().unwrap_or_default();
     }
+    let name = field.name.clone().unwrap_or_default();
     if opts.use_lower_camel_case {
         if let Some(j) = &field.json_name {
             if !j.is_empty() {
                 return j.clone();
             }
         }
+        return default_json_name(&name);
     }
-    field.name.clone().unwrap_or_default()
+    name
+}
+
+/// The default JSON name for a field when `json_name` is absent, following
+/// protoc's rule: drop each `_` and capitalize the letter after it.
+pub(crate) fn default_json_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut capitalize_next = false;
+    for c in name.chars() {
+        if c == '_' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            out.extend(c.to_uppercase());
+            capitalize_next = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn is_map_field(pool: &DescriptorPool, field: &FieldDescriptorProto) -> bool {
@@ -787,12 +915,13 @@ message Person {
         let json = message_to_json(&pool, &m, &dm, &opts).unwrap();
         let obj = json.as_object().unwrap();
         assert_eq!(obj.get("name"), Some(&Json::String("Alice".into())));
-        assert_eq!(obj.get("id"), Some(&Json::String("7".into())));
+        // int32 is a JSON number (only 64-bit integers are strings).
+        assert_eq!(obj.get("id"), Some(&Json::from(7)));
         assert_eq!(obj.get("favorite"), Some(&Json::String("BLUE".into())));
         let emails = obj.get("emails").unwrap().as_array().unwrap();
         assert_eq!(emails.len(), 2);
         let labels = obj.get("labels").unwrap().as_object().unwrap();
-        assert_eq!(labels.get("home"), Some(&Json::String("1".into())));
+        assert_eq!(labels.get("home"), Some(&Json::from(1)));
         // email (oneof) set, phone absent.
         assert!(obj.contains_key("email"));
         assert!(!obj.contains_key("phone"));
@@ -816,7 +945,7 @@ message Person {
         let json2 = message_to_json_string(&pool, &m, &decoded, &opts).unwrap();
         assert_eq!(
             json2,
-            r#"{"emails":["c@d"],"favorite":"GREEN","id":"42","labels":{"x":"3"},"name":"Bob","sub":{"x":"5","y":"z"}}"#
+            r#"{"emails":["c@d"],"favorite":"GREEN","id":42,"labels":{"x":3},"name":"Bob","sub":{"x":5,"y":"z"}}"#
         );
     }
 

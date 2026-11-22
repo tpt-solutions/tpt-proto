@@ -106,6 +106,10 @@ pub struct DescriptorPool {
     enums: std::collections::HashMap<String, Arc<EnumDescriptorProto>>,
     /// Registered extension fields keyed by their field number.
     extensions: std::collections::HashMap<i32, Arc<FieldDescriptorProto>>,
+    /// Fully-qualified extension name for each registered field number.
+    extension_names: std::collections::HashMap<i32, String>,
+    /// Registered extension fields keyed by fully-qualified name.
+    extensions_by_name: std::collections::HashMap<String, Arc<FieldDescriptorProto>>,
     /// The syntax of the file this pool was built from (`"proto2"`,
     /// `"proto3"`, or an editions edition string).
     pub syntax: String,
@@ -181,15 +185,35 @@ impl DescriptorPool {
     }
 
     fn index_extension(&mut self, x: &FieldDescriptorProto, prefix: &str) {
+        let name = x.name.clone().unwrap_or_default();
+        let fqn = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}.{name}")
+        };
         if let Some(n) = x.number {
             self.extensions.insert(n, Arc::new(x.clone()));
+            self.extension_names.insert(n, fqn.clone());
         }
-        let _ = prefix;
+        self.extensions_by_name.insert(fqn, Arc::new(x.clone()));
     }
 
     /// Look up a registered extension field by its field number.
     pub fn get_extension(&self, number: i32) -> Option<Arc<FieldDescriptorProto>> {
         self.extensions.get(&number).cloned()
+    }
+
+    /// Look up a registered extension field by fully-qualified name (with or
+    /// without a leading dot).
+    pub fn get_extension_by_name(&self, full_name: &str) -> Option<Arc<FieldDescriptorProto>> {
+        self.extensions_by_name
+            .get(full_name.trim_start_matches('.'))
+            .cloned()
+    }
+
+    /// The fully-qualified name of the extension registered under `number`.
+    pub fn extension_full_name(&self, number: i32) -> Option<&str> {
+        self.extension_names.get(&number).map(String::as_str)
     }
 
     fn index_enum(&mut self, e: &EnumDescriptorProto, prefix: &str) {
@@ -291,6 +315,20 @@ fn field_has_presence(syntax: &str, f: &FieldDescriptorProto) -> bool {
 }
 
 /// Compute the default value for a field descriptor.
+/// True when a singular field without explicit presence (for example a proto3
+/// scalar) holds its default value. Such fields are not written to the wire.
+pub fn is_implicit_default(pool: &DescriptorPool, f: &FieldDescriptorProto, value: &Value) -> bool {
+    if f.label == Some(Label::Repeated) || field_has_presence(&pool.syntax, f) {
+        return false;
+    }
+    match value {
+        // Compare bit patterns so that -0.0 is still written.
+        Value::Scalar(ScalarValue::F64(x)) => x.to_bits() == 0,
+        Value::Scalar(_) | Value::Enum(_) => *value == default_value_for(pool, f),
+        _ => false,
+    }
+}
+
 fn default_value_for(pool: &DescriptorPool, f: &FieldDescriptorProto) -> Value {
     if f.label == Some(Label::Repeated) {
         let is_map = f.r#type == Some(FieldType::Message)
@@ -432,6 +470,55 @@ fn field_wire_type(t: FieldType) -> WireType {
     }
 }
 
+/// Whether a repeated scalar field is written packed. An explicit `packed`
+/// option wins; otherwise proto2 is unpacked and other syntaxes are packed.
+fn is_packed(pool: &DescriptorPool, field: &FieldDescriptorProto) -> bool {
+    explicit_packed(field).unwrap_or(pool.syntax != "proto2")
+}
+
+/// The `packed` value from the field's serialized `FieldOptions`, if set.
+fn explicit_packed(field: &FieldDescriptorProto) -> Option<bool> {
+    let bytes = field.options.as_deref()?;
+    let mut i = 0;
+    while i < bytes.len() {
+        let tag = read_varint_at(bytes, &mut i)?;
+        let (number, wire) = (tag >> 3, tag & 7);
+        match wire {
+            0 => {
+                let v = read_varint_at(bytes, &mut i)?;
+                if number == 2 {
+                    return Some(v != 0);
+                }
+            }
+            1 => i += 8,
+            2 => {
+                let len = usize::try_from(read_varint_at(bytes, &mut i)?).ok()?;
+                i = i.checked_add(len)?;
+            }
+            5 => i += 4,
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn read_varint_at(bytes: &[u8], i: &mut usize) -> Option<u64> {
+    let mut value = 0u64;
+    let mut shift = 0;
+    loop {
+        let byte = *bytes.get(*i)?;
+        *i += 1;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+        shift += 7;
+        if shift >= 64 {
+            return None;
+        }
+    }
+}
+
 fn packed_allowed(t: FieldType) -> bool {
     matches!(
         t,
@@ -471,29 +558,19 @@ impl DynamicMessage {
         reader: &mut Reader,
     ) -> Result<DynamicMessage, ReflectError> {
         let mut msg = DynamicMessage::new(descriptor.clone(), pool.clone());
-        while !reader.is_empty() {
-            let tag = reader.read_tag()?;
-            let number = tag.field_number as i32;
-            if let Some(field) = descriptor.field.iter().find(|f| f.number == Some(number)) {
-                let val = decode_one(pool, field, tag.wire_type, reader)?;
-                insert_field(&mut msg, field, val);
-            } else if in_extension_range(&descriptor, number) {
-                if let Some(ext) = pool.get_extension(number) {
-                    let val = decode_one(pool, &ext, tag.wire_type, reader)?;
-                    msg.extensions.insert(ext.number.unwrap_or(number), val);
-                    continue;
-                }
-                msg.unknown.store(tag, reader)?;
-            } else {
-                msg.unknown.store(tag, reader)?;
-            }
-        }
+        decode_body(&mut msg, pool, reader, None, 0)?;
         Ok(msg)
     }
 
     /// Encode this message to bytes.
     pub fn encode(&self) -> Result<Vec<u8>, ReflectError> {
         let mut w = Writer::new();
+        self.encode_fields(&mut w)?;
+        Ok(w.into_vec())
+    }
+
+    /// Write this message's fields into `w` (a group's body is written in place).
+    fn encode_fields(&self, w: &mut Writer) -> Result<(), ReflectError> {
         for (number, value) in &self.fields {
             let field = self
                 .descriptor
@@ -501,17 +578,20 @@ impl DynamicMessage {
                 .iter()
                 .find(|f| f.number == Some(*number))
                 .ok_or(ReflectError::UnknownField(*number))?;
-            encode_field(&self.pool, field, value, &mut w)?;
+            if is_implicit_default(&self.pool, field, value) {
+                continue;
+            }
+            encode_field(&self.pool, field, value, w)?;
         }
         for (number, value) in &self.extensions {
             let field = self
                 .pool
                 .get_extension(*number)
                 .ok_or(ReflectError::UnknownField(*number))?;
-            encode_field(&self.pool, &field, value, &mut w)?;
+            encode_field(&self.pool, &field, value, w)?;
         }
-        self.unknown.encode(&mut w);
-        Ok(w.into_vec())
+        self.unknown.encode(w);
+        Ok(())
     }
 
     /// Get a field value by number.
@@ -641,6 +721,26 @@ impl DynamicMessage {
     }
 }
 
+/// Store a decoded extension value. A repeated extension accumulates its
+/// elements (packed or not); a singular one is replaced.
+fn insert_extension(msg: &mut DynamicMessage, ext: &FieldDescriptorProto, val: Value) {
+    let key = ext.number.unwrap_or(0);
+    if ext.label == Some(Label::Repeated) {
+        let entry = msg
+            .extensions
+            .entry(key)
+            .or_insert_with(|| Value::List(Vec::new()));
+        if let Value::List(list) = entry {
+            match val {
+                Value::List(mut more) => list.append(&mut more),
+                other => list.push(other),
+            }
+        }
+    } else {
+        msg.extensions.insert(key, val);
+    }
+}
+
 fn insert_field(msg: &mut DynamicMessage, field: &FieldDescriptorProto, val: Value) {
     let number = field.number.unwrap_or(0);
     let is_map = field.r#type == Some(FieldType::Message)
@@ -654,16 +754,25 @@ fn insert_field(msg: &mut DynamicMessage, field: &FieldDescriptorProto, val: Val
     if field.label == Some(Label::Repeated) {
         if is_map {
             let (k, v) = match &val {
-                Value::Message(dm) => (
-                    dm.fields
-                        .get(&1)
-                        .cloned()
-                        .unwrap_or(Value::Scalar(ScalarValue::I64(0))),
-                    dm.fields
-                        .get(&2)
-                        .cloned()
-                        .unwrap_or(Value::Scalar(ScalarValue::I64(0))),
-                ),
+                Value::Message(dm) => {
+                    // A map entry that omits its key or value uses that field's
+                    // default (for example 0 for an integer, an empty message).
+                    let entry = field
+                        .type_name
+                        .as_deref()
+                        .and_then(|t| msg.pool.lookup_message(t));
+                    let default_for = |n: i32| {
+                        entry
+                            .as_ref()
+                            .and_then(|d| d.find_field_by_number(n))
+                            .map(|f| default_value_for(&msg.pool, f))
+                            .unwrap_or(Value::Scalar(ScalarValue::I64(0)))
+                    };
+                    (
+                        dm.fields.get(&1).cloned().unwrap_or_else(|| default_for(1)),
+                        dm.fields.get(&2).cloned().unwrap_or_else(|| default_for(2)),
+                    )
+                }
                 _ => (
                     Value::Scalar(ScalarValue::I64(0)),
                     Value::Scalar(ScalarValue::I64(0)),
@@ -689,7 +798,43 @@ fn insert_field(msg: &mut DynamicMessage, field: &FieldDescriptorProto, val: Val
         }
         return;
     }
-    msg.fields.insert(number, val);
+    // Within a oneof the last member on the wire wins: clear the others.
+    if let Some(oi) = field.oneof_index {
+        let others: Vec<i32> = msg
+            .descriptor
+            .field
+            .iter()
+            .filter(|g| g.oneof_index == Some(oi) && g.number != Some(number))
+            .filter_map(|g| g.number)
+            .collect();
+        for other in others {
+            msg.fields.remove(&other);
+        }
+    }
+    // A repeated occurrence of a singular message field merges into the one
+    // already present, rather than replacing it.
+    match (msg.fields.get_mut(&number), val) {
+        (Some(Value::Message(existing)), Value::Message(new)) => merge_messages(existing, new),
+        (_, val) => {
+            msg.fields.insert(number, val);
+        }
+    }
+}
+
+/// Merge `new` into `existing` as protobuf does for a repeated occurrence of
+/// a message field: singular message fields merge recursively, repeated fields
+/// append, and other fields are replaced.
+fn merge_messages(existing: &mut DynamicMessage, new: DynamicMessage) {
+    for (number, incoming) in new.fields {
+        match (existing.fields.get_mut(&number), incoming) {
+            (Some(Value::Message(e)), Value::Message(n)) => merge_messages(e, n),
+            (Some(Value::List(list)), Value::List(mut more)) => list.append(&mut more),
+            (Some(Value::Map(map)), Value::Map(mut more)) => map.append(&mut more),
+            (_, incoming) => {
+                existing.fields.insert(number, incoming);
+            }
+        }
+    }
 }
 
 impl Value {
@@ -699,6 +844,87 @@ impl Value {
             _ => panic!("expected map"),
         }
     }
+}
+
+/// Decode fields into `msg` until the end of `reader`. When `group` is set,
+/// the input is a group body and decoding stops at its matching end tag.
+fn decode_body(
+    msg: &mut DynamicMessage,
+    pool: &DescriptorPool,
+    reader: &mut Reader,
+    group: Option<i32>,
+    depth: u32,
+) -> Result<(), ReflectError> {
+    let descriptor = msg.descriptor.clone();
+    while !reader.is_empty() {
+        let tag = reader.read_tag()?;
+        let number = tag.field_number as i32;
+        if tag.wire_type == WireType::EndGroup {
+            return match group {
+                Some(g) if g == number => Ok(()),
+                _ => Err(ReflectError::Wire(
+                    tpt_proto_core::Error::UnexpectedWireType {
+                        found: WireType::EndGroup.as_u8(),
+                    },
+                )),
+            };
+        }
+        if let Some(field) = descriptor.field.iter().find(|f| f.number == Some(number)) {
+            let val = if is_group_start(field, tag.wire_type) {
+                decode_group(pool, field, number, reader, depth)?
+            } else {
+                decode_one(pool, field, tag.wire_type, reader)?
+            };
+            insert_field(msg, field, val);
+        } else if in_extension_range(&descriptor, number) {
+            if let Some(ext) = pool.get_extension(number) {
+                let val = if is_group_start(&ext, tag.wire_type) {
+                    decode_group(pool, &ext, number, reader, depth)?
+                } else {
+                    decode_one(pool, &ext, tag.wire_type, reader)?
+                };
+                insert_extension(msg, &ext, val);
+                continue;
+            }
+            msg.unknown.store(tag, reader)?;
+        } else {
+            msg.unknown.store(tag, reader)?;
+        }
+    }
+    match group {
+        Some(g) => Err(ReflectError::Wire(
+            tpt_proto_core::Error::UnterminatedGroup(g as u32),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// A group field arriving as a start-group tag (wire type 3).
+fn is_group_start(field: &FieldDescriptorProto, wire: WireType) -> bool {
+    field.r#type == Some(FieldType::Group) && wire == WireType::StartGroup
+}
+
+/// The message of a group field: its fields run up to the matching end tag.
+fn decode_group(
+    pool: &DescriptorPool,
+    field: &FieldDescriptorProto,
+    number: i32,
+    reader: &mut Reader,
+    depth: u32,
+) -> Result<Value, ReflectError> {
+    if depth + 1 > reader.limits().max_depth {
+        return Err(ReflectError::Wire(
+            tpt_proto_core::Error::DepthLimitExceeded,
+        ));
+    }
+    let sub = pool
+        .lookup_message(field.type_name.as_deref().unwrap_or(""))
+        .ok_or(ReflectError::UnresolvedType(
+            field.type_name.clone().unwrap_or_default(),
+        ))?;
+    let mut inner = DynamicMessage::new(sub, pool.clone());
+    decode_body(&mut inner, pool, reader, Some(number), depth + 1)?;
+    Ok(Value::Message(inner))
 }
 
 fn decode_one(
@@ -722,7 +948,19 @@ fn decode_one(
             let dm = DynamicMessage::decode(pool, sub, &mut sub_reader)?;
             Ok(Value::Message(dm))
         }
-        FieldType::Enum => Ok(Value::Enum(scalar::read_int32(reader)?)),
+        FieldType::Enum => {
+            // A repeated enum may arrive packed (length-delimited).
+            if wire == WireType::LengthDelimited && field.label == Some(Label::Repeated) {
+                let body = reader.read_length_delimited()?;
+                let mut sub = reader.nested(body)?;
+                let mut out = Vec::new();
+                while !sub.is_empty() {
+                    out.push(Value::Enum(scalar::read_int32(&mut sub)?));
+                }
+                return Ok(Value::List(out));
+            }
+            Ok(Value::Enum(scalar::read_int32(reader)?))
+        }
         _ => {
             // packed?
             if wire == WireType::LengthDelimited
@@ -780,7 +1018,10 @@ fn encode_field(
     let t = field.r#type.unwrap_or(FieldType::String);
     match value {
         Value::List(items) => {
-            if packed_allowed(t) {
+            if items.is_empty() {
+                return Ok(()); // an empty repeated field writes nothing
+            }
+            if packed_allowed(t) && is_packed(pool, field) {
                 let mut inner = Writer::new();
                 for it in items {
                     write_scalar_value(&mut inner, t, it)?;
@@ -789,8 +1030,18 @@ fn encode_field(
                 w.write_length_delimited(inner.buf());
             } else {
                 for it in items {
-                    w.write_tag(number, field_wire_type(t));
-                    write_scalar_value(w, t, it)?;
+                    if let Value::Message(dm) = it {
+                        if t == FieldType::Group {
+                            write_group(dm, number, w)?;
+                        } else {
+                            let bytes = dm.encode()?;
+                            w.write_tag(number, WireType::LengthDelimited);
+                            w.write_length_delimited(&bytes);
+                        }
+                    } else {
+                        w.write_tag(number, field_wire_type(t));
+                        write_scalar_value(w, t, it)?;
+                    }
                 }
             }
         }
@@ -809,9 +1060,13 @@ fn encode_field(
             }
         }
         Value::Message(dm) => {
-            let bytes = dm.encode()?;
-            w.write_tag(number, WireType::LengthDelimited);
-            w.write_length_delimited(&bytes);
+            if t == FieldType::Group {
+                write_group(dm, number, w)?;
+            } else {
+                let bytes = dm.encode()?;
+                w.write_tag(number, WireType::LengthDelimited);
+                w.write_length_delimited(&bytes);
+            }
         }
         Value::Enum(e) => {
             w.write_tag(number, WireType::Varint);
@@ -822,6 +1077,14 @@ fn encode_field(
             write_scalar_value(w, t, &Value::Scalar(s.clone()))?;
         }
     }
+    Ok(())
+}
+
+/// Write a group: its start tag, the message's fields, then the end tag.
+fn write_group(dm: &DynamicMessage, number: u32, w: &mut Writer) -> Result<(), ReflectError> {
+    w.write_tag(number, WireType::StartGroup);
+    dm.encode_fields(w)?;
+    w.write_tag(number, WireType::EndGroup);
     Ok(())
 }
 

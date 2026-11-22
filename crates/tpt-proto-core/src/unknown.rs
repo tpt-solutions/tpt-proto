@@ -16,6 +16,8 @@ pub enum UnknownValue {
     Fixed64(u64),
     /// A length-delimited blob (wire type 2).
     LengthDelimited(Vec<u8>),
+    /// A group (wire types 3 and 4): the fields between its start and end tags.
+    Group(UnknownFieldSet),
 }
 
 /// Storage for fields not recognized by the schema.
@@ -61,12 +63,16 @@ impl UnknownFieldSet {
 
     /// Insert a value under `field_number`.
     pub fn insert(&mut self, field_number: u32, value: UnknownValue) {
-        self.total_len += tag_len(field_number) + value_len(&value);
+        self.total_len += tag_len(field_number) + value_len(field_number, &value);
         self.fields.entry(field_number).or_default().push(value);
     }
 
     /// Read and store one value for `tag` from `reader`.
     pub fn store(&mut self, tag: Tag, reader: &mut Reader) -> crate::Result<()> {
+        self.store_at_depth(tag, reader, 0)
+    }
+
+    fn store_at_depth(&mut self, tag: Tag, reader: &mut Reader, depth: u32) -> crate::Result<()> {
         let value = match tag.wire_type {
             WireType::Varint => UnknownValue::Varint(reader.read_varint()?),
             WireType::Fixed32 => UnknownValue::Fixed32(reader.read_fixed32()?),
@@ -74,8 +80,32 @@ impl UnknownFieldSet {
             WireType::LengthDelimited => {
                 UnknownValue::LengthDelimited(reader.read_length_delimited()?.to_vec())
             }
-            WireType::StartGroup | WireType::EndGroup => {
-                // Groups are not preserved as unknown fields in this runtime.
+            WireType::StartGroup => {
+                // Keep the group's fields so the message re-encodes losslessly.
+                let child_depth = depth + 1;
+                if child_depth > reader.limits().max_depth {
+                    return Err(crate::Error::DepthLimitExceeded);
+                }
+                let mut group = UnknownFieldSet::new();
+                loop {
+                    if reader.is_empty() {
+                        return Err(crate::Error::UnterminatedGroup(0));
+                    }
+                    let inner = reader.read_tag()?;
+                    if inner.wire_type == WireType::EndGroup {
+                        // The end tag must name the group's own field number.
+                        if inner.field_number != tag.field_number {
+                            return Err(crate::Error::UnexpectedWireType {
+                                found: WireType::EndGroup.as_u8(),
+                            });
+                        }
+                        break;
+                    }
+                    group.store_at_depth(inner, reader, child_depth)?;
+                }
+                UnknownValue::Group(group)
+            }
+            WireType::EndGroup => {
                 return Err(crate::Error::UnexpectedWireType {
                     found: tag.wire_type.as_u8(),
                 });
@@ -105,7 +135,10 @@ impl UnknownFieldSet {
     /// Merge another set into this one.
     pub fn merge_from(&mut self, other: &UnknownFieldSet) {
         for (f, vs) in &other.fields {
-            self.total_len += vs.iter().map(|v| tag_len(*f) + value_len(v)).sum::<usize>();
+            self.total_len += vs
+                .iter()
+                .map(|v| tag_len(*f) + value_len(*f, v))
+                .sum::<usize>();
             self.fields
                 .entry(*f)
                 .or_default()
@@ -124,12 +157,15 @@ fn tag_len(field: u32) -> usize {
     n
 }
 
-fn value_len(v: &UnknownValue) -> usize {
+/// Bytes of a value's encoding, excluding its leading tag. A group also
+/// carries its end tag, which uses the same field number.
+fn value_len(field: u32, v: &UnknownValue) -> usize {
     match v {
         UnknownValue::Varint(x) => varint_len(*x),
         UnknownValue::Fixed32(_) => 4,
         UnknownValue::Fixed64(_) => 8,
         UnknownValue::LengthDelimited(b) => varint_len(b.len() as u64) + b.len(),
+        UnknownValue::Group(set) => set.encoded_len() + tag_len(field),
     }
 }
 
@@ -159,6 +195,11 @@ fn write_value(w: &mut Writer, field: u32, v: &UnknownValue) {
         UnknownValue::LengthDelimited(b) => {
             w.write_tag(field, WireType::LengthDelimited);
             w.write_length_delimited(b);
+        }
+        UnknownValue::Group(set) => {
+            w.write_tag(field, WireType::StartGroup);
+            set.encode(w);
+            w.write_tag(field, WireType::EndGroup);
         }
     }
 }
@@ -198,7 +239,7 @@ mod tests {
         for (i, v) in values.iter().enumerate() {
             let field = (i + 1) as u32;
             set.insert(field, v.clone());
-            expected += tag_len(field) + value_len(v);
+            expected += tag_len(field) + value_len(field, v);
             assert_eq!(set.encoded_len(), expected, "after insert #{i}");
         }
 
@@ -206,11 +247,12 @@ mod tests {
         let mut other = UnknownFieldSet::new();
         other.insert(u32::MAX, UnknownValue::LengthDelimited(blob.clone()));
         set.merge_from(&other);
-        expected += tag_len(u32::MAX) + value_len(&UnknownValue::LengthDelimited(blob.clone()));
+        expected +=
+            tag_len(u32::MAX) + value_len(u32::MAX, &UnknownValue::LengthDelimited(blob.clone()));
         assert_eq!(set.encoded_len(), expected, "after merge_from");
 
         // Cross-check against an independent full recomputation.
-        let recomputed: usize = set.iter().map(|(f, v)| tag_len(f) + value_len(v)).sum();
+        let recomputed: usize = set.iter().map(|(f, v)| tag_len(f) + value_len(f, v)).sum();
         assert_eq!(set.encoded_len(), recomputed);
     }
 

@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use tpt_proto_core::{UnknownFieldSet, UnknownValue};
 use tpt_proto_descriptor::{DescriptorProto, FieldDescriptorProto, FieldType, Label};
 use tpt_proto_reflect::{DescriptorPool, DynamicMessage, ScalarValue as RScalar, Value};
 
@@ -42,6 +43,8 @@ pub struct TextOptions {
     /// input is rejected rather than recursing without bound (a stack-overflow
     /// DoS vector). Defaults to 100.
     pub max_depth: u32,
+    /// Print fields the schema does not know, as `number: value` lines.
+    pub print_unknown_fields: bool,
 }
 
 impl Default for TextOptions {
@@ -51,6 +54,7 @@ impl Default for TextOptions {
             use_field_numbers: false,
             deterministic: false,
             max_depth: 100,
+            print_unknown_fields: false,
         }
     }
 }
@@ -62,11 +66,14 @@ pub fn message_to_text(
     msg: &DynamicMessage,
     opts: &TextOptions,
 ) -> String {
+    // The top-level message has no enclosing delimiters: its fields are the
+    // whole output, as in the canonical text format.
     let mut out = String::new();
-    print_message(pool, descriptor, msg, opts, 0, &mut out);
+    print_fields(pool, descriptor, msg, opts, 0, &mut out);
     out
 }
 
+/// A nested message: its fields between delimiters, one level deeper.
 fn print_message(
     pool: &DescriptorPool,
     descriptor: &DescriptorProto,
@@ -79,6 +86,21 @@ fn print_message(
     let close = if opts.use_braces { "}" } else { ">" };
     out.push_str(open);
     out.push('\n');
+    print_fields(pool, descriptor, msg, opts, indent + 1, out);
+    out.push_str(&"  ".repeat(indent));
+    out.push_str(close);
+    out.push('\n');
+}
+
+/// The fields of `msg`, each printed at `indent`.
+fn print_fields(
+    pool: &DescriptorPool,
+    descriptor: &DescriptorProto,
+    msg: &DynamicMessage,
+    opts: &TextOptions,
+    indent: usize,
+    out: &mut String,
+) {
     let mut fields: Vec<&FieldDescriptorProto> = descriptor
         .field
         .iter()
@@ -91,16 +113,84 @@ fn print_message(
         let num = field.number.unwrap_or(0);
         let name = if opts.use_field_numbers {
             num.to_string()
+        } else if field.r#type == Some(FieldType::Group) {
+            // A group is written under its type name (`Data {`).
+            group_name(field).to_string()
         } else {
             field.name.clone().unwrap_or_default()
         };
         if let Some(value) = msg.get_field(num) {
-            print_value(pool, field, &name, value, opts, indent + 1, out);
+            print_value(pool, field, &name, value, opts, indent, out);
         }
     }
-    out.push_str(&"  ".repeat(indent));
-    out.push_str(close);
-    out.push('\n');
+    // Extension fields print as `[full.name]`.
+    for (number, value) in &msg.extensions {
+        let (Some(full_name), Some(ext)) = (
+            pool.extension_full_name(*number),
+            pool.get_extension(*number),
+        ) else {
+            continue;
+        };
+        let name = format!("[{full_name}]");
+        print_value(pool, &ext, &name, value, opts, indent, out);
+    }
+    if opts.print_unknown_fields {
+        print_unknown(&msg.unknown, indent, out);
+    }
+}
+
+/// The short name of a group field's type (`Data` for `.pkg.Parent.Data`).
+fn group_name(field: &FieldDescriptorProto) -> &str {
+    field
+        .type_name
+        .as_deref()
+        .and_then(|t| t.rsplit('.').next())
+        .unwrap_or("")
+}
+
+/// The unknown fields in `bytes`, if the whole buffer parses as a message.
+fn parse_unknown(bytes: &[u8]) -> Option<UnknownFieldSet> {
+    let mut reader = tpt_proto_core::Reader::new(bytes);
+    let mut set = UnknownFieldSet::new();
+    while !reader.is_empty() {
+        let tag = reader.read_tag().ok()?;
+        set.store(tag, &mut reader).ok()?;
+    }
+    Some(set)
+}
+
+/// Unknown fields as `number: value` lines (groups as nested blocks).
+fn print_unknown(set: &UnknownFieldSet, indent: usize, out: &mut String) {
+    let pad = "  ".repeat(indent);
+    for (number, value) in set.iter() {
+        out.push_str(&pad);
+        out.push_str(&number.to_string());
+        match value {
+            UnknownValue::Varint(v) => out.push_str(&format!(": {v}\n")),
+            UnknownValue::Fixed32(v) => out.push_str(&format!(": 0x{v:08x}\n")),
+            UnknownValue::Fixed64(v) => out.push_str(&format!(": 0x{v:016x}\n")),
+            UnknownValue::LengthDelimited(b) => match parse_unknown(b) {
+                // Bytes that parse as a message print as a nested block.
+                Some(inner) => {
+                    out.push_str(" {\n");
+                    print_unknown(&inner, indent + 1, out);
+                    out.push_str(&pad);
+                    out.push_str("}\n");
+                }
+                None => {
+                    out.push_str(": ");
+                    push_c_escaped(b, out);
+                    out.push('\n');
+                }
+            },
+            UnknownValue::Group(inner) => {
+                out.push_str(" {\n");
+                print_unknown(inner, indent + 1, out);
+                out.push_str(&pad);
+                out.push_str("}\n");
+            }
+        }
+    }
 }
 
 fn print_value(
@@ -238,17 +328,29 @@ fn map_key_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
     }
 }
 
+/// A quoted C-escaped literal, as the text format writes strings and bytes:
+/// printable ASCII as-is, the common escapes by name, anything else as octal.
+fn push_c_escaped(bytes: &[u8], out: &mut String) {
+    out.push('"');
+    for &b in bytes {
+        match b {
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\t' => out.push_str("\\t"),
+            b'"' => out.push_str("\\\""),
+            b'\'' => out.push_str("\\'"),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(b as char),
+            _ => out.push_str(&format!("\\{b:03o}")),
+        }
+    }
+    out.push('"');
+}
+
 fn print_scalar_inline(v: &Value, out: &mut String) {
     match v {
-        Value::Scalar(RScalar::String(s)) => {
-            out.push_str(&format!("{:?}", s));
-        }
-        Value::Scalar(RScalar::Bytes(b)) => {
-            out.push_str("0x");
-            for byte in b {
-                out.push_str(&format!("{byte:02x}"));
-            }
-        }
+        Value::Scalar(RScalar::String(s)) => push_c_escaped(s.as_bytes(), out),
+        Value::Scalar(RScalar::Bytes(b)) => push_c_escaped(b, out),
         Value::Scalar(RScalar::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
         Value::Scalar(RScalar::F64(x)) => {
             if x.is_nan() {
@@ -297,15 +399,17 @@ pub fn text_to_message(
 
 #[derive(Debug, Clone, PartialEq)]
 enum Tok {
+    /// An identifier or keyword (`optional_int32`, `true`, `inf`).
     Ident(String),
-    Str(String),
-    Int(i64),
-    Uint(u64),
-    Float(f64),
-    // Raw text of a numeric/ident token for enums/unknown handling.
-    Raw(String),
+    /// A string literal after escape processing. Adjacent literals concatenate.
+    Str(Vec<u8>),
+    /// A numeric literal as written; a sign is a separate `Minus` token.
+    Num(String),
+    Minus,
+    Slash,
     Colon,
     Comma,
+    Semi,
     LBrace,
     RBrace,
     LAngle,
@@ -314,196 +418,220 @@ enum Tok {
     RBracket,
 }
 
+fn lex_error(pos: usize, message: &str) -> TextError {
+    TextError::Lex(pos as u32, message.to_string())
+}
+
 fn tokenize(input: &str) -> Result<Vec<Tok>, TextError> {
     let bytes = input.as_bytes();
+    let n = bytes.len();
     let mut i = 0;
     let mut toks = Vec::new();
-    let n = bytes.len();
     while i < n {
         let c = bytes[i];
-        match c {
+        let single = match c {
             b' ' | b'\t' | b'\r' | b'\n' => {
                 i += 1;
+                continue;
             }
             b'#' => {
                 while i < n && bytes[i] != b'\n' {
                     i += 1;
                 }
-            }
-            b'{' => {
-                toks.push(Tok::LBrace);
-                i += 1;
-            }
-            b'}' => {
-                toks.push(Tok::RBrace);
-                i += 1;
-            }
-            b'<' => {
-                toks.push(Tok::LAngle);
-                i += 1;
-            }
-            b'>' => {
-                toks.push(Tok::RAngle);
-                i += 1;
-            }
-            b'[' => {
-                toks.push(Tok::LBracket);
-                i += 1;
-            }
-            b']' => {
-                toks.push(Tok::RBracket);
-                i += 1;
-            }
-            b':' => {
-                toks.push(Tok::Colon);
-                i += 1;
-            }
-            b',' => {
-                toks.push(Tok::Comma);
-                i += 1;
+                continue;
             }
             b'"' | b'\'' => {
-                let quote = c;
-                let (s, ni) = parse_string(input, i, quote)?;
+                let (s, next) = parse_string(bytes, i)?;
                 toks.push(Tok::Str(s));
-                i = ni;
+                i = next;
+                continue;
             }
-            _ if is_ident_start(c) => {
+            b'{' => Tok::LBrace,
+            b'}' => Tok::RBrace,
+            b'<' => Tok::LAngle,
+            b'>' => Tok::RAngle,
+            b'[' => Tok::LBracket,
+            b']' => Tok::RBracket,
+            b':' => Tok::Colon,
+            b',' => Tok::Comma,
+            b';' => Tok::Semi,
+            b'-' => Tok::Minus,
+            b'/' => Tok::Slash,
+            _ if c.is_ascii_alphabetic() || c == b'_' => {
                 let start = i;
-                while i < n && is_ident_part(bytes[i]) {
+                while i < n && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b'_' | b'.'))
+                {
                     i += 1;
                 }
-                let word = &input[start..i];
-                toks.push(classify_ident(word));
+                toks.push(Tok::Ident(input[start..i].to_string()));
+                continue;
             }
-            _ if c == b'-' || c == b'+' || c.is_ascii_digit() => {
-                let (tok, ni) = parse_number(input, i)?;
-                toks.push(tok);
-                i = ni;
+            _ if c.is_ascii_digit() || c == b'.' => {
+                let start = i;
+                let hex = input[start..].starts_with("0x") || input[start..].starts_with("0X");
+                i += 1;
+                while i < n {
+                    let d = bytes[i];
+                    // An exponent sign belongs to the number (but not in hex).
+                    let exp_sign =
+                        matches!(d, b'+' | b'-') && matches!(bytes[i - 1], b'e' | b'E') && !hex;
+                    if d.is_ascii_alphanumeric() || d == b'.' || exp_sign {
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                toks.push(Tok::Num(input[start..i].to_string()));
+                continue;
             }
-            _ => {
-                return Err(TextError::Lex(
-                    i as u32,
-                    format!("unexpected byte {:?}", c as char),
-                ));
-            }
-        }
+            _ => return Err(lex_error(i, &format!("unexpected byte {:?}", c as char))),
+        };
+        toks.push(single);
+        i += 1;
     }
     Ok(toks)
 }
 
-fn is_ident_start(c: u8) -> bool {
-    c.is_ascii_alphabetic() || c == b'_' || c == b'.'
+fn hex_digit(b: u8) -> Option<u32> {
+    (b as char).to_digit(16)
 }
 
-fn is_ident_part(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || c == b'_' || c == b'.'
+/// Read exactly `width` hex digits starting at `at`.
+fn read_hex(bytes: &[u8], at: usize, width: usize) -> Option<u32> {
+    let digits = bytes.get(at..at.checked_add(width)?)?;
+    digits
+        .iter()
+        .try_fold(0u32, |acc, &b| Some(acc * 16 + hex_digit(b)?))
 }
 
-fn classify_ident(word: &str) -> Tok {
-    match word {
-        "true" | "false" => Tok::Raw(word.to_string()),
-        "inf" | "nan" | "-inf" => Tok::Raw(word.to_string()),
-        _ => Tok::Ident(word.to_string()),
-    }
-}
-
-fn parse_string(input: &str, start: usize, quote: u8) -> Result<(String, usize), TextError> {
-    let bytes = input.as_bytes();
-    let mut i = start + 1;
+/// Parse a quoted string starting at `start`; returns its bytes after escape
+/// processing and the index just past the closing quote.
+fn parse_string(bytes: &[u8], start: usize) -> Result<(Vec<u8>, usize), TextError> {
+    let quote = bytes[start];
     let n = bytes.len();
-    let mut out = String::new();
+    let mut i = start + 1;
+    let mut out = Vec::new();
     while i < n {
         let c = bytes[i];
         if c == quote {
             return Ok((out, i + 1));
         }
-        if c == b'\\' && i + 1 < n {
+        if c == b'\n' || c == b'\r' {
+            return Err(lex_error(i, "newline in string literal"));
+        }
+        if c != b'\\' {
+            out.push(c);
             i += 1;
-            let e = bytes[i];
-            match e {
-                b'n' => out.push('\n'),
-                b't' => out.push('\t'),
-                b'r' => out.push('\r'),
-                b'\\' => out.push('\\'),
-                b'\'' => out.push('\''),
-                b'"' => out.push('"'),
-                b'0' => out.push('\0'),
-                b'\n' => {}
-                b'x' => {
-                    let h: String = input[i + 1..].chars().take(2).collect();
-                    if let Ok(v) = u8::from_str_radix(&h, 16) {
-                        out.push(v as char);
-                        i += 2;
-                    }
-                }
-                _ => {
-                    // `e` may be the lead byte of a multi-byte UTF-8 char; consume the
-                    // whole char so `i` never lands mid-codepoint.
-                    let ch = input[i..].chars().next().unwrap();
-                    out.push(ch);
-                    i += ch.len_utf8() - 1;
-                }
-            }
-        } else {
-            let ch = input[i..].chars().next().unwrap();
-            out.push(ch);
-            i += ch.len_utf8();
             continue;
         }
         i += 1;
+        let Some(&e) = bytes.get(i) else { break };
+        i += 1;
+        match e {
+            b'a' => out.push(7),
+            b'b' => out.push(8),
+            b'f' => out.push(12),
+            b'n' => out.push(b'\n'),
+            b'r' => out.push(b'\r'),
+            b't' => out.push(b'\t'),
+            b'v' => out.push(11),
+            b'\\' | b'\'' | b'"' | b'?' => out.push(e),
+            b'0'..=b'7' => {
+                let mut v = u32::from(e - b'0');
+                let mut digits = 1;
+                while digits < 3 && i < n && (b'0'..=b'7').contains(&bytes[i]) {
+                    v = v * 8 + u32::from(bytes[i] - b'0');
+                    i += 1;
+                    digits += 1;
+                }
+                if v > 0xFF {
+                    return Err(lex_error(i, "octal escape out of range"));
+                }
+                out.push(v as u8);
+            }
+            b'x' | b'X' => {
+                let mut v = 0u32;
+                let mut digits = 0;
+                while digits < 2 && i < n {
+                    let Some(d) = hex_digit(bytes[i]) else { break };
+                    v = v * 16 + d;
+                    i += 1;
+                    digits += 1;
+                }
+                if digits == 0 {
+                    return Err(lex_error(i, "\\x needs hex digits"));
+                }
+                out.push(v as u8);
+            }
+            b'u' | b'U' => {
+                let width = if e == b'u' { 4 } else { 8 };
+                let cp =
+                    read_hex(bytes, i, width).ok_or_else(|| lex_error(i, "bad unicode escape"))?;
+                i += width;
+                // Surrogate code points are not accepted, not even as pairs.
+                let ch = char::from_u32(cp)
+                    .ok_or_else(|| lex_error(i, "unicode escape is not a character"))?;
+                let mut buf = [0u8; 4];
+                out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+            _ => return Err(lex_error(i, "unknown escape sequence")),
+        }
     }
-    Err(TextError::Lex(start as u32, "unterminated string".into()))
+    Err(lex_error(start, "unterminated string"))
 }
 
-fn parse_number(input: &str, start: usize) -> Result<(Tok, usize), TextError> {
-    let bytes = input.as_bytes();
-    let n = bytes.len();
-    let mut i = start;
-    while i < n {
-        let c = bytes[i];
-        if c.is_ascii_digit()
-            || c == b'.'
-            || c == b'-'
-            || c == b'+'
-            || c == b'e'
-            || c == b'E'
-            || c == b'x'
-            || c == b'a'
-            || c == b'b'
-            || c == b'c'
-            || c == b'd'
-            || c == b'f'
-            || c == b'A'
-            || c == b'B'
-            || c == b'C'
-            || c == b'D'
-            || c == b'F'
-        {
-            i += 1;
-        } else {
-            break;
+/// The magnitude of an integer literal: decimal, `0x` hex, or leading-`0` octal.
+fn int_literal(text: &str) -> Option<u128> {
+    if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        u128::from_str_radix(hex, 16).ok()
+    } else if text.len() > 1 && text.starts_with('0') {
+        u128::from_str_radix(&text[1..], 8).ok()
+    } else {
+        text.parse::<u128>().ok()
+    }
+}
+
+/// Apply a sign to an integer literal's magnitude.
+fn signed_value(magnitude: u128, negative: bool) -> Option<i128> {
+    let v = i128::try_from(magnitude).ok()?;
+    Some(if negative { -v } else { v })
+}
+
+/// Parse a decimal floating-point literal (with an optional `f` suffix).
+fn float_literal(text: &str, negative: bool) -> Result<f64, String> {
+    if text.starts_with("0x") || text.starts_with("0X") {
+        return Err("hexadecimal is not a float".into());
+    }
+    let body = text
+        .strip_suffix(['f', 'F'])
+        .filter(|b| !b.is_empty())
+        .unwrap_or(text);
+    let v: f64 = body
+        .parse()
+        .map_err(|_| format!("invalid float {text:?}"))?;
+    Ok(if negative { -v } else { v })
+}
+
+/// Convert an integer value to the scalar representation of an integer field,
+/// rejecting values outside the field's range.
+fn int_in_range(t: FieldType, v: i128) -> Option<RScalar> {
+    use RScalar::*;
+    let fits = |lo: i128, hi: i128| (lo..=hi).contains(&v);
+    match t {
+        FieldType::Int32 | FieldType::Sint32 | FieldType::Sfixed32 => {
+            fits(i128::from(i32::MIN), i128::from(i32::MAX)).then_some(I64(v as i64))
         }
-    }
-    let word = &input[start..i];
-    // Hex
-    if let Some(hex) = word.strip_prefix("0x").or_else(|| word.strip_prefix("0X")) {
-        if let Ok(v) = u64::from_str_radix(hex, 16) {
-            return Ok((Tok::Uint(v), i));
+        FieldType::Int64 | FieldType::Sint64 | FieldType::Sfixed64 => {
+            fits(i128::from(i64::MIN), i128::from(i64::MAX)).then_some(I64(v as i64))
         }
-    }
-    if word.contains('.') || word.contains('e') || word.contains('E') {
-        if let Ok(f) = word.parse::<f64>() {
-            return Ok((Tok::Float(f), i));
+        FieldType::Uint32 | FieldType::Fixed32 => {
+            fits(0, i128::from(u32::MAX)).then_some(U64(v as u64))
         }
+        FieldType::Uint64 | FieldType::Fixed64 => {
+            fits(0, i128::from(u64::MAX)).then_some(U64(v as u64))
+        }
+        _ => None,
     }
-    if let Ok(u) = word.parse::<u64>() {
-        return Ok((Tok::Uint(u), i));
-    }
-    if let Ok(s) = word.parse::<i64>() {
-        return Ok((Tok::Int(s), i));
-    }
-    Err(TextError::Lex(start as u32, format!("bad number {word:?}")))
 }
 
 struct Parser<'a> {
@@ -513,9 +641,10 @@ struct Parser<'a> {
 }
 
 impl Parser<'_> {
-    fn peek(&self) -> Option<Tok> {
-        self.toks.get(self.pos).cloned()
+    fn peek(&self) -> Option<&Tok> {
+        self.toks.get(self.pos)
     }
+
     fn next(&mut self) -> Option<Tok> {
         let t = self.toks.get(self.pos).cloned();
         if t.is_some() {
@@ -523,13 +652,25 @@ impl Parser<'_> {
         }
         t
     }
+
+    fn eat(&mut self, t: &Tok) -> bool {
+        if self.peek() == Some(t) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
     fn expect(&mut self, t: &Tok) -> Result<(), TextError> {
-        match self.next() {
-            Some(ref x) if x == t => Ok(()),
-            other => Err(TextError::Syntax(format!(
+        if self.eat(t) {
+            Ok(())
+        } else {
+            Err(TextError::Syntax(format!(
                 "expected {:?}, got {:?}",
-                t, other
-            ))),
+                t,
+                self.peek()
+            )))
         }
     }
 
@@ -547,44 +688,12 @@ impl Parser<'_> {
             )));
         }
         loop {
-            match self.peek() {
-                None | Some(Tok::RBrace) | Some(Tok::RAngle) => {
-                    return Ok(());
-                }
+            match self.peek().cloned() {
+                None | Some(Tok::RBrace) | Some(Tok::RAngle) => return Ok(()),
                 Some(Tok::LBracket) => {
-                    // [type_name] { ... } -> treat as nested message by type name (e.g. Any)
-                    self.pos += 1;
-                    let type_name = match self.next() {
-                        Some(Tok::Ident(s)) => s,
-                        _ => return Err(TextError::Syntax("expected type name in [ ]".into())),
-                    };
-                    self.expect(&Tok::RBracket)?;
-                    // Determine target: either an extension or Any-like; we look up the message
-                    // and nest its body into a field named by the type if present.
-                    let sub = pool
-                        .lookup_message(&type_name)
-                        .ok_or_else(|| TextError::Unknown(type_name.clone()))?;
-                    let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                    match self.peek() {
-                        Some(Tok::LBrace) | Some(Tok::LAngle) => {
-                            self.next();
-                            self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
-                            self.close_delim()?;
-                        }
-                        _ => {}
-                    }
-                    if let Some(f) = descriptor.field.iter().find(|f| {
-                        f.type_name.as_deref() == Some(&format!(".{type_name}"))
-                            || f.type_name.as_deref() == Some(type_name.as_str())
-                    }) {
-                        msg.set_field(f.number.unwrap_or(0), Value::Message(inner));
-                    }
+                    self.parse_bracketed(pool, descriptor, msg, depth)?;
                 }
                 Some(Tok::Ident(name)) => {
-                    self.pos += 1;
-                    self.parse_field(pool, descriptor, msg, &name, depth)?;
-                }
-                Some(Tok::Raw(name)) => {
                     self.pos += 1;
                     self.parse_field(pool, descriptor, msg, &name, depth)?;
                 }
@@ -597,12 +706,85 @@ impl Parser<'_> {
         }
     }
 
+    /// `{ ... }` or `< ... >` as a nested message body.
+    fn parse_braced_body(
+        &mut self,
+        pool: &DescriptorPool,
+        descriptor: &DescriptorProto,
+        msg: &mut DynamicMessage,
+        depth: u32,
+    ) -> Result<(), TextError> {
+        match self.next() {
+            Some(Tok::LBrace) | Some(Tok::LAngle) => {}
+            other => {
+                return Err(TextError::Syntax(format!(
+                    "expected message body, got {other:?}"
+                )))
+            }
+        }
+        self.parse_message_body(pool, descriptor, msg, depth + 1)?;
+        self.close_delim()
+    }
+
     fn close_delim(&mut self) -> Result<(), TextError> {
         match self.next() {
             Some(Tok::RBrace) | Some(Tok::RAngle) => Ok(()),
             other => Err(TextError::Syntax(format!(
                 "expected closing delimiter, got {other:?}"
             ))),
+        }
+    }
+
+    /// `[name] { ... }`: an `Any` entry (`[type.googleapis.com/Type]`) inside an
+    /// `Any` body, or an extension field `[full.name]: value`.
+    fn parse_bracketed(
+        &mut self,
+        pool: &DescriptorPool,
+        descriptor: &DescriptorProto,
+        msg: &mut DynamicMessage,
+        depth: u32,
+    ) -> Result<(), TextError> {
+        self.expect(&Tok::LBracket)?;
+        let mut name = String::new();
+        loop {
+            match self.next() {
+                Some(Tok::RBracket) => break,
+                Some(Tok::Ident(s)) => name.push_str(&s),
+                Some(Tok::Slash) => name.push('/'),
+                other => {
+                    return Err(TextError::Syntax(format!(
+                        "bad name in brackets: {other:?}"
+                    )))
+                }
+            }
+        }
+        if descriptor.name.as_deref() == Some("Any") {
+            let type_name = name.rsplit('/').next().unwrap_or(&name).to_string();
+            let target = pool
+                .lookup_message(&type_name)
+                .ok_or_else(|| TextError::Unknown(type_name.clone()))?;
+            let mut inner = DynamicMessage::new(target.clone(), pool.clone());
+            self.parse_braced_body(pool, &target, &mut inner, depth)?;
+            let bytes = inner
+                .encode()
+                .map_err(|e| TextError::Value(name.clone(), e.to_string()))?;
+            msg.set_field(1, Value::Scalar(RScalar::String(name.clone())));
+            msg.set_field(2, Value::Scalar(RScalar::Bytes(bytes)));
+        } else {
+            let ext = pool
+                .get_extension_by_name(&name)
+                .ok_or_else(|| TextError::Unknown(name.clone()))?;
+            let number = ext.number.unwrap_or(0);
+            let value = self.parse_field_value(pool, &ext, depth)?;
+            msg.set_extension(number, value);
+        }
+        self.eat_separator();
+        Ok(())
+    }
+
+    fn eat_separator(&mut self) {
+        if !self.eat(&Tok::Comma) {
+            self.eat(&Tok::Semi);
         }
     }
 
@@ -618,222 +800,236 @@ impl Parser<'_> {
         let field = descriptor
             .field
             .iter()
-            .find(|f| f.name.as_deref() == Some(name) || f.number == name.parse::<i32>().ok())
+            .find(|f| {
+                f.name.as_deref() == Some(name)
+                    || f.number == name.parse::<i32>().ok()
+                    || (f.r#type == Some(FieldType::Group) && group_name(f) == name)
+            })
             .cloned()
             .ok_or_else(|| TextError::Unknown(name.to_string()))?;
-
-        // Determine value form: `name: value` or `name { ... }` (message) or `name: { ... }`.
-        let value = match self.peek() {
-            Some(Tok::LBrace) | Some(Tok::LAngle) => {
-                self.next();
-                let sub = pool
-                    .lookup_message(field.type_name.as_deref().unwrap_or(""))
-                    .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
-                let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
-                self.close_delim()?;
-                Value::Message(inner)
-            }
-            Some(Tok::Colon) => {
-                self.next();
-                self.parse_value(pool, &field, depth + 1)?
-            }
-            other => {
-                return Err(TextError::Syntax(format!(
-                    "expected ':' or '{{' after field {name}, got {other:?}"
-                )));
-            }
-        };
-
         let num = field.number.unwrap_or(0);
-        if is_map_field(pool, &field) {
-            if let Value::Map(mut entries) = map_entry_to_value(value) {
-                if let Some((k, v)) = entries.pop() {
-                    msg.fields
-                        .entry(num)
-                        .or_insert_with(|| Value::Map(Vec::new()));
-                    if let Some(Value::Map(m)) = msg.fields.get_mut(&num) {
-                        m.push((k, v));
+        let is_map = is_map_field(pool, &field);
+
+        if field.label == Some(Label::Repeated)
+            && !is_map
+            && self.peek() == Some(&Tok::Colon)
+            && self.toks.get(self.pos + 1) == Some(&Tok::LBracket)
+        {
+            // `name: [v1, v2]`: a list of values.
+            self.pos += 2;
+            if !self.eat(&Tok::RBracket) {
+                loop {
+                    let value = self.parse_element(pool, &field, depth)?;
+                    push_repeated(msg, num, value);
+                    if !self.eat(&Tok::Comma) {
+                        self.expect(&Tok::RBracket)?;
+                        break;
                     }
                 }
             }
-        } else if field.label == Some(Label::Repeated) {
-            let entry = msg
-                .fields
-                .entry(num)
-                .or_insert_with(|| Value::List(Vec::new()));
-            match entry {
-                Value::List(l) => match value {
-                    Value::List(mut inner) => l.append(&mut inner),
-                    other => l.push(other),
-                },
-                _ => *entry = value,
-            }
         } else {
-            msg.set_field(field.number.unwrap_or(0), value);
+            let value = self.parse_field_value(pool, &field, depth)?;
+            if is_map {
+                if let Value::Map(mut entries) = map_entry_to_value(value) {
+                    if let Some((k, v)) = entries.pop() {
+                        push_repeated(msg, num, Value::Map(vec![(k, v)]));
+                    }
+                }
+            } else if field.label == Some(Label::Repeated) {
+                push_repeated(msg, num, value);
+            } else {
+                msg.set_field(num, value);
+            }
         }
-        // Optional trailing comma.
-        if matches!(self.peek(), Some(Tok::Comma)) {
-            self.next();
-        }
+        self.eat_separator();
         Ok(())
     }
 
+    /// The value after a field name: `: value`, or a message body for message fields.
+    fn parse_field_value(
+        &mut self,
+        pool: &DescriptorPool,
+        field: &FieldDescriptorProto,
+        depth: u32,
+    ) -> Result<Value, TextError> {
+        let is_message = matches!(
+            field.r#type,
+            Some(FieldType::Message) | Some(FieldType::Group)
+        );
+        let colon = self.eat(&Tok::Colon);
+        if is_message && matches!(self.peek(), Some(Tok::LBrace) | Some(Tok::LAngle)) {
+            return self.parse_message_value(pool, field, depth);
+        }
+        if !colon {
+            return Err(TextError::Syntax(format!(
+                "expected ':' after field {}",
+                field.name.clone().unwrap_or_default()
+            )));
+        }
+        self.parse_value(pool, field, depth)
+    }
+
+    /// One element of a repeated field (a message body or a scalar/enum).
+    fn parse_element(
+        &mut self,
+        pool: &DescriptorPool,
+        field: &FieldDescriptorProto,
+        depth: u32,
+    ) -> Result<Value, TextError> {
+        let is_message = matches!(
+            field.r#type,
+            Some(FieldType::Message) | Some(FieldType::Group)
+        );
+        if is_message && matches!(self.peek(), Some(Tok::LBrace) | Some(Tok::LAngle)) {
+            return self.parse_message_value(pool, field, depth);
+        }
+        self.parse_value(pool, field, depth)
+    }
+
+    fn parse_message_value(
+        &mut self,
+        pool: &DescriptorPool,
+        field: &FieldDescriptorProto,
+        depth: u32,
+    ) -> Result<Value, TextError> {
+        let sub = pool
+            .lookup_message(field.type_name.as_deref().unwrap_or(""))
+            .ok_or_else(|| TextError::Unknown(field.type_name.clone().unwrap_or_default()))?;
+        let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
+        self.parse_braced_body(pool, &sub, &mut inner, depth)?;
+        Ok(Value::Message(inner))
+    }
+
+    /// A single scalar or enum value.
     fn parse_value(
         &mut self,
         pool: &DescriptorPool,
         field: &FieldDescriptorProto,
         depth: u32,
     ) -> Result<Value, TextError> {
+        let _ = depth;
+        let fname = field.name.clone().unwrap_or_default();
+        let err = |msg: &str| TextError::Value(fname.clone(), msg.to_string());
         let t = field.r#type.unwrap_or(FieldType::String);
-        match t {
-            FieldType::Message | FieldType::Group => {
-                // `field: { ... }` form
-                match self.peek() {
-                    Some(Tok::LBrace) | Some(Tok::LAngle) => {
-                        self.next();
-                        let sub = pool
-                            .lookup_message(field.type_name.as_deref().unwrap_or(""))
-                            .unwrap_or_else(|| Arc::new(DescriptorProto::default()));
-                        let mut inner = DynamicMessage::new(sub.clone(), pool.clone());
-                        self.parse_message_body(pool, &sub, &mut inner, depth + 1)?;
-                        self.close_delim()?;
-                        Ok(Value::Message(inner))
-                    }
-                    _ => Err(TextError::Syntax("expected message body".into())),
+        let negative = self.eat(&Tok::Minus);
+        let tok = self
+            .next()
+            .ok_or_else(|| TextError::Syntax("expected value".into()))?;
+
+        if t == FieldType::Enum {
+            let number = match tok {
+                Tok::Ident(name) if !negative => {
+                    let edesc = pool
+                        .lookup_enum(field.type_name.as_deref().unwrap_or(""))
+                        .ok_or_else(|| {
+                            TextError::Unknown(field.type_name.clone().unwrap_or_default())
+                        })?;
+                    edesc
+                        .value
+                        .iter()
+                        .find(|v| v.name.as_deref() == Some(name.as_str()))
+                        .and_then(|v| v.number)
+                        .ok_or_else(|| err(&format!("unknown enum value {name}")))?
                 }
-            }
-            FieldType::Enum => {
-                let tok = self
-                    .next()
-                    .ok_or_else(|| TextError::Syntax("expected enum value".into()))?;
-                let name = match tok {
-                    Tok::Ident(s) | Tok::Raw(s) => s,
-                    Tok::Int(n) => return Ok(Value::Enum(n as i32)),
-                    Tok::Uint(n) => return Ok(Value::Enum(n as i32)),
-                    _ => {
-                        return Err(TextError::Value(
-                            field.name.clone().unwrap_or_default(),
-                            "expected enum".into(),
-                        ))
+                Tok::Num(text) => {
+                    let v = int_literal(&text)
+                        .and_then(|m| signed_value(m, negative))
+                        .and_then(|v| i32::try_from(v).ok())
+                        .ok_or_else(|| err("bad enum number"))?;
+                    // Closed enums (proto2) reject numbers they do not define.
+                    if pool.syntax == "proto2" {
+                        let edesc = pool
+                            .lookup_enum(field.type_name.as_deref().unwrap_or(""))
+                            .ok_or_else(|| {
+                                TextError::Unknown(field.type_name.clone().unwrap_or_default())
+                            })?;
+                        if !edesc.value.iter().any(|x| x.number == Some(v)) {
+                            return Err(err("unknown closed enum number"));
+                        }
                     }
-                };
-                let edesc = pool
-                    .lookup_enum(field.type_name.as_deref().unwrap_or(""))
-                    .ok_or_else(|| {
-                        TextError::Unknown(field.type_name.clone().unwrap_or_default())
-                    })?;
-                if let Some(v) = edesc
-                    .value
-                    .iter()
-                    .find(|v| v.name.as_deref() == Some(&name))
-                {
-                    Ok(Value::Enum(v.number.unwrap_or(0)))
-                } else if let Ok(n) = name.parse::<i32>() {
-                    Ok(Value::Enum(n))
-                } else {
-                    Err(TextError::Value(
-                        field.name.clone().unwrap_or_default(),
-                        format!("unknown enum value {name}"),
-                    ))
+                    v
                 }
-            }
-            // Scalars.
-            _ => {
-                let tok = self
-                    .next()
-                    .ok_or_else(|| TextError::Syntax("expected value".into()))?;
-                let sv = match tok {
-                    Tok::Str(s) => match t {
-                        FieldType::String => RScalar::String(s),
-                        FieldType::Bytes => RScalar::Bytes(parse_hex(&s)),
-                        _ => {
-                            return Err(TextError::Value(
-                                field.name.clone().unwrap_or_default(),
-                                "unexpected string".into(),
-                            ))
-                        }
-                    },
-                    Tok::Int(n) => int_to_scalar(t, n, field)?,
-                    Tok::Uint(n) => uint_to_scalar(t, n, field)?,
-                    Tok::Float(f) => RScalar::F64(f),
-                    Tok::Raw(s) => match s.as_str() {
-                        "true" => RScalar::Bool(true),
-                        "false" => RScalar::Bool(false),
-                        "inf" => RScalar::F64(f64::INFINITY),
-                        "-inf" => RScalar::F64(f64::NEG_INFINITY),
-                        "nan" => RScalar::F64(f64::NAN),
-                        _ => {
-                            return Err(TextError::Value(
-                                field.name.clone().unwrap_or_default(),
-                                format!("bad literal {s}"),
-                            ))
-                        }
-                    },
-                    _ => {
-                        return Err(TextError::Value(
-                            field.name.clone().unwrap_or_default(),
-                            "unexpected token".into(),
-                        ))
-                    }
-                };
-                Ok(Value::Scalar(sv))
-            }
+                _ => return Err(err("expected enum value")),
+            };
+            return Ok(Value::Enum(number));
         }
+
+        let scalar = match (t, tok) {
+            (FieldType::String | FieldType::Bytes, Tok::Str(first)) if !negative => {
+                // Adjacent string literals concatenate.
+                let mut bytes = first;
+                while let Some(Tok::Str(more)) = self.peek().cloned() {
+                    self.pos += 1;
+                    bytes.extend(more);
+                }
+                if t == FieldType::String {
+                    RScalar::String(
+                        String::from_utf8(bytes)
+                            .map_err(|_| err("string field is not valid UTF-8"))?,
+                    )
+                } else {
+                    RScalar::Bytes(bytes)
+                }
+            }
+            (FieldType::Bool, Tok::Ident(word)) if !negative => match word.as_str() {
+                "true" | "True" | "t" => RScalar::Bool(true),
+                "false" | "False" | "f" => RScalar::Bool(false),
+                _ => return Err(err(&format!("bad bool {word}"))),
+            },
+            (FieldType::Bool, Tok::Num(text)) => match int_literal(&text) {
+                Some(0) if !negative => RScalar::Bool(false),
+                Some(1) if !negative => RScalar::Bool(true),
+                _ => return Err(err("bool must be 0 or 1")),
+            },
+            (FieldType::Float | FieldType::Double, Tok::Ident(word)) => {
+                let lower = word.to_ascii_lowercase();
+                let v = match lower.as_str() {
+                    "inf" | "infinity" => f64::INFINITY,
+                    "nan" if !negative => f64::NAN,
+                    _ => return Err(err(&format!("bad float literal {word}"))),
+                };
+                RScalar::F64(if negative { -v } else { v })
+            }
+            (FieldType::Float | FieldType::Double, Tok::Num(text)) => {
+                // A leading zero would make an octal integer; floats do not accept one.
+                if text.len() > 1
+                    && text.starts_with('0')
+                    && text.bytes().all(|b| b.is_ascii_digit())
+                {
+                    return Err(err("leading zero is not allowed in a float"));
+                }
+                // Out-of-range magnitudes overflow to infinity, as the spec allows.
+                RScalar::F64(float_literal(&text, negative).map_err(|e| err(&e))?)
+            }
+            (_, Tok::Num(text)) => {
+                let v = int_literal(&text)
+                    .and_then(|m| signed_value(m, negative))
+                    .ok_or_else(|| err(&format!("bad integer {text}")))?;
+                int_in_range(t, v).ok_or_else(|| err("integer out of range"))?
+            }
+            _ => return Err(err("unexpected token")),
+        };
+        Ok(Value::Scalar(scalar))
     }
 }
 
-fn int_to_scalar(t: FieldType, n: i64, field: &FieldDescriptorProto) -> Result<RScalar, TextError> {
-    use RScalar::*;
-    Ok(match t {
-        FieldType::Int32 | FieldType::Sint32 | FieldType::Sfixed32 => I64(n as i32 as i64),
-        FieldType::Int64 | FieldType::Sint64 | FieldType::Sfixed64 => I64(n),
-        FieldType::Uint32 | FieldType::Fixed32 => U64(n as u32 as u64),
-        FieldType::Uint64 | FieldType::Fixed64 => U64(n as u64),
-        FieldType::Bool => Bool(n != 0),
-        FieldType::Double | FieldType::Float => F64(n as f64),
-        _ => {
-            return Err(TextError::Value(
-                field.name.clone().unwrap_or_default(),
-                "int not allowed".into(),
-            ))
+/// Append one element to a repeated (or map) field.
+fn push_repeated(msg: &mut DynamicMessage, number: i32, value: Value) {
+    // Map entries accumulate in a map; other elements in a list.
+    let is_map = matches!(value, Value::Map(_));
+    let entry = msg.fields.entry(number).or_insert_with(|| {
+        if is_map {
+            Value::Map(Vec::new())
+        } else {
+            Value::List(Vec::new())
         }
-    })
-}
-
-fn uint_to_scalar(
-    t: FieldType,
-    n: u64,
-    field: &FieldDescriptorProto,
-) -> Result<RScalar, TextError> {
-    use RScalar::*;
-    Ok(match t {
-        FieldType::Int32 | FieldType::Sint32 | FieldType::Sfixed32 => I64(n as i32 as i64),
-        FieldType::Int64 | FieldType::Sint64 | FieldType::Sfixed64 => I64(n as i64),
-        FieldType::Uint32 | FieldType::Fixed32 => U64(n as u32 as u64),
-        FieldType::Uint64 | FieldType::Fixed64 => U64(n),
-        FieldType::Bool => Bool(n != 0),
-        FieldType::Double | FieldType::Float => F64(n as f64),
-        _ => {
-            return Err(TextError::Value(
-                field.name.clone().unwrap_or_default(),
-                "uint not allowed".into(),
-            ))
-        }
-    })
-}
-
-fn parse_hex(s: &str) -> Vec<u8> {
-    let s = s.trim_start_matches("0x").trim_start_matches("0X");
-    let s = if s.len() % 2 == 0 {
-        s.to_string()
-    } else {
-        format!("0{s}")
-    };
-    (0..s.len())
-        .step_by(2)
-        .filter_map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-        .collect()
+    });
+    match (entry, value) {
+        (Value::List(list), Value::List(mut more)) => list.append(&mut more),
+        (Value::List(list), other) => list.push(other),
+        (Value::Map(map), Value::Map(mut more)) => map.append(&mut more),
+        (existing, other) => *existing = other,
+    }
 }
 
 fn is_map_field(pool: &DescriptorPool, field: &FieldDescriptorProto) -> bool {
@@ -1038,7 +1234,7 @@ message Messy {
         let nondet = message_to_text(&pool, &m, &dm, &TextOptions::default());
         let first_nondet = nondet
             .lines()
-            .nth(1)
+            .next()
             .unwrap()
             .trim()
             .split(':')
@@ -1059,7 +1255,7 @@ message Messy {
         );
         let first_det = det
             .lines()
-            .nth(1)
+            .next()
             .unwrap()
             .trim()
             .split(':')

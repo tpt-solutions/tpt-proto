@@ -35,6 +35,8 @@ pub enum TokenKind {
     Float(f64),
     /// String literal (escapes resolved).
     Str(String),
+    /// `-` (sign prefix for negative numeric constants).
+    Minus,
     /// `{`
     LBrace,
     /// `}`
@@ -220,6 +222,7 @@ impl<'a> Lexer<'a> {
             b'.' => self.simple(TokenKind::Dot),
             b'=' => self.simple(TokenKind::Equals),
             b':' => self.simple(TokenKind::Colon),
+            b'-' => self.simple(TokenKind::Minus),
             b'"' | b'\'' => {
                 let s = self.lex_string(b)?;
                 TokenKind::Str(s)

@@ -169,6 +169,9 @@ pub struct Field {
     pub default: Option<Constant>,
     /// Field options.
     pub options: Vec<ProtoOption>,
+    /// Whether this is a legacy `group` field (`optional group Name = N { ... }`),
+    /// whose type is the nested message `Name`.
+    pub is_group: bool,
 }
 
 /// A `oneof` declaration.
@@ -307,6 +310,9 @@ pub struct Extension {
     pub fields: Vec<Field>,
     /// Options.
     pub options: Vec<ProtoOption>,
+    /// Group types declared by group fields in this block; they belong to the
+    /// scope the `extend` appears in.
+    pub messages: Vec<Message>,
 }
 
 /// A literal constant value (options, defaults, map keys, etc.).

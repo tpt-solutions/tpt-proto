@@ -11,6 +11,12 @@ the [MIT License](LICENSE-MIT) and the [Apache License, Version 2.0](LICENSE-APA
 otherwise agreed. You must have the right to submit your contribution under
 these terms.
 
+## How to Contribute
+
+Contributions are accepted through **issues only**. Please open an issue to
+report bugs, request features, or discuss changes. Pull requests are not
+accepted at this time.
+
 ## Clean-Room Policy
 
 tpt-proto is an **independent clean-room implementation**. To preserve this
@@ -36,7 +42,8 @@ status:
 ## Development
 
 - Format with `cargo fmt` and lint with `cargo clippy --all-targets`.
-- Ensure `cargo test --workspace` passes before opening a pull request.
+- Ensure `cargo test --workspace` passes locally before reporting a problem
+  or suggesting a fix in an issue.
 - New functionality should include tests and, where relevant, conformance
   coverage.
 

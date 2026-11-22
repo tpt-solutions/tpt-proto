@@ -6,6 +6,7 @@ use std::io::{self, Read, Write};
 use tpt_proto_core::Reader;
 use tpt_proto_json::{json_string_to_message, message_to_json_string, JsonOptions};
 use tpt_proto_reflect::{DynamicMessage, ScalarValue, Value};
+use tpt_proto_text::{message_to_text, text_to_message, TextOptions};
 
 use crate::protocol::*;
 use crate::schema::Registry;
@@ -23,11 +24,6 @@ pub(crate) fn bytes_value(b: Vec<u8>) -> Value {
 /// An enum-valued field (categories / wire formats).
 pub(crate) fn enum_value(n: i32) -> Value {
     Value::Enum(n)
-}
-
-/// A bool-valued field.
-pub(crate) fn bool_value(b: bool) -> Value {
-    Value::Scalar(Scalar::Bool(b))
 }
 
 fn get_str(m: &DynamicMessage, f: i32) -> Option<String> {
@@ -64,23 +60,22 @@ pub fn process(registry: &Registry, request: &DynamicMessage) -> DynamicMessage 
     let message_type = get_str(request, REQ_MESSAGE_TYPE).unwrap_or_default();
     let requested = get_enum(request, REQ_REQUESTED_FORMAT).unwrap_or(FMT_UNSPECIFIED);
     let category = get_enum(request, REQ_TEST_CATEGORY).unwrap_or(0);
+    let pool = registry.pool_for(&message_type);
 
-    // Unsupported input formats: text / jspb payloads.
-    if request.get_field(REQ_TEXT_PAYLOAD).is_some()
-        || request.get_field(REQ_JSPB_PAYLOAD).is_some()
-    {
-        response.set_field(RES_SKIPPED, bool_value(true));
+    // Unsupported input format: jspb payloads.
+    if request.get_field(REQ_JSPB_PAYLOAD).is_some() {
+        response.set_field(RES_SKIPPED, str_value("skipped"));
         return response;
     }
 
     let Some(desc) = registry.lookup(&message_type) else {
-        response.set_field(RES_SKIPPED, bool_value(true));
+        response.set_field(RES_SKIPPED, str_value("skipped"));
         return response;
     };
 
     // Parse the input payload into a dynamic message.
     let msg = if let Some(bytes) = get_bytes(request, REQ_PROTOBUF_PAYLOAD) {
-        match DynamicMessage::decode(&registry.pool, desc.clone(), &mut Reader::new(&bytes)) {
+        match DynamicMessage::decode(pool, desc.clone(), &mut Reader::new(&bytes)) {
             Ok(m) => m,
             Err(e) => {
                 response.set_field(
@@ -95,12 +90,23 @@ pub fn process(registry: &Registry, request: &DynamicMessage) -> DynamicMessage 
         if category == CAT_JSON_IGNORE_UNKNOWN {
             opts.ignore_unknown_fields = true;
         }
-        match json_string_to_message(&registry.pool, &desc, &json, &opts) {
+        match json_string_to_message(pool, &desc, &json, &opts) {
             Ok(m) => m,
             Err(e) => {
                 response.set_field(
                     RES_PARSE_ERROR,
                     str_value(&format!("failed to parse JSON: {e}")),
+                );
+                return response;
+            }
+        }
+    } else if let Some(text) = get_str(request, REQ_TEXT_PAYLOAD) {
+        match text_to_message(pool, &desc, &text, &TextOptions::default()) {
+            Ok(m) => m,
+            Err(e) => {
+                response.set_field(
+                    RES_PARSE_ERROR,
+                    str_value(&format!("failed to parse text format: {e}")),
                 );
                 return response;
             }
@@ -119,18 +125,27 @@ pub fn process(registry: &Registry, request: &DynamicMessage) -> DynamicMessage 
                 str_value(&format!("failed to serialize binary: {e}")),
             ),
         },
-        FMT_JSON => {
-            match message_to_json_string(&registry.pool, &desc, &msg, &JsonOptions::default()) {
-                Ok(s) => response.set_field(RES_JSON_PAYLOAD, str_value(&s)),
-                Err(e) => response.set_field(
-                    RES_SERIALIZE_ERROR,
-                    str_value(&format!("failed to serialize JSON: {e}")),
+        FMT_JSON => match message_to_json_string(pool, &desc, &msg, &JsonOptions::default()) {
+            Ok(s) => response.set_field(RES_JSON_PAYLOAD, str_value(&s)),
+            Err(e) => response.set_field(
+                RES_SERIALIZE_ERROR,
+                str_value(&format!("failed to serialize JSON: {e}")),
+            ),
+        },
+        FMT_TEXT_FORMAT => {
+            let text_opts = TextOptions {
+                print_unknown_fields: matches!(
+                    request.get_field(REQ_PRINT_UNKNOWN_FIELDS),
+                    Some(Value::Scalar(ScalarValue::Bool(true)))
                 ),
-            }
+                ..TextOptions::default()
+            };
+            let text = message_to_text(pool, &desc, &msg, &text_opts);
+            response.set_field(RES_TEXT_PAYLOAD, str_value(&text));
         }
         _ => {
             // Unsupported output format (JSPB / unspecified).
-            response.set_field(RES_SKIPPED, bool_value(true));
+            response.set_field(RES_SKIPPED, str_value("skipped"));
         }
     }
 

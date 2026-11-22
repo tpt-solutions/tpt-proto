@@ -169,6 +169,18 @@ pub fn compile_set(files: &[ast::File]) -> CompileResult {
         validate_options_in_file(f, &mut diags, &mut lint);
     }
 
+    // A field whose type was resolved from another file is typed as a message
+    // until now; correct it to an enum when the target is one.
+    let mut enum_fqns: HashSet<String> = HashSet::new();
+    for fd in &converted {
+        collect_enum_fqns(fd, &mut enum_fqns);
+    }
+    for fd in converted.iter_mut() {
+        for m in &mut fd.message_type {
+            refine_enum_fields(m, &enum_fqns);
+        }
+    }
+
     let set = FileDescriptorSet { file: converted };
     CompileResult {
         set,
@@ -384,6 +396,40 @@ fn insert_symbol(
     }
 }
 
+/// Fully-qualified names of every enum in the file, nested ones included.
+fn collect_enum_fqns(fd: &FileDescriptorProto, out: &mut HashSet<String>) {
+    let pkg = fd.package.as_deref().unwrap_or("");
+    for e in &fd.enum_type {
+        out.insert(qualify(pkg, e.name.as_deref().unwrap_or("")));
+    }
+    for m in &fd.message_type {
+        collect_message_enum_fqns(m, pkg, out);
+    }
+}
+
+fn collect_message_enum_fqns(m: &DescriptorProto, prefix: &str, out: &mut HashSet<String>) {
+    let fqn = qualify(prefix, m.name.as_deref().unwrap_or(""));
+    for e in &m.enum_type {
+        out.insert(qualify(&fqn, e.name.as_deref().unwrap_or("")));
+    }
+    for n in &m.nested_type {
+        collect_message_enum_fqns(n, &fqn, out);
+    }
+}
+
+/// Retype message fields whose resolved target is an enum.
+fn refine_enum_fields(m: &mut DescriptorProto, enums: &HashSet<String>) {
+    for f in &mut m.field {
+        let is_enum = f.type_name.as_ref().is_some_and(|t| enums.contains(t));
+        if is_enum && f.r#type == Some(FieldType::Message) {
+            f.r#type = Some(FieldType::Enum);
+        }
+    }
+    for n in &mut m.nested_type {
+        refine_enum_fields(n, enums);
+    }
+}
+
 fn qualify(prefix: &str, name: &str) -> String {
     // Fully-qualified names always carry a leading dot. The prefix may itself
     // already be a leading-dot FQN (from a parent's recursion), so normalize it
@@ -426,8 +472,10 @@ fn resolve_message(
 ) {
     let name = m.name.clone().unwrap_or_default();
     let self_path = qualify(prefix, &name);
+    // Field types resolve from the message's own scope outwards, so a nested
+    // type (such as a group) is found by its simple name.
     for f in &mut m.field {
-        resolve_field_type(f, prefix, visible, file_name, diags, lint);
+        resolve_field_type(f, &self_path, visible, file_name, diags, lint);
     }
     for n in &mut m.nested_type {
         resolve_message(n, &self_path, file_name, visible, diags, lint);

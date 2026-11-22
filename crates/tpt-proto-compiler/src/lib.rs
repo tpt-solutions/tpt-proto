@@ -80,6 +80,17 @@ pub fn compile(file: &ast::File) -> (FileDescriptorProto, Diagnostics) {
                 &mut diags,
             ));
         }
+        // Group types of a top-level extend live at file scope.
+        for g in &ext.messages {
+            out.message_type.push(convert_message(
+                g,
+                &enum_names,
+                &msg_names,
+                pkg,
+                syntax_str,
+                &mut diags,
+            ));
+        }
     }
 
     for m in &file.messages {
@@ -128,6 +139,9 @@ fn collect_message_names(file: &ast::File) -> Vec<String> {
         names.push(m.name.name.clone());
         collect_message_names_in_message(m, &mut names);
     }
+    for ext in &file.extensions {
+        collect_group_names(&ext.messages, &mut names);
+    }
     names
 }
 
@@ -135,6 +149,17 @@ fn collect_message_names_in_message(m: &ast::Message, names: &mut Vec<String>) {
     for n in &m.nested_messages {
         names.push(n.name.name.clone());
         collect_message_names_in_message(n, names);
+    }
+    for ext in &m.nested_extends {
+        collect_group_names(&ext.messages, names);
+    }
+}
+
+/// Group types declared by an `extend` block (and any groups nested in them).
+fn collect_group_names(groups: &[ast::Message], names: &mut Vec<String>) {
+    for g in groups {
+        names.push(g.name.name.clone());
+        collect_message_names_in_message(g, names);
     }
 }
 
@@ -224,6 +249,8 @@ fn convert_field(
 ) -> FieldDescriptorProto {
     check_field_number(f.number, f.span, diags);
     let (ty, type_name) = resolve_type(&f.ty, enum_names, msg_names);
+    // A legacy group field is typed by its group message.
+    let ty = if f.is_group { FieldType::Group } else { ty };
     // proto3 explicit `optional` needs `proto3_optional` so codegen tracks
     // presence; proto2 `optional`/`required` and editions (feature-driven)
     // do not.
@@ -244,8 +271,23 @@ fn convert_field(
             .clone()
             .or_else(|| Some(to_json_name(&f.name.name))),
         proto3_optional,
+        options: packed_field_options(&f.options),
         ..Default::default()
     }
+}
+
+/// Serialized `FieldOptions` carrying `packed` when the field sets
+/// `[packed = true|false]`; `None` otherwise (the dialect default applies).
+fn packed_field_options(options: &[ast::ProtoOption]) -> Option<Vec<u8>> {
+    let opt = options.iter().find(|o| o.name == "packed")?;
+    let value = match &opt.value {
+        ast::Constant::Bool(b) => *b,
+        ast::Constant::Ident(s) if s == "true" => true,
+        ast::Constant::Ident(s) if s == "false" => false,
+        _ => return None,
+    };
+    // `FieldOptions.packed` is field 2 (bool): tag 0x10, then the value.
+    Some(vec![0x10, u8::from(value)])
 }
 
 fn convert_message(
@@ -343,6 +385,12 @@ fn convert_message(
             out.extension
                 .push(convert_field(f, enum_names, msg_names, syntax, diags));
         }
+        // Group types of a nested extend are nested in this message.
+        for g in &ext.messages {
+            out.nested_type.push(convert_message(
+                g, enum_names, msg_names, &self_path, syntax, diags,
+            ));
+        }
     }
     for r in &m.reserved_ranges {
         out.reserved_range.push(ReservedRange {
@@ -433,17 +481,15 @@ pub fn parse_file_descriptor(bytes: &[u8]) -> CoreResult<FileDescriptorProto> {
     FileDescriptorProto::decode(bytes)
 }
 
-/// `json_name` derivation: lowerCamelCase of the proto field name.
+/// `json_name` derivation, as protoc's `ToJsonName`: drop each `_` and
+/// capitalize the letter after it. The first character keeps its case, so
+/// `FieldName8` stays `FieldName8` and `field_name` becomes `fieldName`.
 pub fn to_json_name(field: &str) -> String {
     let mut out = String::new();
     let mut upper = false;
-    for (i, c) in field.chars().enumerate() {
+    for c in field.chars() {
         if c == '_' {
             upper = true;
-            continue;
-        }
-        if i == 0 {
-            out.extend(c.to_lowercase());
         } else if upper {
             out.extend(c.to_uppercase());
             upper = false;

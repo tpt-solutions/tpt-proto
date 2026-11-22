@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use tpt_proto_conformance::protocol::{
     read_frame, write_frame, FMT_PROTOBUF, REQ_MESSAGE_TYPE, REQ_PROTOBUF_PAYLOAD,
-    REQ_REQUESTED_FORMAT,
+    REQ_REQUESTED_FORMAT, RES_PROTOBUF_PAYLOAD,
 };
 use tpt_proto_conformance::schema::Registry;
 use tpt_proto_conformance::testee::run_testee_loop;
@@ -39,11 +39,11 @@ fn harness_covers_required_areas() {
     let names: Vec<&str> = report.results().iter().map(|r| r.name.as_str()).collect();
 
     let must_contain = [
-        "proto2.TestAllTypes: binary roundtrip",
-        "proto3.TestAllTypes: binary roundtrip",
+        "protobuf_test_messages.proto2.TestAllTypesProto2: binary roundtrip",
+        "protobuf_test_messages.proto3.TestAllTypesProto3: binary roundtrip",
         "editions.TestAllTypes: binary roundtrip",
-        "proto2.TestAllTypes: json roundtrip",
-        "proto3.TestAllTypes: json roundtrip",
+        "protobuf_test_messages.proto2.TestAllTypesProto2: json roundtrip",
+        "protobuf_test_messages.proto3.TestAllTypesProto3: json roundtrip",
         "editions.TestAllTypes: json roundtrip",
         "proto3: malformed binary is a parse error",
         "proto3: malformed json is a parse error",
@@ -61,12 +61,12 @@ fn harness_covers_required_areas() {
 }
 
 /// Build a length-framed `ConformanceRequest` asking to parse a small
-/// protobuf payload of `proto3.TestAllTypes` and echo it back as protobuf.
+/// protobuf payload of `TestAllTypesProto3` and echo it back as protobuf.
 fn build_framed_request(registry: &Registry) -> Vec<u8> {
-    let pool = &registry.pool;
+    let pool = registry.pool_for("protobuf_test_messages.proto3.TestAllTypesProto3");
     let desc = registry
-        .lookup("proto3.TestAllTypes")
-        .expect("proto3 TestAllTypes");
+        .lookup("protobuf_test_messages.proto3.TestAllTypesProto3")
+        .expect("proto3 TestAllTypesProto3");
 
     let mut msg = DynamicMessage::new(desc.clone(), pool.clone());
     msg.set_field(1, Value::Scalar(ScalarValue::I64(7)));
@@ -75,7 +75,9 @@ fn build_framed_request(registry: &Registry) -> Vec<u8> {
     let mut req = DynamicMessage::new(registry.request_desc.clone(), pool.clone());
     req.set_field(
         REQ_MESSAGE_TYPE,
-        Value::Scalar(ScalarValue::String("proto3.TestAllTypes".into())),
+        Value::Scalar(ScalarValue::String(
+            "protobuf_test_messages.proto3.TestAllTypesProto3".into(),
+        )),
     );
     req.set_field(REQ_REQUESTED_FORMAT, Value::Enum(FMT_PROTOBUF));
     req.set_field(REQ_PROTOBUF_PAYLOAD, Value::Scalar(ScalarValue::Bytes(bin)));
@@ -104,7 +106,7 @@ fn testee_loop_speaks_framed_protocol() {
     assert!(!frame.is_empty(), "response frame was empty");
 
     // The response must decode as a valid ConformanceResponse carrying a
-    // protobuf payload (field 4).
+    // protobuf payload.
     let resp = DynamicMessage::decode(
         &registry.pool,
         registry.response_desc.clone(),
@@ -112,8 +114,8 @@ fn testee_loop_speaks_framed_protocol() {
     )
     .expect("response decodes as ConformanceResponse");
     assert!(
-        resp.get_field(4).is_some(),
-        "expected protobuf_payload (field 4) in response"
+        resp.get_field(RES_PROTOBUF_PAYLOAD).is_some(),
+        "expected protobuf_payload (field {RES_PROTOBUF_PAYLOAD}) in response"
     );
 }
 
