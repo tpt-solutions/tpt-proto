@@ -74,10 +74,16 @@ conformance_test_runner --enforce_recommended \
 Official suite message-type names (e.g.
 `protobuf_test_messages.proto3.TestAllTypesProto3`) are aliased to tpt-proto's
 dialect descriptors inside the testee (`schema.rs`), so genuine binary + JSON
-cases run instead of being skipped. Cases the testee cannot run (e.g. JSPB or
-text-format output) are reported back as `skipped`, which the reference runner
-excludes from the pass/fail tally. Known divergences can be listed in
+cases run instead of being skipped. Cases the testee cannot run (JSPB input and
+output) are reported back as `skipped`, which the reference runner excludes from
+the pass/fail tally. Known divergences can be listed in
 `conformance/failure_list.txt`.
+
+`conformance/run_conformance.sh` runs both suites and fails if the runner is
+missing or any case fails. Each run writes `conformance/results/latest.md` with
+the suite summaries, the commit (marked when the tree has uncommitted changes),
+and the reference runner version. CI builds the runner from protobuf v6.31.1 and
+runs the script on every push.
 
 ## Status notes
 

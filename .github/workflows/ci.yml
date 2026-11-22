@@ -94,6 +94,25 @@ jobs:
         with:
           name: conformance-report
           path: conformance-report.json
-      - name: Official runner integration (if available)
-        if: false
+      - name: Install protobuf build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Build protobuf conformance runner
+        env:
+          PROTOBUF_VERSION: v6.31.1
+        run: |
+          git clone --depth 1 --branch "$PROTOBUF_VERSION" --recurse-submodules --shallow-submodules \
+            https://github.com/protocolbuffers/protobuf.git "$RUNNER_TEMP/protobuf"
+          cmake -S "$RUNNER_TEMP/protobuf" -B "$RUNNER_TEMP/protobuf-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -Dprotobuf_BUILD_CONFORMANCE=ON -Dprotobuf_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/protobuf-build" --target conformance_test_runner
+          echo "CONFORMANCE_TEST_RUNNER=$RUNNER_TEMP/protobuf-build/conformance_test_runner" >> "$GITHUB_ENV"
+      - name: Run official conformance suites
+        env:
+          PROTOBUF_VERSION: v6.31.1
         run: bash conformance/run_conformance.sh
+      - name: Upload conformance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-results
+          path: conformance/results/latest.md
