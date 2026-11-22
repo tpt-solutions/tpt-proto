@@ -21,6 +21,9 @@ fn arbitrary_garbage_does_not_crash() {
         b"{not json",
         b"name: \"x\" id: 1",
         b"syntax = \"proto3\";\nmessage M { int32 x = 1; }\n",
+        // text_parser: unknown escape followed by a multi-byte UTF-8 char used to panic
+        // (crash-951811d7150e6042d2623735727f67582a4ab46f).
+        "'\\\u{e9}'".as_bytes(),
     ];
     for s in samples {
         assert!(

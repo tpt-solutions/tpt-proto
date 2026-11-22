@@ -397,11 +397,18 @@ impl Parser {
                 self.advance();
                 let mut items = Vec::new();
                 while self.peek_kind() != Some(&TokenKind::RBracket) && self.peek().is_some() {
+                    let before = self.pos;
                     if let Some(c) = self.parse_constant() {
                         items.push(c);
                     }
                     if self.peek_kind() == Some(&TokenKind::Comma) {
                         self.advance();
+                    }
+                    // No progress means the element is malformed at this token;
+                    // bail out so the caller's `expect` reports it once instead
+                    // of spinning and accumulating diagnostics forever.
+                    if self.pos == before {
+                        break;
                     }
                 }
                 self.expect(&TokenKind::RBracket);
@@ -689,11 +696,15 @@ impl Parser {
         if self.peek_kind() == Some(&TokenKind::LBracket) {
             self.advance();
             while self.peek_kind() != Some(&TokenKind::RBracket) && self.peek().is_some() {
+                let before = self.pos;
                 if let Some(o) = self.parse_field_option(&mut json_name, &mut default) {
                     options.push(o);
                 }
                 if self.peek_kind() == Some(&TokenKind::Comma) {
                     self.advance();
+                }
+                if self.pos == before {
+                    break;
                 }
             }
             self.expect(&TokenKind::RBracket);
@@ -783,11 +794,15 @@ impl Parser {
             if self.peek_kind() == Some(&TokenKind::LBracket) {
                 self.advance();
                 while self.peek_kind() != Some(&TokenKind::RBracket) && self.peek().is_some() {
+                    let before = self.pos;
                     if let Some(o) = self.parse_field_option(&mut None, &mut None) {
                         field_options.push(o);
                     }
                     if self.peek_kind() == Some(&TokenKind::Comma) {
                         self.advance();
+                    }
+                    if self.pos == before {
+                        break;
                     }
                 }
                 self.expect(&TokenKind::RBracket);
@@ -858,11 +873,15 @@ impl Parser {
         if self.peek_kind() == Some(&TokenKind::LBracket) {
             self.advance();
             while self.peek_kind() != Some(&TokenKind::RBracket) && self.peek().is_some() {
+                let before = self.pos;
                 if let Some(o) = self.parse_field_option(&mut None, &mut None) {
                     options.push(o);
                 }
                 if self.peek_kind() == Some(&TokenKind::Comma) {
                     self.advance();
+                }
+                if self.pos == before {
+                    break;
                 }
             }
             self.expect(&TokenKind::RBracket);
@@ -1020,11 +1039,15 @@ impl Parser {
                 if self.peek_kind() == Some(&TokenKind::LBracket) {
                     self.advance();
                     while self.peek_kind() != Some(&TokenKind::RBracket) && self.peek().is_some() {
+                        let before = self.pos;
                         if let Some(o) = self.parse_field_option(&mut None, &mut None) {
                             options.push(o);
                         }
                         if self.peek_kind() == Some(&TokenKind::Comma) {
                             self.advance();
+                        }
+                        if self.pos == before {
+                            break;
                         }
                     }
                     self.expect(&TokenKind::RBracket);

@@ -437,7 +437,13 @@ fn parse_string(input: &str, start: usize, quote: u8) -> Result<(String, usize),
                         i += 2;
                     }
                 }
-                _ => out.push(e as char),
+                _ => {
+                    // `e` may be the lead byte of a multi-byte UTF-8 char; consume the
+                    // whole char so `i` never lands mid-codepoint.
+                    let ch = input[i..].chars().next().unwrap();
+                    out.push(ch);
+                    i += ch.len_utf8() - 1;
+                }
             }
         } else {
             let ch = input[i..].chars().next().unwrap();
